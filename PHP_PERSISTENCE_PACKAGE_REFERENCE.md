@@ -51,6 +51,15 @@ The [README](README.md#installation) records the exact installation target and t
 
 ## 2. Source topology
 
+```text
+Source Topology: Multi Capability
+
+Capabilities:
+- Ordering
+- Pagination
+- Transaction
+```
+
 One Composer package, three independent capability folders under `src/`, per [DEC-010](docs/decisions/DEC-010-package-topology-multi-capability.md) and [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). Dependency direction: `Ordering → Transaction`; `Pagination` and `Transaction` do not depend on each other or on `Ordering`.
 
 ```text

@@ -9,6 +9,10 @@ use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 
 /**
+ * Immutable mapped page and navigation metadata shared by the array and JSON
+ * representations. Counts come from separate reads and can differ under
+ * concurrent writes.
+ *
  * @template T of array<array-key, mixed>|object
  */
 final readonly class PageResultDTO implements JsonSerializable
@@ -16,7 +20,14 @@ final readonly class PageResultDTO implements JsonSerializable
     private const PUBLIC_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
 
     /**
-     * @param list<T> $data
+     * Validates a one-based page with a positive size, non-negative counts,
+     * and at most one page of mapped items. The page count and navigation
+     * flags must agree with the filtered count and page size. A zero filtered
+     * count requires empty data, page one, and no navigation.
+     *
+     * @param list<T> $data Mapped items in page order.
+     *
+     * @throws PaginationExecutionException When the result is inconsistent.
      */
     public function __construct(
         public array $data,
