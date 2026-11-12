@@ -19,7 +19,7 @@ The earlier package `maatify/persistence` uses the root namespace `Maatify\Persi
 | Item | Value |
 |---|---|
 | Composer package name | `maatify/php-persistence` |
-| Repository | `Maatify/php-persistence` |
+| Repository | `Maatify-ltd/php-persistence` |
 | PSR-4 root namespace | `Maatify\PhpPersistence\` → `src/` |
 | Test namespace (WU-4 and later) | `Maatify\PhpPersistence\Tests\` → `tests/` |
 | Package-wide exception marker | `Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface` |
