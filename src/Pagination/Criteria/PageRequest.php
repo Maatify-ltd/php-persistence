@@ -14,6 +14,10 @@ namespace Maatify\PhpPersistence\Pagination\Criteria;
  */
 final readonly class PageRequest
 {
+    /**
+     * Store request values unchanged. Null leaves the corresponding page,
+     * page size, sort key, or sort direction unspecified for the paginator.
+     */
     public function __construct(
         public int|string|null $page = null,
         public int|string|null $perPage = null,

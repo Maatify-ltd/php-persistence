@@ -6,6 +6,12 @@ namespace Maatify\PhpPersistence\Pagination\ValueObject;
 
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationConfigurationException;
 
+/**
+ * Maps public sort keys to validated, quoted SQL identifier paths.
+ *
+ * The caller defines the mapping from trusted identifiers. A request can
+ * select a key from it but cannot supply the SQL identifier.
+ */
 final readonly class SortWhitelist
 {
     private const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
@@ -14,7 +20,13 @@ final readonly class SortWhitelist
     private array $quotedSorts;
 
     /**
+     * Accepts a non-empty map of public keys to identifiers with one to three
+     * dot-separated segments. Each key and segment starts with an ASCII letter
+     * or underscore, followed by ASCII letters, digits, or underscores.
+     *
      * @param non-empty-array<non-empty-string, non-empty-string> $sorts
+     *
+     * @throws InvalidPaginationConfigurationException When the mapping is empty or invalid.
      */
     public function __construct(array $sorts)
     {
@@ -27,7 +39,11 @@ final readonly class SortWhitelist
     }
 
     /**
+     * Returns the SQL identifier for an allowed key, with each segment quoted.
+     *
      * @return non-empty-string
+     *
+     * @throws InvalidPaginationConfigurationException When the key is absent.
      */
     public function quotedIdentifierFor(string $key): string
     {

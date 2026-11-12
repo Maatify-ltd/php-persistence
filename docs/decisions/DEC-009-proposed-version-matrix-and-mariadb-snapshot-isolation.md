@@ -27,13 +27,11 @@ The version-matrix rows that this record first proposed (endpoints, intermediate
 4. The package does not change `innodb_snapshot_isolation`, the isolation level, or any connection attribute.
 5. If an honest and safe contract cannot be demonstrated for caller-owned transactions, MariaDB support is not advertised unconditionally; the claim is narrowed or withheld.
 
-## Open decisions and what they block
+## Deferred contract and WU-8 evidence
 
-| Open decision | Must be settled before |
-|---|---|
-| Whether the safe `1020` contract in item 5 is achievable | WU-8 (Ordering) acceptance for MariaDB, and any MariaDB claim |
+At proposal time, Ordering acceptance for MariaDB and broader MariaDB claims were listed as pending. WU-8 later completed with test-only evidence while the Owner kept the recovery contract deferred.
 
-Observed engine facts that inform it (defaults of `innodb_snapshot_isolation` per version, error `1020` raised with the setting `ON`) are in [CI_AND_INTEGRATION.md](../architecture/CI_AND_INTEGRATION.md); what the server does after `1020` is still not established.
+In the cases exercised by the [WU-8 Ordering integration test](https://github.com/Maatify-ltd/php-persistence/blob/2212fb0a74e8f44c82b2c508f3585e2b87ed5a8c/tests/Integration/Ordering/ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest.php), the server rolls back a prior caller-owned write after error `1020`. The test also attempts a subsequent statement on the same connection and observes whether it is rejected or commits independently. [DEC-013](./DEC-013-test-only-database-version-boundary.md) governs the tested matrix. A general recovery guarantee or supported range remains outside the accepted contract.
 
 ## Consequences
 
