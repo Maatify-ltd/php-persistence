@@ -1,6 +1,6 @@
 # PHP Persistence
 
-> Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB, over a caller-supplied `PDO` connection. Development/Unpublished: not installable from Packagist today.
+> Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB, over a caller-supplied `PDO` connection. Release Candidate artifact target: 1.0.0-rc.1. See README for the conditional Composer installation target.
 
 This map is for package consumers. Use the Package Reference for the public runtime contract and the guide and examples for usage. Repository workflow and governance are documented separately for contributors in CONTRIBUTING.md.
 

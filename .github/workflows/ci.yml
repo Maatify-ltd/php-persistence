@@ -224,6 +224,24 @@ jobs:
           test -z "$(docker ps -aq --filter 'label=com.docker.compose.project')"
           test -z "$(docker volume ls -q --filter 'label=com.docker.compose.project')"
 
+  release-artifact:
+    name: Release artifact verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/setup-php-composer
+        with:
+          php-version: "8.4"
+      - name: Verify the exact committed artifact
+        env:
+          ARTIFACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"
+
   exploratory:
     name: Exploratory MySQL Innovation (not required)
     if: github.event_name == 'workflow_dispatch' && inputs.exploratory
@@ -246,7 +264,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [workflow-lint, static, compat, integration, examples-smoke, consumer-verification]
+    needs: [workflow-lint, static, compat, integration, examples-smoke, consumer-verification, release-artifact]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -4,10 +4,10 @@
 
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
-[![Status](https://img.shields.io/badge/Status-Development-blue)](README.md)
+[![Status at preparation](https://img.shields.io/badge/Status%20at%20preparation-Development-blue)](README.md#overview)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
-[![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](phpstan.neon)
+[![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](README.md#quality-status)
 
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
 
@@ -28,7 +28,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-This repository is in **Development**. Nothing described here is published, tagged, or installable through Packagist or any other Composer distribution channel.
+This tree prepares the **Release Candidate artifact `1.0.0-rc.1`**. The live project is in **Development** while the target is unpublished. The publication state recorded for this preparation is **Unpublished**.
 
 ## Key Features
 
@@ -49,7 +49,13 @@ These are declared runtime requirements, not a statement that any specific datab
 
 ## Installation
 
-This package is **not published**. It has no Packagist listing, no Git tag, and no installable version; `composer require maatify/php-persistence` does not resolve anything today. The intended Composer identity is `maatify/php-persistence` once a release exists; see [CHANGELOG.md](CHANGELOG.md) for the current `[Unreleased]` state.
+The exact Composer installation target for this artifact is:
+
+```bash
+composer require maatify/php-persistence:1.0.0-rc.1
+```
+
+This command resolves through the approved Composer distribution source only after that exact version is published. See the [target changelog](CHANGELOG.md#100-rc1) and [security policy](SECURITY.md) for lifecycle and support details.
 
 ## Usage
 

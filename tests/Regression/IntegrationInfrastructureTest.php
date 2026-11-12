@@ -181,7 +181,7 @@ final class IntegrationInfrastructureTest extends TestCase
             $names[] = $chunks[$index];
             self::assertStringContainsString('timeout-minutes:', $chunks[$index + 1], $chunks[$index] . ' needs a timeout');
         }
-        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'examples-smoke', 'consumer-verification', 'exploratory', 'ci-gate'], $names);
+        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'examples-smoke', 'consumer-verification', 'release-artifact', 'exploratory', 'ci-gate'], $names);
     }
 
     private static function constantSeconds(string $source, string $name): int
@@ -246,7 +246,7 @@ final class IntegrationInfrastructureTest extends TestCase
 
         [, $gate] = array_pad(explode("\n  ci-gate:\n", $workflow, 2), 2, '');
         self::assertMatchesRegularExpression(
-            '/^    needs: \[workflow-lint, static, compat, integration, examples-smoke, consumer-verification\]$/m',
+            '/^    needs: \[workflow-lint, static, compat, integration, examples-smoke, consumer-verification, release-artifact\]$/m',
             $gate,
         );
         self::assertStringNotContainsString('exploratory', $gate, 'the exploratory job is not required');
@@ -255,6 +255,18 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('RESULTS: ${{ toJSON(needs) }}', $gate);
         self::assertStringContainsString('set -euo pipefail', $gate);
         self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
+    }
+
+    public function testReleaseArtifactGateVerifiesTheExactWorkflowSha(): void
+    {
+        $workflow = self::read('.github/workflows/ci.yml');
+        [, $following] = array_pad(explode("\n  release-artifact:\n", $workflow, 2), 2, '');
+        [$job] = explode("\n  exploratory:\n", $following, 2);
+        self::assertStringContainsString('ref: ${{ github.event.pull_request.head.sha || github.sha }}', $job);
+        self::assertStringContainsString('ARTIFACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}', $job);
+        self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"', $job);
+        self::assertStringContainsString('persist-credentials: false', $job);
+        self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));
     }
 
     public function testComposerAndToolingAreProvisionedDeterministically(): void
