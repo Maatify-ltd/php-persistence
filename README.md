@@ -2,7 +2,11 @@
 
 # PHP Persistence
 
-![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://www.maatify.dev/company-profile/maatify_logo_white.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
+  <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
+</picture>
 
 [![Status at preparation](https://img.shields.io/badge/Status%20at%20preparation-Development-blue)](README.md#overview)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
@@ -28,7 +32,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-This tree prepares the **Release Candidate artifact `1.0.0-rc.1`**. The live project is in **Development** while the target is unpublished. The publication state recorded for this preparation is **Unpublished**.
+This tree is prepared as the **Release Candidate artifact `1.0.0-rc.1`**. Its **publication state at qualification** is **Unpublished**.
 
 ## Key Features
 
