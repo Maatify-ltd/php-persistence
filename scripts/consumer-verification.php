@@ -8,6 +8,8 @@ declare(strict_types=1);
 require __DIR__ . '/integration-support.php';
 
 const CONSUMER_PACKAGE = 'maatify/php-persistence';
+const PUBLISHED_RC = '1.0.0-rc.1';
+const PUBLISHED_RC_SHA = '34c3b874525d36ae064c162cdd553bc75d18772b';
 const LEGACY_PACKAGE = 'maatify/persistence';
 const LEGACY_RELEASE = '1.4.0';
 const LEGACY_RELEASE_REF = 'fc1459b49fe5af5ead17814eeb3ada7a3fa81791';
@@ -49,36 +51,34 @@ function writeConsumerManifest(string $directory, array $config): void
 function runConsumerRoot(string $workspace, string $scenario, string $candidateRef, string $candidateTree, array $environment, array $policy): int
 {
     $directory = $workspace . '/' . $scenario;
-    $candidateVersion = 'dev-candidate';
+    $candidateVersion = PUBLISHED_RC;
     $legacyVersion = $scenario === 'coexistence' ? LEGACY_RELEASE : 'dev-baseline';
     $legacyRef = $scenario === 'coexistence' ? LEGACY_RELEASE_REF : LEGACY_SOURCE_REF;
-    $candidateRepository = [
-        'type' => 'path',
-        'url' => $workspace . '/candidate',
-        'options' => ['symlink' => false, 'reference' => 'none', 'versions' => [CONSUMER_PACKAGE => $candidateVersion]],
-    ];
-    $repositories = [$candidateRepository];
+    $repositories = [];
     if ($scenario === 'differential') {
-        $repositories[] = ['type' => 'path', 'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF, 'options' => [
+        $repositories['legacy-baseline'] = ['type' => 'path', 'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF, 'options' => [
             'symlink' => false, 'reference' => 'none', 'versions' => [LEGACY_PACKAGE => $legacyVersion],
         ]];
     }
+
+    $repositories['packagist.org'] = ['type' => 'composer', 'url' => 'https://repo.packagist.org'];
 
     writeConsumerManifest($directory, [
         'name' => 'verification/consumer',
         'repositories' => $repositories,
         'require' => [CONSUMER_PACKAGE => $candidateVersion, LEGACY_PACKAGE => $legacyVersion],
-        'config' => ['policy' => $policy],
+        'config' => ['policy' => $policy, 'allow-plugins' => false],
     ]);
-    $composerEnvironment = [
-        'COMPOSER' => $directory . '/composer.json',
-        'COMPOSER_HOME' => $directory . '/composer-home',
-        'COMPOSER_CACHE_DIR' => $directory . '/composer-cache',
-        'COMPOSER_VENDOR_DIR' => $directory . '/vendor',
+    $composer = [
+        'env', '-i', 'PATH=' . (getenv('PATH') ?: '/usr/bin:/bin'), 'HOME=' . $directory,
+        'COMPOSER_HOME=' . $directory . '/composer-home',
+        'COMPOSER_CACHE_DIR=' . $directory . '/composer-cache',
+        'COMPOSER_NO_INTERACTION=1', 'GIT_CONFIG_NOSYSTEM=1',
+        'composer', '--no-plugins', '--no-scripts',
     ];
-    consumerCommand(['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--no-progress'], $directory, $composerEnvironment);
-    consumerCommand(['composer', 'check-platform-reqs', '--no-dev'], $directory, $composerEnvironment);
-    $audit = consumerCommand(['composer', 'audit', '--no-dev', '--no-interaction', '--abandoned=fail'], $directory, $composerEnvironment);
+    consumerCommand([...$composer, 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--no-progress'], $directory);
+    consumerCommand([...$composer, 'check-platform-reqs', '--no-dev'], $directory);
+    $audit = consumerCommand([...$composer, 'audit', '--no-dev', '--no-interaction', '--abandoned=fail'], $directory);
     echo $audit . "\n";
 
     $installed = json_decode((string) file_get_contents($directory . '/composer.lock'), true, 512, JSON_THROW_ON_ERROR);
@@ -99,6 +99,29 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     ) {
         throw new RuntimeException('Installed lock does not identify the intended dependencies');
     }
+
+    $metadata = json_decode((string) file_get_contents($directory . '/vendor/composer/installed.json'), true, 512, JSON_THROW_ON_ERROR);
+    $packages = is_array($metadata) ? ($metadata['packages'] ?? null) : null;
+    $candidate = null;
+    if (is_array($packages)) {
+        foreach ($packages as $package) {
+            if (is_array($package) && ($package['name'] ?? null) === CONSUMER_PACKAGE) {
+                $candidate = $package;
+                break;
+            }
+        }
+    }
+    $dist = $candidate['dist'] ?? null;
+    if (($candidate['version'] ?? null) !== 'v' . PUBLISHED_RC
+        || ($candidate['installation-source'] ?? null) !== 'dist'
+        || !is_array($dist)
+        || ($dist['reference'] ?? null) !== $candidateRef
+        || ($dist['url'] ?? null) !== 'https://api.github.com/repos/Maatify-ltd/php-persistence/zipball/' . $candidateRef
+        || $references[CONSUMER_PACKAGE] !== $candidateRef
+    ) {
+        throw new RuntimeException('Installed candidate is not the exact published Packagist dist');
+    }
+    echo 'PACKAGIST-INSTALL scenario=' . $scenario . ' version=v' . PUBLISHED_RC . ' mode=dist reference=' . $candidateRef . "\n";
 
     $candidateClass = '/src/Transaction/Repository/PdoTransactionRunner.php';
     $installedPath = $directory . '/vendor/' . CONSUMER_PACKAGE;
@@ -212,7 +235,10 @@ if (!extension_loaded('pdo_mysql')) {
 }
 
 try {
-    $candidateRef = consumerCommand(['git', 'rev-parse', 'HEAD'], $root);
+    $candidateRef = consumerCommand(['git', 'rev-parse', 'refs/tags/v' . PUBLISHED_RC . '^{commit}'], $root);
+    if ($candidateRef !== PUBLISHED_RC_SHA) {
+        throw new RuntimeException('Published tag does not match the qualified SHA');
+    }
     $candidateTree = consumerCommand(['git', 'rev-parse', $candidateRef . '^{tree}'], $root);
 } catch (RuntimeException $exception) {
     fail(EXIT_INFRASTRUCTURE, $exception->getMessage());
