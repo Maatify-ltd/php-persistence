@@ -233,14 +233,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: refs/tags/v1.0.0-rc.1
       - uses: ./.github/actions/setup-php-composer
         with:
           php-version: "8.4"
-      - name: Verify the exact committed artifact
+      - name: Verify the immutable RC artifact
         env:
-          ARTIFACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"
+          ARTIFACT_SHA: 34c3b874525d36ae064c162cdd553bc75d18772b
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"
+          composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"
 
   exploratory:
     name: Exploratory MySQL Innovation (not required)

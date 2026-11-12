@@ -4,9 +4,9 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [1.0.0-rc.1]
+## [1.0.0-rc.1] - 2026-11-12
 
-First release candidate target. Publication state recorded during preparation: **Unpublished**.
+First release candidate, published on [Packagist](https://packagist.org/packages/maatify/php-persistence).
 
 ### Added
 
@@ -20,3 +20,5 @@ First release candidate target. Publication state recorded during preparation: *
 - Composer manifest, PHPStan at level `max`, PER-CS 3.1 code-style verification, and a real MySQL/MariaDB Integration test infrastructure (`scripts/integration.php`, `compose.integration.yaml`, `docker/integration-matrix.json`).
 
 No database version range is declared as supported; see [PHP_PERSISTENCE_PACKAGE_REFERENCE.md §8](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#8-database-engine-support). Durable decisions governing the changes above are indexed in [docs/decisions/DECISIONS_INDEX.md](docs/decisions/DECISIONS_INDEX.md).
+
+[1.0.0-rc.1]: https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1

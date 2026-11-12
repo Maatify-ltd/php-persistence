@@ -38,7 +38,7 @@ composer test:regression       # no Docker needed
 composer test:integration      # needs Docker; starts a disposable MySQL/MariaDB service
 composer examples:smoke        # needs Docker; smoke-executes examples/ against a real engine
 composer test:consumer         # needs Docker; two fresh external Composer verification runs
-composer release:verify -- --target=1.0.0-rc.1 --sha="$(git rev-parse HEAD)"
+composer release:verify -- --target=1.0.0-rc.1 --sha=34c3b874525d36ae064c162cdd553bc75d18772b
 actionlint .github/workflows/*.yml
 ```
 
