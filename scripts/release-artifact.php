@@ -60,11 +60,12 @@ function verifyReleasePresentation(string $directory, string $target): void
     $readme = releaseFile($directory . '/README.md');
     $changelog = releaseFile($directory . '/CHANGELOG.md');
     $security = releaseFile($directory . '/SECURITY.md');
-    $targetHeading = preg_quote('## [' . $target . ']', '/');
+    $targetHeading = '## [' . $target . ']';
+    $targetLabel = preg_quote('[' . $target . ']', '/');
     if (!str_contains($readme, 'composer require ' . RELEASE_PACKAGE . ':' . $target)
         || !str_contains($readme, 'Release Candidate artifact `' . $target . '`')
-        || preg_match('/^' . $targetHeading . '$/m', $changelog) !== 1
-        || preg_match('/^' . $targetHeading . ' - /m', $changelog) !== 0
+        || preg_match_all('/^[ \t]{0,3}##[ \t]+' . $targetLabel . '[^\r\n]*$/m', $changelog, $headings) !== 1
+        || $headings[0] !== [$targetHeading]
         || !str_contains($security, 'Release Candidate `' . $target . '`')
     ) {
         throw new RuntimeException('Archived presentation is missing an exact, undated release target');

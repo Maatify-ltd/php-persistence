@@ -1,6 +1,6 @@
 {
   "name": "maatify/php-persistence",
-  "description": "PDO persistence utilities for MySQL and MariaDB, in development.",
+  "description": "Direct-PDO transaction, pagination, and ordering utilities for MySQL and MariaDB.",
   "keywords": [
     "persistence",
     "pdo",

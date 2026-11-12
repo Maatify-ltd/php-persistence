@@ -5,7 +5,7 @@
 
 ## Supported Versions
 
-This artifact represents Release Candidate `1.0.0-rc.1`. The publication state recorded during preparation was **Unpublished**. No Stable release line is supported, and this release candidate establishes no Stable support commitment.
+This artifact represents Release Candidate `1.0.0-rc.1`. At preparation, the target was **Unpublished** and the package had no supported Stable release line. This release candidate establishes no Stable support commitment.
 
 ## Reporting a Vulnerability
 
