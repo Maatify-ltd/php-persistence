@@ -70,7 +70,8 @@
     "test:integration": "@php scripts/integration.php",
     "examples:smoke": "@php scripts/examples-smoke.php",
     "test:consumer": "@php scripts/consumer-verification.php",
-    "release:verify": "@php scripts/release-artifact.php"
+    "release:verify": "@php scripts/release-artifact.php",
+    "release:verify-published": "@php scripts/published-artifact.php"
   },
   "config": {
     "optimize-autoloader": true,
