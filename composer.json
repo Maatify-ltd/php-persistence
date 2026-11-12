@@ -62,7 +62,8 @@
     "test:regression": "phpunit --testsuite regression",
     "test:integration": "@php scripts/integration.php",
     "examples:smoke": "@php scripts/examples-smoke.php",
-    "test:consumer": "@php scripts/consumer-verification.php"
+    "test:consumer": "@php scripts/consumer-verification.php",
+    "release:verify": "@php scripts/release-artifact.php"
   },
   "config": {
     "optimize-autoloader": true,

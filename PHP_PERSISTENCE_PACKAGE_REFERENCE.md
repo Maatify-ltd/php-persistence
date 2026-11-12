@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-Status: **Development / Unpublished.** Nothing described here is published, installable from Packagist, or tagged. This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
+Artifact target: **Release Candidate `1.0.0-rc.1`**. Publication state recorded during preparation: **Unpublished**. This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
 Composer package identity, PHP/extension requirements, dependencies, autoloading, configuration and distribution are owned exclusively by [`composer.json`](composer.json) under the pinned [Composer Package Standard](docs/php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md). This document explains runtime implications of that manifest; it does not restate or override it.
 
@@ -43,9 +43,9 @@ This package is a separate Composer package from the published `maatify/persiste
 - Published legacy `v1.4.0` and the unpublished legacy `main` used as source provenance are distinct baselines ([DEC-007](docs/decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md)). This package has its own namespace and public API.
 - Consumer migration from `maatify/persistence` to this package is explicitly **not** addressed by this document and needs its own separate authorization ([DEC-006](docs/decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)).
 
-### 1.4 Development / Unpublished state
+### 1.4 Release Candidate target
 
-No version of this package is published, resolvable, or installable through Packagist or any other Composer distribution channel, and no Git tag exists. `composer.json` governs the declared package identity, PHP/extension requirements (`php ^8.4`, `ext-pdo`, `ext-pdo_mysql`), and dependency (`maatify/exceptions ^1.0`); see that file for the authoritative, current declaration.
+The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. `composer.json` governs the declared package identity, PHP/extension requirements (`php ^8.4`, `ext-pdo`, `ext-pdo_mysql`), and dependency (`maatify/exceptions ^1.0`); see that file for the authoritative, current declaration.
 
 ---
 

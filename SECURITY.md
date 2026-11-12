@@ -5,7 +5,7 @@
 
 ## Supported Versions
 
-This package is in **Development** and has never published a Stable release or a SemVer Release Candidate. There is currently no supported Stable release line.
+This artifact represents Release Candidate `1.0.0-rc.1`. The publication state recorded during preparation was **Unpublished**. No Stable release line is supported, and this release candidate establishes no Stable support commitment.
 
 ## Reporting a Vulnerability
 

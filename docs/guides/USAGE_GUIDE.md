@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-**Status:** this package is unpublished (Development). Nothing in this guide implies a published, installable version.
+**Artifact target:** Release Candidate `1.0.0-rc.1`. See the [README](../../README.md#installation) for the exact installation target and when it resolves.
 
 ## Before you start
 

@@ -24,4 +24,4 @@ The [behavior contract](../architecture/BEHAVIOR_CONTRACT.md) labels published l
 
 The orchestrator is checked by the package's PHPStan configuration. The independent consumer fixture is syntax-checked and validated through execution in the two production Composer roots, where its legacy imports resolve.
 
-The harness is additional to Unit, Regression, Integration and Examples Smoke. This evidence concerns an unpublished candidate, with no production host migration or support-range claim. DEC-009 remains deferred, and DEC-013 records test versions.
+The harness is additional to Unit, Regression, Integration and Examples Smoke. This evidence concerns a candidate tree before publication. It provides neither production host migration evidence nor a support-range claim. DEC-009 remains deferred, and DEC-013 records test versions.

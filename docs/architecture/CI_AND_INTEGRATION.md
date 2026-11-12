@@ -22,9 +22,10 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Integration suite (real database) | `composer test:integration` | Integration |
 | Standalone examples (real database) | `composer examples:smoke` | Examples smoke |
 | Consumer verification and coexistence | `composer test:consumer` | Consumer verification and coexistence |
+| Exact-target release archives | [`composer release:verify`](../guides/RELEASE_ARTIFACT_VERIFICATION.md) | Release artifact verification |
 | Workflow lint | `actionlint` over `.github/workflows` | Workflow lint |
 
-Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, Examples smoke, and Consumer verification and coexistence. The exploratory cell is optional.
+Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, Examples smoke, Consumer verification and coexistence, and Release artifact verification. The exploratory cell is optional.
 
 ## 2. Integration lifecycle
 
