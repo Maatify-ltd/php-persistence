@@ -8,6 +8,20 @@ use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationConfigurationException;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 
+/**
+ * Pagination defaults, bounds, and the allowed sort keys for one query shape.
+ *
+ * The constructor validates its own invariants and throws
+ * {@see InvalidPaginationConfigurationException} rather than deferring to
+ * {@see \Maatify\PhpPersistence\Pagination\Repository\PdoPaginator}:
+ * - minPerPage must be at least 1, maxPerPage must be at least minPerPage, and
+ *   defaultPerPage must fall inside [minPerPage, maxPerPage];
+ * - defaultSortBy and tieBreakerSortBy must each be a valid public key
+ *   (`^[A-Za-z_][A-Za-z0-9_]*$`) present in sortWhitelist.
+ *
+ * One instance is reused across requests for the same query shape; it carries
+ * no per-request state.
+ */
 final readonly class PaginationConfig
 {
     private const PUBLIC_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';

@@ -51,7 +51,7 @@
       "php-cs-fixer fix --dry-run --diff",
       "@php scripts/check-per-cs-3-1.php"
     ],
-    "syntax": "find src tests scripts .php-cs-fixer.php -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null",
+    "syntax": "find src tests scripts examples .php-cs-fixer.php -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null",
     "whitespace": "git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD -- . ':!docs/php-engineering-standards'",
     "test": [
       "@test:unit",
@@ -60,7 +60,8 @@
     ],
     "test:unit": "phpunit --testsuite unit",
     "test:regression": "phpunit --testsuite regression",
-    "test:integration": "@php scripts/integration.php"
+    "test:integration": "@php scripts/integration.php",
+    "examples:smoke": "@php scripts/examples-smoke.php"
   },
   "config": {
     "optimize-autoloader": true,

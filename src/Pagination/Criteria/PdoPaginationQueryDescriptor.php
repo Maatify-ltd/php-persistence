@@ -6,6 +6,23 @@ namespace Maatify\PhpPersistence\Pagination\Criteria;
 
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 
+/**
+ * The caller's own SQL and bound parameters for one pagination query shape:
+ * a total count, a filtered count, and the unsorted/unlimited data query that
+ * {@see \Maatify\PhpPersistence\Pagination\Repository\PdoPaginator} appends
+ * `ORDER BY`/`LIMIT`/`OFFSET` to.
+ *
+ * The constructor validates each SQL string and parameter map and throws
+ * {@see InvalidPaginationQueryException}:
+ * - no SQL string may be blank, contain a literal `;`, or reference the
+ *   `__pagination_` placeholder prefix reserved by `PdoPaginator`;
+ * - every parameter key must be a non-prefixed, non-`:`-prefixed identifier
+ *   matching `^[A-Za-z_][A-Za-z0-9_]*$`, and every value must be
+ *   `string|int|bool|null`.
+ *
+ * This validation only rejects obviously unsafe shapes (reserved names,
+ * statement separators); it does not parse or otherwise understand the SQL.
+ */
 final readonly class PdoPaginationQueryDescriptor
 {
     private const PARAMETER_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';

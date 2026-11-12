@@ -1,6 +1,6 @@
 # CI and Integration Infrastructure (WU-5)
 
-Status: describes the CI workflow and the real-database Integration infrastructure introduced by WU-5. It is infrastructure, not a support claim. MySQL and MariaDB remain design targets ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)); the version cells below are the test matrix ratified in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (the MySQL `8.0.16` minimum is also [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md)); they are not support ranges. The Integration tests prove properties of the real servers and of `pdo_mysql`. They do not verify any Transaction, Ordering or Pagination behavior of this package, because none of it exists yet.
+Status: describes the CI workflow and the real-database Integration infrastructure introduced by WU-5. It is infrastructure, not a support claim. MySQL and MariaDB remain design targets ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)); the version cells below are the test matrix ratified in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (the MySQL `8.0.16` minimum is also [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md)); they are not support ranges. The Integration suite covers the real servers, `pdo_mysql`, and Transaction, Pagination and Ordering behavior. The [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) maps consumer contracts to test evidence.
 
 ## 1. Local and CI parity
 
@@ -20,10 +20,10 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Unit suite | `composer test:unit` | Compat |
 | Regression suite | `composer test:regression` | Compat |
 | Integration suite (real database) | `composer test:integration` | Integration |
-| Complete suite | `composer test` (unit, regression, then integration) | all of the above |
+| Standalone examples (real database) | `composer examples:smoke` | Examples smoke |
 | Workflow lint | `actionlint` over `.github/workflows` | Workflow lint |
 
-Unit and Regression need no Docker. `composer test` includes Integration through the same `composer test:integration` orchestration; it has no second lifecycle.
+Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, and Examples smoke. The exploratory cell is optional.
 
 ## 2. Integration lifecycle
 
@@ -66,6 +66,17 @@ The PHP runner stays on the host PHP so the PHP matrix is truthful; only the dat
 | `PP_UP_TIMEOUT_SECONDS`, `PP_SUITE_TIMEOUT_SECONDS`, `PP_TEARDOWN_TIMEOUT_SECONDS`, `PP_TOTAL_BUDGET_SECONDS` | developer / CI (optional) | Whole seconds, 1 to 9999, validated before anything starts. Deadline for `docker compose up --wait` including image pull (default 660), for one suite pass (default 900), for the whole teardown (default 180) and for the whole run (default 1500, must exceed the teardown reserve) |
 | `DOCKER_DEFAULT_PLATFORM` | `scripts/integration.php` | Set only for a cell that has a single platform (`mysql-8.0.16`: `linux/amd64`) |
 | `PHP_PERSISTENCE_IT_ENGINE`, `_EXPECTED_VERSION`, `_CELL`, `_HOST`, `_PORT`, `_DATABASE`, `_USER`, `_PASSWORD` | `scripts/integration.php` | Suite configuration; the suite fails when one is missing |
+
+### Example smoke checks
+
+`composer examples:smoke` runs the Transaction, Pagination and Ordering examples using production autoload. It provisions a fresh service with the Integration Compose file and the same pinned cell definitions, verifies server identity through PDO, and checks table and transaction residue before verified teardown. Run it locally with Docker and installed Composer dependencies:
+
+```bash
+composer examples:smoke
+PP_DB_CELL=mariadb-11.8.9 composer examples:smoke
+```
+
+CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4. This smoke matrix is separate from the capability Integration matrix below.
 
 ## 3. Test matrix
 
