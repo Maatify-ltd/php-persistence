@@ -24,7 +24,7 @@ $pdo = php_persistence_example_connect();
 $table = php_persistence_example_table_name('invoices');
 $quotedTable = '`' . $table . '`';
 
-$pdo->exec("CREATE TABLE {$quotedTable} (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, total_cents INT NOT NULL)");
+$pdo->exec("CREATE TABLE {$quotedTable} (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, total_cents INT NOT NULL) ENGINE=InnoDB");
 
 try {
     // Input: no active transaction on $pdo yet, so the runner will own one.
@@ -48,6 +48,7 @@ try {
         $pdo->query("SELECT COUNT(*) FROM {$quotedTable} WHERE id = {$invoiceId}"),
         'failed to run the verification query',
     );
+    php_persistence_example_assert(!$pdo->inTransaction(), 'the runner left its owned transaction open');
     $persisted = (int) $countStatement->fetchColumn();
     php_persistence_example_assert($persisted === 1, 'the committed invoice row is not visible after run() returned');
     echo "Result   -> committed invoice id={$invoiceId}, visible outside the callback\n";
@@ -55,20 +56,21 @@ try {
     // Boundary: a callback failure rolls back the whole owned transaction and the
     // original Throwable is rethrown unchanged; no row is persisted.
     echo "Input -> a second run() whose callback throws after inserting a row\n";
+    $failure = new RuntimeException('simulated failure after an uncommitted insert');
     $rolledBack = false;
 
     try {
-        $runner->run(static function () use ($pdo, $quotedTable): never {
+        $runner->run(static function () use ($pdo, $quotedTable, $failure): never {
             $statement = php_persistence_example_require_statement(
                 $pdo->prepare("INSERT INTO {$quotedTable} (total_cents) VALUES (:total)"),
                 'failed to prepare the insert statement',
             );
             $statement->execute(['total' => 500]);
 
-            throw new RuntimeException('simulated failure after an uncommitted insert');
+            throw $failure;
         });
     } catch (RuntimeException $exception) {
-        $rolledBack = $exception->getMessage() === 'simulated failure after an uncommitted insert';
+        $rolledBack = $exception === $failure;
     }
 
     php_persistence_example_assert($rolledBack, 'the callback exception did not propagate unchanged');
@@ -92,6 +94,9 @@ try {
     php_persistence_example_assert($rejected, 'an out-of-range deadlock retry limit was accepted');
     echo "Boundary -> maxDeadlockRetries: 4 was rejected with InvalidTransactionConfigurationException\n";
 } finally {
+    if ($pdo->inTransaction() && !$pdo->rollBack()) {
+        throw new RuntimeException('Could not roll back the fixture transaction before dropping its table');
+    }
     $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
 }
 

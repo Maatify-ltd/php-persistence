@@ -37,8 +37,7 @@ function php_persistence_example_read_orders(PDO $pdo, string $quotedTable): arr
     $orders = [];
     while (($row = $statement->fetch(PDO::FETCH_NUM)) !== false) {
         if (count($row) !== 2) {
-            fwrite(STDERR, "FAILED: unexpected row shape while reading display_order values\n");
-            exit(1);
+            throw new RuntimeException('Unexpected row shape while reading display_order values');
         }
         $orders[php_persistence_example_to_int($row[0])] = php_persistence_example_to_int($row[1]);
     }
@@ -54,7 +53,7 @@ $pdo->exec(
     "CREATE TABLE {$quotedTable} ("
     . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
     . 'method_id INT UNSIGNED NOT NULL, '
-    . 'display_order INT UNSIGNED NOT NULL)',
+    . 'display_order INT UNSIGNED NOT NULL) ENGINE=InnoDB',
 );
 
 try {
@@ -69,21 +68,27 @@ try {
     $config = new ScopedOrderingConfig(table: $table, scopeColumn: 'method_id', deletedAtColumn: null);
     $manager = new ScopedOrderingManager();
 
-    // Input: allocate the next position for method_id 7 (one shipping method's scope).
-    echo "Input -> getNextPositionForUpdate() for method_id = 7 (3 existing rows)\n";
+    // Input: append a shipping rate to method_id 7 (three existing rows).
+    echo "Input -> append a shipping rate to method_id = 7 (three existing rows)\n";
     $nextPosition = (new PdoTransactionRunner($pdo))->run(
-        static fn(): int => $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7),
-    );
-    php_persistence_example_assert($nextPosition === 4, 'unexpected next position for 3 existing rows');
-    echo "Result   -> next position = {$nextPosition}\n";
+        static function () use ($pdo, $config, $manager, $insert): int {
+            $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
+            // Keep the dependent insert in the same transaction as the locking read.
+            $insert->execute(['id' => 4, 'method_id' => 7, 'display_order' => $position]);
 
-    // Public Call: move row id=3 (currently last) to the front of its scope.
+            return $position;
+        },
+    );
+    php_persistence_example_assert($nextPosition === 4, 'unexpected next position for three existing rows');
+    echo "Result   -> appended row 4 at position {$nextPosition}\n";
+
+    // Public Call: move row id=3 from position three to the front of its scope.
     echo "Input -> moveWithinScope(scopeValue: 7, id: 3, newOrder: 1)\n";
     $moved = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 3, newOrder: 1);
     php_persistence_example_assert($moved === true, 'expected the move to succeed');
 
     $orders = php_persistence_example_read_orders($pdo, $quotedTable);
-    php_persistence_example_assert($orders === [1 => 2, 2 => 3, 3 => 1], 'unexpected display_order values after the move');
+    php_persistence_example_assert($orders === [1 => 2, 2 => 3, 3 => 1, 4 => 4], 'unexpected display_order values after the move');
     echo "Result   -> row 3 is now first; rows 1 and 2 shifted down (id => display_order: " . json_encode($orders) . ")\n";
 
     // Boundary: moving a row that does not exist in the scope returns false, not an exception.
@@ -95,18 +100,26 @@ try {
     // transaction; it never commits or finally rolls it back. The caller alone
     // decides the outcome of the surrounding transaction.
     $pdo->beginTransaction();
-    $participatingMove = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 1, newOrder: 1);
-    php_persistence_example_assert($participatingMove === true, 'expected the participating move to succeed');
-    $pdo->rollBack();
+    try {
+        $participatingMove = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 1, newOrder: 1);
+        php_persistence_example_assert($participatingMove === true, 'expected the participating move to succeed');
+        php_persistence_example_assert($pdo->inTransaction(), 'the participating move ended the caller transaction');
+    } finally {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+    }
 
     $ordersAfterCallerRollback = php_persistence_example_read_orders($pdo, $quotedTable);
     php_persistence_example_assert(
-        $ordersAfterCallerRollback === [1 => 2, 2 => 3, 3 => 1],
+        $ordersAfterCallerRollback === [1 => 2, 2 => 3, 3 => 1, 4 => 4],
         'moveWithinScope() must not survive the caller rolling back its own transaction',
     );
     echo "Boundary -> the caller's own rollBack() undid the participating move; moveWithinScope() never commits for the caller\n";
 } finally {
-    $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
+    if (!$pdo->inTransaction()) {
+        $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
+    }
 }
 
 echo "OK\n";

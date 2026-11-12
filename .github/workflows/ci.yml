@@ -177,7 +177,7 @@ jobs:
   examples-smoke:
     name: Examples smoke (${{ matrix.cell }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:

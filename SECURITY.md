@@ -5,7 +5,7 @@
 
 ## Supported Versions
 
-This package is in **Development** and has never published a Stable release or a SemVer Release Candidate. There is currently no supported Stable release line. There is no version of this package to upgrade to and no older line to compare a vulnerability against; every finding applies to the current `main` branch.
+This package is in **Development** and has never published a Stable release or a SemVer Release Candidate. There is currently no supported Stable release line.
 
 ## Reporting a Vulnerability
 
@@ -15,9 +15,7 @@ This package is in **Development** and has never published a Stable release or a
 support@maatify.dev
 ```
 
-This is the same Maatify licensing and support contact already published in [LICENSE](LICENSE). Include the affected file(s) or capability (Transaction, Pagination, or Ordering), the commit SHA you observed it on, and, where possible, a minimal reproduction.
-
-Because this package is unpublished, there is no installed-consumer exposure window to manage: a confirmed issue is fixed directly on `main` before any release is ever made, and no advisory process for an already-distributed version applies yet. This policy will be updated, as part of the same owner-approved change that publishes a release, once a Stable or Release Candidate version exists.
+Maatify publishes this private vulnerability-reporting address in its [security reporting instructions](https://github.com/Maatify/persistence/blob/main/SECURITY.md). It is also the contact in this repository’s [LICENSE](LICENSE). Include the affected file(s) or capability (Transaction, Pagination, or Ordering), the commit SHA you observed it on, and, where possible, a minimal reproduction.
 
 ## Scope
 

@@ -8,7 +8,15 @@
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
 [![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](phpstan.neon)
+
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
+
+[![Usage Guide](https://img.shields.io/badge/Docs-Usage_Guide-blue)](docs/guides/USAGE_GUIDE.md)
+[![Examples](https://img.shields.io/badge/Docs-Examples-blue)](examples/)
+[![Package Reference](https://img.shields.io/badge/Docs-Package_Reference-blue)](PHP_PERSISTENCE_PACKAGE_REFERENCE.md)
+[![Changelog](https://img.shields.io/badge/Docs-Changelog-blue)](CHANGELOG.md)
+[![Security Policy](https://img.shields.io/badge/Docs-Security_Policy-blue)](SECURITY.md)
+[![Contributing Guide](https://img.shields.io/badge/Docs-Contributing_Guide-blue)](CONTRIBUTING.md)
 
 Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB.
 
@@ -79,18 +87,18 @@ The complete, verified inventory — every constructor, named parameter, default
 
 ## Critical Runtime Behavior
 
-- **Caller-owned vs. package-owned transactions:** every runner and `moveWithinScope()` participates in an already-active transaction without ever beginning, committing, or finally rolling it back; it only owns a transaction (and may then retry on deadlock) when none was already active. See [Package Reference §4 and §7](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#4-ownership-vocabulary).
-- **Pagination's three statements are not one snapshot** outside a caller-owned transaction; `total` and `filtered` can disagree under concurrent writes unless the caller wraps the call in its own transaction. See [Package Reference §5.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#53-pdopaginatorpaginate).
+- **Caller-owned vs. package-owned transactions:** every runner and `moveWithinScope()` participates in an already-active transaction without ever beginning, committing, or finally rolling it back; it owns a transaction only when none was already active. The two transaction runners can opt into replay on that path. Ordering does not enable replay. See [Package Reference §4 and §7](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#4-ownership-vocabulary).
+- **Pagination runs the counts and optional data query separately.** The caller controls snapshot consistency through its transaction, isolation level, and SQL read semantics. A `READ COMMITTED` transaction can still observe concurrent commits between statements. See [Package Reference §5.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#53-pdopaginatorpaginate).
 - **MariaDB `innodb_snapshot_isolation=ON`** can make a locking Ordering read fail with driver error `1020` after the server has already rolled back the caller's whole transaction. This is a documented hazard, not a handled case: no retry, no savepoint recovery, and no setting change is attempted. See [Package Reference §7.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard).
-- Deadlock replay is opt-in, bounded to 3 attempts, and applies only to a package-owned transaction under the exact SQLSTATE `40001`/driver-code `1213` signature.
+- Deadlock replay is opt-in, bounded to 3 retries after the initial attempt, and applies only to a package-owned transaction under the exact SQLSTATE `40001`/driver-code `1213` signature.
 
 ## Exception and Error Propagation
 
-Every exception the package defines implements `Exception\PhpPersistenceExceptionInterface`, so a consumer can catch all package-defined failures with one type. `\PDOException` and any other external `\Throwable` — including one thrown by the caller's own callback — propagate through every public method **unchanged** and do not implement that marker. See [Package Reference §6](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#6-exceptions-reference) for the full exception table and the inherited `maatify/exceptions` constructor shape.
+Every exception the package defines implements `Exception\PhpPersistenceExceptionInterface`, so a consumer can catch all package-defined failures with one type. A PDO or callback failure that propagates retains the original exception. Cleanup can suppress secondary failures and an eligible owned deadlock may be recovered by replay. See [Package Reference §6](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#6-exceptions-reference) for the full exception table and the inherited `maatify/exceptions` constructor shape.
 
 ## Security and Trust Boundaries
 
-Table and column identifiers passed to `ScopedOrderingConfig` and sort-key identifier paths passed to `SortWhitelist` are validated and quoted, but they are **not** bound as PDO parameters (SQL does not allow binding identifiers) — they must be trusted application constants, never raw user input. Row ids, scope values, order numbers, and pagination filter/sort values are always bound as PDO parameters.
+Table and column identifiers passed to `ScopedOrderingConfig` and sort-key identifier paths passed to `SortWhitelist` are validated and quoted, but they are **not** bound as PDO parameters (SQL does not allow binding identifiers) — they must be trusted application constants, never raw user input. Ordering values and pagination filter parameters are bound. Pagination sort keys select validated identifiers from a whitelist and sort directions resolve to enum values. The caller supplies trusted pagination SQL.
 
 ## Examples
 
@@ -111,7 +119,7 @@ Neither MySQL nor MariaDB has a declared "supported range" today; both are desig
 
 ## Quality Status
 
-PHPStan runs at level `max` with zero errors (no baseline, no `ignoreErrors`). Code style follows PHP-FIG PER Coding Style 3.1, mechanically verified. Unit, Regression, and Integration suites all pass; the Integration suite exercises the Transaction, Pagination, and Ordering capabilities themselves (including genuine deadlocks, a deterministic concurrent-writer snapshot test, and real stale-snapshot concurrency) against the named database versions above, on PHP 8.4 and 8.5, with both latest and lowest compatible dependencies. See the current CI run for exact, unfrozen figures rather than a count copied into this file.
+CI requires PHPStan at level `max` with zero errors, PER Coding Style 3.1 checks, Unit and Regression suites on PHP 8.4 and 8.5 with latest and lowest compatible dependencies, and real-database Integration and example smoke checks. Integration exercises genuine deadlocks, a deterministic concurrent-writer snapshot test, and stale-snapshot concurrency. See [GitHub Actions](https://github.com/Maatify/php-persistence/actions/workflows/ci.yml) for results by commit and [CI and Integration](docs/architecture/CI_AND_INTEGRATION.md) for the matrix.
 
 ## Development and Testing
 

@@ -46,6 +46,7 @@ foreach (array_slice($argv, 1) as $argument) {
 $matrix = loadMatrix($root);
 secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', 1);
 secondsFromEnvironment('PP_TEARDOWN_TIMEOUT_SECONDS', 1);
+secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 1);
 startBudget();
 
 $cellKey = $requestedCell
@@ -183,6 +184,16 @@ if ($cell['platform'] !== null) {
     $environment['DOCKER_DEFAULT_PLATFORM'] = $cell['platform'];
 }
 $compose = ['docker', 'compose', '--project-name', $project, '--file', $root . '/compose.integration.yaml'];
+
+if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
+    pcntl_async_signals(true);
+    foreach ([SIGINT, SIGTERM] as $signal) {
+        pcntl_signal($signal, static function () use ($compose, $project, $environment, $root): void {
+            teardown($compose, $project, $environment, $root);
+            exit(130);
+        });
+    }
+}
 
 echo '--- examples smoke cell=' . $cellKey . ' image=' . $environment['PP_DB_IMAGE'] . ' project=' . $project . "\n";
 

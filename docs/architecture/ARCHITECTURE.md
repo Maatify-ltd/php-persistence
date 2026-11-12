@@ -13,7 +13,7 @@ Status: **Development**. This document describes the intended architecture decid
 | [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md) | Type-by-type mapping: legacy `v1.4.0`, legacy `main`, new package (dated design/legacy-mapping record) |
 | [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md) | Behaviors B-01 to B-16 and their test evidence (dated design/evidence record) |
 | [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md) | Engines, versions, matrix and test environment |
-| [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md) | WU-5 CI workflow, Compose lifecycle, test matrix, image evidence |
+| [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md) | CI workflow, Compose lifecycle, example smoke checks, test matrix, image evidence |
 | [QUALITY_TOOLING.md](./QUALITY_TOOLING.md) | WU-4 toolchain, scripts, the PER Coding Style 3.1 verification gap and the planning inputs for WU-5 |
 | [../decisions/DECISIONS_INDEX.md](../decisions/DECISIONS_INDEX.md) | Durable decisions that this document applies |
 

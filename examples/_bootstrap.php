@@ -27,7 +27,7 @@ function php_persistence_example_env(string $name): string
             . "This example needs a real MySQL/MariaDB connection. Run it through\n"
             . "'composer examples:smoke' (starts a disposable service via the\n"
             . "repository's Integration infrastructure), or set PHP_PERSISTENCE_IT_*\n"
-            . "yourself to point at a database you already have; see\n"
+            . "yourself to point at a disposable database; see\n"
             . "docs/guides/USAGE_GUIDE.md and CONTRIBUTING.md.\n",
         );
         exit(1);
@@ -83,8 +83,7 @@ function php_persistence_example_to_int(mixed $value): int
     if (is_string($value) || is_float($value)) {
         return (int) $value;
     }
-    fwrite(STDERR, 'FAILED: expected a scalar database value, got ' . get_debug_type($value) . "\n");
-    exit(1);
+    throw new RuntimeException('Expected a scalar database value, got ' . get_debug_type($value));
 }
 
 /**
@@ -99,8 +98,7 @@ function php_persistence_example_to_string(mixed $value): string
     if (is_int($value) || is_float($value)) {
         return (string) $value;
     }
-    fwrite(STDERR, 'FAILED: expected a scalar database value, got ' . get_debug_type($value) . "\n");
-    exit(1);
+    throw new RuntimeException('Expected a scalar database value, got ' . get_debug_type($value));
 }
 
 /**
@@ -109,8 +107,7 @@ function php_persistence_example_to_string(mixed $value): string
 function php_persistence_example_assert(bool $condition, string $message): void
 {
     if (!$condition) {
-        fwrite(STDERR, 'FAILED: ' . $message . "\n");
-        exit(1);
+        throw new RuntimeException($message);
     }
 }
 
@@ -122,8 +119,7 @@ function php_persistence_example_assert(bool $condition, string $message): void
 function php_persistence_example_require_statement(PDOStatement|false $statement, string $message): PDOStatement
 {
     if ($statement === false) {
-        fwrite(STDERR, 'FAILED: ' . $message . "\n");
-        exit(1);
+        throw new RuntimeException($message);
     }
 
     return $statement;

@@ -40,7 +40,7 @@ This package is a separate Composer package from the published `maatify/persiste
 
 - Both packages can be installed together in one Composer root; their namespaces do not collide.
 - `composer.json` declares no `replace`, `provide`, or `conflict` against `maatify/persistence`, and the package ships no `class_alias`, bridge, or adapter between the two type systems.
-- Published legacy `v1.4.0` and this package's unpublished baseline are different code baselines with different fully-qualified names throughout; nothing here claims import compatibility.
+- Published legacy `v1.4.0` and the unpublished legacy `main` used as source provenance are distinct baselines ([DEC-007](docs/decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md)). This package has its own namespace and public API.
 - Consumer migration from `maatify/persistence` to this package is explicitly **not** addressed by this document and needs its own separate authorization ([DEC-006](docs/decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)).
 
 ### 1.4 Development / Unpublished state
@@ -83,7 +83,7 @@ src/
     └── Repository/SavepointScope.php             (@internal)
 ```
 
-Root PSR-4 namespace: `Maatify\PhpPersistence\` → `src/` ([DEC-004](docs/decisions/DEC-004-package-identity-namespace-and-exception-marker.md)). `@internal` classes are loadable (PHP enforces no visibility on a class itself) but are **not** part of the public contract or SemVer; see §4.5.
+Root PSR-4 namespace: `Maatify\PhpPersistence\` → `src/` ([DEC-004](docs/decisions/DEC-004-package-identity-namespace-and-exception-marker.md)). `@internal` classes are loadable (PHP enforces no visibility on a class itself) but are **not** part of the public contract or SemVer; see §3.5.
 
 ---
 
@@ -166,7 +166,7 @@ public function run(callable $callback): mixed
 
 Behavior: see §5.2.
 
-#### `Repository\InvalidTransactionConfigurationException` / `Repository\TransactionExecutionException`
+#### `Exception\InvalidTransactionConfigurationException` / `Exception\TransactionExecutionException`
 
 See §6.1.
 
@@ -183,7 +183,7 @@ public function __construct(
 )
 ```
 
-No validation is performed here; this is the raw, untrusted request shape. `PdoPaginator::paginate()` performs all normalization (§5.3). Pass `$_GET`/request values directly.
+No validation is performed here; this is the raw, untrusted request shape. `PdoPaginator::paginate()` performs all normalization (§5.3). Pass only values matching these parameter types. At a request boundary, discard or reject arrays and other values outside the accepted types before constructing `PageRequest`.
 
 #### `Config\PaginationConfig` (`final readonly class`)
 
@@ -258,6 +258,8 @@ enum SortDirectionEnum: string
 }
 ```
 
+PHP provides the enum’s read-only `name` and `value` properties and the standard backed-enum methods `cases(): array`, `from(int|string $value): static`, and `tryFrom(int|string $value): ?static`.
+
 #### `DTO\PageResultDTO` (`final readonly class`, implements `JsonSerializable`, `@template T of array<array-key, mixed>|object`)
 
 ```php
@@ -279,7 +281,14 @@ public function toArray(): array
 public function jsonSerialize(): array    // returns toArray()
 ```
 
-The constructor throws `PaginationExecutionException` when the arguments are not an internally consistent page description — see §5.3 for the exact invariant checks. `toArray()`/`jsonSerialize()` return:
+The constructor throws `PaginationExecutionException` unless all of these invariants hold:
+
+- `data` is a list of arrays or objects, with at most `perPage` items.
+- `page` and `perPage` are positive, the counts and `totalPages` are non-negative, and `sortBy` matches `^[A-Za-z_][A-Za-z0-9_]*$`.
+- `totalPages` is the ceiling of `filtered / perPage`. When `filtered` is zero, `data` is empty, `page` is 1, and both navigation flags are false. Otherwise `page` must be within `1..totalPages`.
+- `hasNext` equals `page < totalPages`, and `hasPrevious` equals `page > 1 && totalPages > 0`.
+
+The DTO accepts `filtered > total` and can contain empty `data` even when `filtered > 0`; separately executed statements can observe different database states. `toArray()` and `jsonSerialize()` return:
 
 ```text
 array{
@@ -310,7 +319,7 @@ public function paginate(
 ): PageResultDTO
 ```
 
-Throws `PaginationExecutionException` on any execution failure (statement preparation/execution/binding failure, a count query returning other than exactly one row and one column, a negative or out-of-range count, a data row with zero columns, or a mapper that does not return an array or object). Behavior: see §5.3.
+Throws `PaginationExecutionException` when PDO reports failure through a return value or error status, a count result violates §5.3, a data row has no columns or a non-string key, or a mapper returns a value other than an array or object. Exceptions thrown by PDO or the mapper propagate unchanged. Behavior: see §5.3.
 
 #### Pagination exceptions
 
@@ -368,7 +377,7 @@ public function rowExistsInScope(
 ): bool
 ```
 
-`$scopeValue` is required (non-null) whenever `$config->scopeColumn` is set, unless `$config->nullableScope` is `true`, in which case `null` means the single NULL scope; it must be `null` when `$config->scopeColumn` is `null` (global ordering). Every method throws `InvalidOrderingOperationException` for inconsistent scope usage. Full behavior, including the MariaDB hazard, is in §5.4.
+`$scopeValue` is required (non-null) whenever `$config->scopeColumn` is set, unless `$config->nullableScope` is `true`, in which case `null` means the single NULL scope; it must be `null` when `$config->scopeColumn` is `null` (global ordering). Every method throws `InvalidOrderingOperationException` for inconsistent scope usage. Full behavior, including updated-at argument rules and the MariaDB hazard, is in §5.4.
 
 #### Ordering exceptions
 
@@ -406,10 +415,11 @@ Host Input (callback) → run($callback) → caller-owned: participate
 - **No active transaction:** the package begins one, runs the callback, and commits.
   - `beginTransaction()` returning `false` throws `TransactionExecutionException` **before** the callback runs.
   - `commit()` returning `false` triggers a best-effort rollback, then throws `TransactionExecutionException`; the result is never reported as committed.
+  - A `Throwable` from `commit()` triggers a best-effort rollback and propagates unchanged. A `Throwable` from `beginTransaction()` propagates before the callback runs.
   - A `Throwable` from the callback triggers a best-effort rollback (if still active) and the **original** `Throwable` is rethrown unchanged; a rollback failure is swallowed and never replaces it.
 - **Deadlock replay** (only on the owned path, only when `$maxDeadlockRetries > 0`): replay happens only when *all* of the following hold, otherwise the failure is handled exactly like a non-retrying owned transaction:
   1. the callback (not `BEGIN`/`COMMIT`) threw a `PDOException` whose `errorInfo` is SQLSTATE `40001` with driver code `1213`;
-  2. a retry attempt remains (at most 3 total);
+  2. a retry remains (up to 3 retries after the initial attempt, or up to 4 callback invocations);
   3. the driver still reports the transaction active right after the failure (otherwise the transaction had already ended for another reason and is not replayed);
   4. a no-op probe statement (`DO 0`) then succeeds and the driver reports **no** active transaction afterward (confirming the server rolled back the whole victim transaction).
 
@@ -418,7 +428,7 @@ Host Input (callback) → run($callback) → caller-owned: participate
 ### 5.2 `PdoSavepointTransactionRunner::run()`
 
 - **No active transaction:** identical owned-transaction behavior to §5.1 (including optional deadlock replay); no savepoint SQL is issued on this path.
-- **Active caller-owned transaction:** opens an operation-local savepoint through `SavepointScope::begin()`. On success, releases it (`RELEASE SAVEPOINT`). On a callback `Throwable`, performs best-effort `ROLLBACK TO SAVEPOINT` then best-effort `RELEASE SAVEPOINT`, and rethrows the **original** callback `Throwable` unchanged — a cleanup failure never replaces it. It never commits, fully rolls back, or retries the caller-owned transaction or the savepoint itself, even on a deadlock. If the driver reports the transaction no longer active immediately after `SAVEPOINT` succeeds (the server already ended the caller's transaction, for example on an earlier swallowed error), `SavepointScope::begin()` throws `TransactionExecutionException` before the callback runs.
+- **Active caller-owned transaction:** opens an operation-local savepoint through `SavepointScope::begin()`. On success, releases it (`RELEASE SAVEPOINT`). If release fails, it attempts to undo the operation and throws the release failure. On a callback `Throwable`, performs best-effort `ROLLBACK TO SAVEPOINT` then best-effort `RELEASE SAVEPOINT`, and rethrows the **original** callback `Throwable` unchanged — a cleanup failure never replaces it. It never commits, fully rolls back, or retries the caller-owned transaction or the savepoint itself, even on a deadlock. If the driver reports the transaction no longer active immediately after `SAVEPOINT` succeeds (the server already ended the caller's transaction, for example on an earlier swallowed error), `SavepointScope::begin()` throws `TransactionExecutionException` before the callback runs.
 
 ### 5.3 `PdoPaginator::paginate()`
 
@@ -435,8 +445,8 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 - **`page` normalization:** `null`, non-integer text, text outside the `PHP_INT_MIN..PHP_INT_MAX` range, or a parsed integer below `1` → `1`. Accepted text is an optionally-signed run of decimal digits after trimming.
 - **`perPage` normalization** (independent of `page`): `null`, non-integer text, or out-of-range text → `PaginationConfig::$defaultPerPage`; an in-range integer below `$minPerPage` → `$minPerPage`; above `$maxPerPage` → `$maxPerPage`; otherwise the value itself.
 - **Sort resolution:** `sortBy` not present, empty after trimming, failing `^[A-Za-z_][A-Za-z0-9_]*$`, or absent from `$config->sortWhitelist` → `$config->defaultSortBy`. `sortDirection` is matched case-insensitively against `ASC`/`DESC`; anything else → `$config->defaultSortDirection`.
-- **Counting:** `$query->totalSql` and `$query->filteredCountSql` are each executed independently and must return exactly one row with exactly one column; a negative count, or a non-numeric/out-of-`PHP_INT_MAX`-range value, throws `PaginationExecutionException`.
-  - **These two statements, and the data statement, are three separate round trips with no shared-snapshot guarantee unless the caller wraps the call in its own transaction** (under `REPEATABLE READ`, wrapping the whole call in a caller-owned transaction makes all three statements observe the same snapshot; without one, a concurrent write between them can make `total` and `filtered` individually correct but mutually inconsistent). `PdoPaginator` does not open that transaction itself.
+- **Counting:** `$query->totalSql` and `$query->filteredCountSql` are each executed independently and must return exactly one row with exactly one column. The value must be a non-negative PHP integer or a string of decimal digits within `0..PHP_INT_MAX`. Any other value throws `PaginationExecutionException`.
+  - **The count statements and the optional data statement execute separately.** A caller that needs one snapshot must run the whole call using consistent, non-locking reads on transactional tables under a compatible isolation level such as InnoDB `REPEATABLE READ`. Autocommit and `READ COMMITTED` can observe a concurrent commit between statements, including when `READ COMMITTED` runs inside a transaction. `PdoPaginator` leaves transaction and isolation control to the caller.
 - **Empty-result shortcut:** when `filtered === 0`, the method returns immediately with `page = 1`, `data = []`, `totalPages = 0`, `hasNext = hasPrevious = false`, **without running the data query at all**.
 - **Page clamp:** when the normalized `page` exceeds the computed `totalPages`, it is reset to `1` (not clamped to the last page).
 - **Data query:** `$query->dataSql` is wrapped with an `ORDER BY <resolved sort column> <direction>[, <tie-breaker column> <tie-breaker direction>]` (the tie-breaker clause is omitted when it resolves to the same quoted column as the primary sort) and a `LIMIT`/`OFFSET` bound through the reserved parameter names `__pagination_limit`/`__pagination_offset` as integers. Each fetched row must be a non-empty associative array with string keys; it is passed to `$mapper`, whose return value must be an `array` or `object`.
@@ -444,7 +454,7 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 
 ### 5.4 `ScopedOrderingManager`
 
-All four methods first validate scope usage (`$scopeValue` consistent with `$config->scopeColumn`/`$config->nullableScope`); `getNextPosition`, `getNextPositionForUpdate`, and `moveWithinScope` throw `InvalidOrderingOperationException` on misuse, while `rowExistsInScope` additionally just returns `false` for `$id <= 0` without throwing (`moveWithinScope` throws `InvalidOrderingOperationException` for `$id <= 0` or `$newOrder <= 0`).
+`$updatedAtValue` must be null if and only if `updatedAtColumn` is null. When configured, the timestamp is written only to the target row when it actually moves. All four methods first validate scope usage (`$scopeValue` consistent with `$config->scopeColumn`/`$config->nullableScope`); `getNextPosition`, `getNextPositionForUpdate`, and `moveWithinScope` throw `InvalidOrderingOperationException` on misuse, while `rowExistsInScope` additionally just returns `false` for `$id <= 0` without throwing (`moveWithinScope` throws `InvalidOrderingOperationException` for `$id <= 0` or `$newOrder <= 0`).
 
 #### `getNextPosition()`
 
@@ -452,27 +462,27 @@ Returns `MAX(orderColumn) + 1` (or `1` for an empty scope) with a **plain, non-l
 
 #### `getNextPositionForUpdate()`
 
-Requires an **active caller-owned PDO transaction**; throws `InvalidOrderingOperationException` otherwise. Issues a locking read (`SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`) and repeats it until two consecutive reads agree, so every call issues at least two locking reads — including for an empty scope. The returned value reflects the latest **committed** state, not the caller's `REPEATABLE READ` snapshot. Limits: an empty scope has no row to lock, so concurrent first inserts into it are not serialized by this method alone; the row scan (and lock) may cover more than the scope's active rows without a suitable `(scope, order)` index; under `REPEATABLE READ` the lock also covers the gap above the last scanned row; the call may fail with a lock-wait-timeout or deadlock `PDOException`, which propagates unchanged — the caller decides whether to retry.
+Requires an **active caller-owned PDO transaction**; throws `InvalidOrderingOperationException` otherwise. Issues a locking read (`SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`) and repeats it until two consecutive reads agree, so every call issues at least two locking reads — including for an empty scope. A successful current read can see newly committed rows and the transaction’s own writes. See §7.3 for the observed MariaDB failure mode. Limits: an empty scope has no row to lock, so concurrent first inserts into it are not serialized by this method alone; the row scan (and lock) may cover more than the scope's active rows without a suitable `(scope, order)` index; under `REPEATABLE READ` the lock also covers the gap above the last scanned row; the call may fail with a lock-wait-timeout or deadlock `PDOException`, which propagates unchanged — the caller decides whether to retry.
 
 #### `moveWithinScope()`
 
-Never trusts a caller-supplied "current order"; it locks the whole ordering scope (`SELECT … FOR UPDATE`) first and reads the row's current order from inside that same locked read. `$newOrder` is clamped to `max(1, <locked maximum>)`. Runs through `PdoTransactionRunner` (so it owns a transaction when none is active, or participates in the caller's with the behavior of §5.1).
+Never trusts a caller-supplied "current order"; it first locks the active ordering scope and derives its maximum from that locking read. It then reads the target’s current order through a separate locking query. A positive `$newOrder` is limited to `min($newOrder, max(1, $lockedMaximum))`. Runs through `PdoTransactionRunner` (so it owns a transaction when none is active, or participates in the caller's with the behavior of §5.1).
 
 - Returns `true` on a successful move, and `true` (as a no-op, no SQL mutation issued beyond the scope lock and the read) when the row is already at the requested/clamped position.
 - Returns `false` when the target row does not exist in the given scope at the moment it is read under the scope lock — **this is not an exception**, and in this common case **no savepoint statement is issued at all**: the absence is detected before any savepoint is opened.
-- **Participating in a caller-owned transaction:** only once the row is confirmed to exist *and* its clamped target order actually differs from its current order (the no-op and missing-row cases above never reach this point) does it open an operation-local savepoint (`SavepointScope::begin()`), immediately before the first mutating statement. A `Throwable` from the range-shift or target-write statements triggers `cleanupAfterFailure()` (best-effort `ROLLBACK TO`/`RELEASE`) and the original `Throwable` is rethrown unchanged. In the narrower case where the shifts succeed but the final target-row `UPDATE` itself still affects zero rows (for example a concurrent modification narrows the match after the row was already locked), the open savepoint is undone through `undoOrFail()` before returning `false` — there, `ROLLBACK TO` is **not** best-effort: its own failure is thrown instead of the `false` result; the following `RELEASE SAVEPOINT` is still best effort. The scope lock, the caller's own earlier work, and the caller's own savepoints are left untouched; the caller still owns the surrounding transaction's commit/rollback.
-- **Owned path (no active caller transaction):** no savepoint statement is issued at all; a failure rolls back the whole owned transaction via `PdoTransactionRunner`.
+- **Participating in a caller-owned transaction:** only once the row is confirmed to exist *and* its clamped target order actually differs from its current order (the no-op and missing-row cases above never reach this point) does it open an operation-local savepoint (`SavepointScope::begin()`), immediately before the first mutating statement. A `Throwable` from the range-shift or target-write statements triggers `cleanupAfterFailure()` (best-effort `ROLLBACK TO`/`RELEASE`) and the original `Throwable` is rethrown unchanged. In the narrower case where the shifts succeed but the final target-row `UPDATE` itself still affects zero rows, the open savepoint is undone through `undoOrFail()` before returning `false` — there, `ROLLBACK TO` is **not** best-effort: its own failure is thrown instead of the `false` result; the following `RELEASE SAVEPOINT` is still best effort. If releasing the savepoint after a successful update fails, the method attempts to undo the operation and throws the release failure. The caller owns the surrounding transaction and its earlier work while that transaction remains active.
+- **Owned path (no active caller transaction):** the method uses no savepoint. It requests a whole-transaction rollback on an exception, on a missing target, or when the target update affects zero rows. Rollback is best effort through `PdoTransactionRunner`.
 - A deadlock (`1213`), the MariaDB `1020` hazard (§7.3), or a lock-wait timeout with `innodb_rollback_on_timeout=ON` can end the **caller's whole transaction** on the server; these surface as the original exception and are never swallowed or retried by this method.
 
 #### `rowExistsInScope()`
 
-A scope-aware existence check (soft-deleted rows excluded when configured); returns `false` for `$id <= 0` rather than throwing.
+A scope-aware existence check using a plain read. It excludes soft-deleted rows when configured. After validating the scope it returns `false` immediately for `$id <= 0`.
 
 ---
 
 ## 6. Exceptions reference
 
-Every package-defined exception listed below is `final`, extends a `maatify/exceptions` base class, and implements `PhpPersistenceExceptionInterface`. None declares its own constructor: construction, message/code/previous handling, and the `ApiAwareExceptionInterface` accessors (`getErrorCode()`, `getCategory()`, `getHttpStatus()`, `isSafe()`, `getMeta()`, `isRetryable()`) are all inherited from `maatify/exceptions ^1.0`, whose public constructor shape is:
+Every package-defined exception listed below is `final`, extends a `maatify/exceptions` base class, and implements `PhpPersistenceExceptionInterface`. None declares its own constructor: construction, `getMessage()`, `getCode()`, `getPrevious()`, and the `ApiAwareExceptionInterface` accessors (`getErrorCode()`, `getCategory()`, `getHttpStatus()`, `isSafe()`, `getMeta()`, `isRetryable()`) are all inherited from `maatify/exceptions ^1.0`, whose public constructor shape is:
 
 ```php
 __construct(
@@ -491,14 +501,14 @@ __construct(
 
 That constructor and the resulting accessor API are owned by `maatify/exceptions`, not by this package; see that package's own documentation for details beyond what a consumer needs to catch and read these exceptions.
 
-**External throwables are never wrapped.** `\PDOException` (and any other `Throwable` raised by the driver, the engine, or a caller's own callback) propagates through every runner and every Ordering/Pagination method completely unchanged, and does **not** implement `PhpPersistenceExceptionInterface`. A consumer that wants to catch "every failure, package-defined or not" must catch `\Throwable` and distinguish with `instanceof PhpPersistenceExceptionInterface`.
+External `\PDOException` or callback/mapper `Throwable` generally propagates unchanged. Cleanup failures may be suppressed to preserve the primary failure, and an eligible owned deadlock can be consumed by successful replay. Catch `\Throwable` if you need to catch both package-defined and external errors and distinguish them with `instanceof PhpPersistenceExceptionInterface`.
 
 ### 6.1 Transaction
 
 | Exception | Base | Thrown when |
 |---|---|---|
 | `InvalidTransactionConfigurationException` | `SystemMaatifyException` | A transaction-runner constructor receives `$maxDeadlockRetries` outside `[0, 3]`. |
-| `TransactionExecutionException` | `SystemMaatifyException` | A PDO transaction-control statement (`BEGIN`, `COMMIT`, `SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) returns `false` instead of throwing; or `SavepointScope::begin()` observes that a caller-owned transaction is no longer active right after `SAVEPOINT` succeeded; or `ScopedOrderingManager::moveWithinScope()`'s own equivalent guard fires before its first mutation. |
+| `TransactionExecutionException` | `SystemMaatifyException` | A PDO transaction-control statement (`BEGIN`, `COMMIT`, `SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) returns `false` instead of throwing; or the shared savepoint helper observes that a caller-owned transaction is no longer active immediately after a successful `SAVEPOINT`, before the callback or Ordering mutation. |
 
 ### 6.2 Pagination
 
@@ -541,15 +551,15 @@ This is a **documented hazard with evidence**, not an advertised, unconditional 
 What is verified, by named Integration tests (`tests/Integration/Ordering/ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest.php`, `ScopedOrderingManagerStaleSnapshotTest.php`, `ScopedOrderingManagerMoveStaleSnapshotTest.php`), on real MariaDB cells:
 
 - With `innodb_snapshot_isolation=ON` (the MariaDB 11.8+ default), a locking read inside `getNextPositionForUpdate()` or the scope lock inside `moveWithinScope()`, taken after an older `REPEATABLE READ` snapshot and touching a row changed since that snapshot, fails with the driver's `PDOException` carrying driver code `1020`. It propagates **completely unchanged** — no savepoint is attempted, no retry happens, and no setting is overridden.
-- The server may have **already rolled back the caller's whole transaction** when this happens, while `PDO::inTransaction()` can still report `true`. Continuing to use the connection as if the transaction were alive risks later statements running under an unintended implicit/autocommit transaction.
+- In the covered scenarios the server rolled back the caller’s whole transaction, including an earlier write, while `PDO::inTransaction()` could still report `true`. Continuing to use the connection as if the transaction were alive risks later statements running under an unintended implicit/autocommit transaction.
 - With the setting `OFF` (several ratified test cells default to `OFF`; see [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) §3), the ordinary "locking read sees the latest committed state" guarantee holds, matching MySQL 8.0/8.4 behavior.
 - The package **never** sets `innodb_snapshot_isolation`, the isolation level, or any other connection/session attribute, on any engine.
 
-**Consumer responsibility when this error can occur:** catch it at the layer that owns the transaction (not inside a savepoint — a savepoint does not help, by design) and restart the whole unit of work; or avoid the hazard by taking the caller's own serialization lock before the first non-locking read, by using `READ COMMITTED` for the transaction, or by setting `innodb_snapshot_isolation=OFF` on that connection (which disables lost-update protection for *all* of that connection's statements — a host-level choice this package does not make for the caller).
+The connection owner must account for the observed difference between the server’s transaction state and PDO’s report. The package leaves the original exception and session settings to the caller. Handling and recovery policy for this case remain deferred in DEC-009.
 
 ### 7.4 Deadlock replay bounds
 
-Deadlock replay (§5.1) is **opt-in** (`$maxDeadlockRetries` defaults to `0`), bounded to at most 3 attempts, applies **only** to a package-owned transaction (never a caller-owned one), and only for the specific SQLSTATE `40001` / driver code `1213` signature confirmed to have actually ended the runner-owned transaction. It is not a generic "retry on any database error" mechanism.
+Deadlock replay (§5.1) is **opt-in** (`$maxDeadlockRetries` defaults to `0`), bounded to at most 3 retries after the initial attempt, applies **only** to a package-owned transaction (never a caller-owned one), and only for the specific SQLSTATE `40001` / driver code `1213` signature confirmed to have actually ended the runner-owned transaction. It is not a generic "retry on any database error" mechanism.
 
 ---
 
@@ -567,7 +577,7 @@ Per [docs/architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md](docs/architecture/DA
 
 - `mysql-26.10.0` (the MySQL Innovation release) is **exploratory only**: it runs only on manual CI dispatch, is never required, and is excluded from every claim above.
 - "Version tested" here means exactly that: these named versions pass the capability's own Integration suite. It is **not** a "range verified" claim under DEC-008's endpoint rule, and it does not imply that an untested intermediate or later version behaves identically — in particular, do not infer MariaDB behavior for a version not listed above, since the `innodb_snapshot_isolation` default itself differs between the listed MariaDB versions (§7.3).
-- No workaround, retry, or configuration change is implemented, proposed, or implied for the MariaDB `1020` hazard; see §7.3.
+- The package implements no retry, session setting change, or recovery for MariaDB `1020`; see §7.3.
 
 ---
 

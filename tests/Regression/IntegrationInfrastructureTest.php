@@ -181,7 +181,7 @@ final class IntegrationInfrastructureTest extends TestCase
             $names[] = $chunks[$index];
             self::assertStringContainsString('timeout-minutes:', $chunks[$index + 1], $chunks[$index] . ' needs a timeout');
         }
-        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'exploratory', 'ci-gate'], $names);
+        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'examples-smoke', 'exploratory', 'ci-gate'], $names);
     }
 
     private static function constantSeconds(string $source, string $name): int
@@ -209,7 +209,7 @@ final class IntegrationInfrastructureTest extends TestCase
             + 600;
 
         $workflow = self::read('.github/workflows/ci.yml');
-        foreach (['integration', 'exploratory'] as $job) {
+        foreach (['integration', 'examples-smoke', 'exploratory'] as $job) {
             self::assertGreaterThanOrEqual(
                 $needed,
                 self::jobTimeoutMinutes($workflow, $job) * 60,
@@ -222,11 +222,17 @@ final class IntegrationInfrastructureTest extends TestCase
     {
         $workflow = self::read('.github/workflows/ci.yml');
 
-        self::assertStringContainsString('needs: [workflow-lint, static, compat, integration]', $workflow);
-        self::assertStringContainsString('name: CI gate', $workflow);
-        self::assertStringContainsString('if: always()', $workflow);
-        self::assertStringContainsString('all(.[]; .result == "success")', $workflow);
-        self::assertStringNotContainsString('needs: [workflow-lint, static, compat, integration, exploratory]', $workflow, 'the exploratory job is not required');
+        [, $gate] = array_pad(explode("\n  ci-gate:\n", $workflow, 2), 2, '');
+        self::assertMatchesRegularExpression(
+            '/^    needs: \[workflow-lint, static, compat, integration, examples-smoke\]$/m',
+            $gate,
+        );
+        self::assertStringNotContainsString('exploratory', $gate, 'the exploratory job is not required');
+        self::assertStringContainsString('name: CI gate', $gate);
+        self::assertStringContainsString('if: always()', $gate);
+        self::assertStringContainsString('RESULTS: ${{ toJSON(needs) }}', $gate);
+        self::assertStringContainsString('set -euo pipefail', $gate);
+        self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
     }
 
     public function testComposerAndToolingAreProvisionedDeterministically(): void

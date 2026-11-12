@@ -19,6 +19,18 @@ Consumer-facing integration guidance for `maatify/php-persistence`. This guide e
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 
+## Run the examples
+
+With Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs all three examples.
+
+For a standalone run, use a disposable database with InnoDB available. The account must have `CREATE`, `INSERT`, `SELECT`, `UPDATE`, and `DROP` privileges in that database. Set `PHP_PERSISTENCE_IT_HOST`, `PHP_PERSISTENCE_IT_PORT`, `PHP_PERSISTENCE_IT_DATABASE`, `PHP_PERSISTENCE_IT_USER`, and `PHP_PERSISTENCE_IT_PASSWORD` in the environment, then run the example from the repository root:
+
+```bash
+php examples/transaction_basic_usage.php
+php examples/pagination_basic_usage.php
+php examples/ordering_basic_usage.php
+```
+
 ---
 
 ## 1. Transaction
@@ -52,18 +64,19 @@ try {
 
         return (int) $pdo->lastInsertId();
     });
-    // Result: the callback's own return value, once committed (or already committed
-    // by the caller, if $pdo was already inside a transaction).
+    // Result: the callback value. If run() began the transaction, it committed
+    // before returning. Otherwise, the caller still decides whether to commit.
 } catch (TransactionExecutionException $e) {
     // Boundary: BEGIN/COMMIT returned false instead of throwing, or a transaction-
-    // control statement failed. The callback either never ran or was rolled back.
+    // control statement failed. A BEGIN failure prevents the callback from
+    // running. An owned COMMIT failure triggers a best-effort rollback.
 } catch (\Throwable $e) {
     // Boundary: the callback's own failure, rethrown unchanged after a best-effort
     // rollback (only when this call owned the transaction).
 }
 ```
 
-Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the same code is also called from inside a larger caller-owned transaction and a failure there must only undo *this* operation's own statements via a savepoint, not the whole surrounding transaction. See [Package Reference §5.1–§5.2 and §7](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#5-behavior-contracts) for the full ownership and deadlock-replay rules, including why replay only ever applies to a package-owned transaction.
+Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the same code is also called from inside a larger caller-owned transaction and you need operation-local, best-effort rollback while the caller’s transaction remains active. See [Package Reference §5.1–§5.2 and §7](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#5-behavior-contracts) for the full ownership and deadlock-replay rules, including why replay only ever applies to a package-owned transaction.
 
 ---
 
@@ -73,7 +86,7 @@ Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the s
 
 **Requirements:** your own SQL text and parameters for the three queries; a sort whitelist naming every column a caller may sort by.
 
-**Non-goals:** `PdoPaginator` does not build SQL from a model, does not open a transaction, and does not guarantee the three queries see one snapshot unless *you* wrap the call in your own transaction.
+**Non-goals:** `PdoPaginator` does not build SQL from a model, does not open a transaction, and leaves snapshot consistency to the caller’s transaction, isolation level, and SQL read semantics.
 
 **Inputs:** a `PDO` connection, a `PdoPaginationQueryDescriptor` (your SQL + params), a `PageRequest` (raw, untrusted `page`/`perPage`/`sortBy`/`sortDirection`), a `PaginationConfig` (defaults, bounds, sort whitelist), and a row-mapper callable.
 **Outputs:** a `PageResultDTO<TItem>`.
@@ -90,8 +103,15 @@ use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 
-// Input: raw request-shaped values — treat these as untrusted.
-$request = new PageRequest(page: $_GET['page'] ?? null, perPage: $_GET['per_page'] ?? null, sortBy: $_GET['sort'] ?? null);
+// Input: accept scalar strings from the query string and discard array values.
+$queryString = static fn(string $key): ?string =>
+    is_string($_GET[$key] ?? null) ? $_GET[$key] : null;
+$request = new PageRequest(
+    page: $queryString('page'),
+    perPage: $queryString('per_page'),
+    sortBy: $queryString('sort'),
+    sortDirection: $queryString('direction'),
+);
 
 $config = new PaginationConfig(
     sortWhitelist: new SortWhitelist(['created_at' => 'orders.created_at', 'id' => 'orders.id']),
@@ -115,11 +135,11 @@ $query = new PdoPaginationQueryDescriptor(
 $page = (new PdoPaginator())->paginate($pdo, $query, $request, $config, static fn(array $row): array => $row);
 
 // Result: a validated PageResultDTO.
-$json = $page->toArray(); // ['data' => [...], 'pagination' => ['page' => ..., 'per_page' => ..., ...]]
+$payload = $page->toArray(); // ['data' => [...], 'pagination' => ['page' => ..., 'per_page' => ..., ...]]
 
-// Boundary: $page->filtered/$page->total may legitimately disagree under concurrent
-// writes unless the whole call above runs inside your own transaction (see Package
-// Reference §5.3, "not one snapshot").
+// Boundary: concurrent commits can make counts and data disagree, even inside
+// READ COMMITTED. For one snapshot use consistent, non-locking reads on
+// transactional tables under compatible isolation, such as InnoDB REPEATABLE READ.
 ```
 
 See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#33-pagination-capability--maatifyphppersistencepagination) for every normalization rule and the exact `PaginationExecutionException`/`InvalidPaginationQueryException`/`InvalidPaginationConfigurationException` conditions.
@@ -135,7 +155,7 @@ See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.
 **Non-goals:** the manager does not create or alter the table, does not maintain a cache of positions, and does not fix a transaction the server has already rolled back (the MariaDB hazard in §7.3 of the Package Reference).
 
 **Inputs:** a `PDO` connection, a `ScopedOrderingConfig`, a scope value (or `null` for global/nullable-scope ordering), and — for a move — a row id and target order.
-**Outputs:** `int` (next position) or `bool` (move succeeded / row not found).
+**Outputs:** `int` (next position) or `bool` (whether the move succeeded, including a no-op).
 **Boundary:** `moveWithinScope()` always locks the whole scope and re-reads the current order from the database before deciding anything; it never trusts a caller-supplied "current order".
 
 ### Walkthrough: `Input → Public Call → Result → Boundary`
@@ -147,22 +167,26 @@ use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 
-// Input: trusted identifiers — not user input.
-$config = new ScopedOrderingConfig(table: 'shipping_rates', scopeColumn: 'method_id');
+// Input: an InnoDB table with id, method_id and display_order columns.
+$config = new ScopedOrderingConfig(table: 'shipping_rates', scopeColumn: 'method_id', deletedAtColumn: null);
 $manager = new ScopedOrderingManager();
 
-// Public Call, allocation: a locking read requires an active caller-owned transaction.
 $nextPosition = (new PdoTransactionRunner($pdo))->run(
-    fn(): int => $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7),
-);
-// Result: the next integer position for method_id = 7, derived from the latest
-// committed row, not from a possibly-stale REPEATABLE READ snapshot.
+    function () use ($pdo, $manager, $config): int {
+        // Public Call: read the next position and insert before releasing the lock.
+        $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
+        $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)')
+            ->execute(['method' => 7, 'position' => $position]);
 
-// Public Call, move: moveWithinScope() owns a transaction here because none is active.
+        return $position;
+    },
+);
+
+// Public Call: if no caller transaction is active, the manager owns this move.
 $moved = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 42, newOrder: 1);
-// Result: true (moved, or already at that position) or false (row not found in scope 7).
-// Boundary: a Throwable during the shift/update is rethrown unchanged; nothing here
-// is swallowed, and newOrder is silently clamped to the scope's current maximum.
+// Result: true on success (including a no-op); false if the target is absent
+// or its update affects zero rows after shifting.
+// Boundary: the target is limited to the maximum observed under the scope lock.
 ```
 
-Use `getNextPosition()` (a plain, non-locking read) only for previews or when no older `REPEATABLE READ` snapshot can exist yet (outside a transaction, under `READ COMMITTED`, or after your own serialization lock); use `getNextPositionForUpdate()` when the position will actually be used for an insert inside the same transaction. See [Package Reference §5.4 and §7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) for the full locking, clamping, savepoint, and MariaDB-hazard rules.
+Use `getNextPosition()` (a plain, non-locking read) only for previews or when no older `REPEATABLE READ` snapshot can exist yet (outside a transaction, under `READ COMMITTED`, or after your own serialization lock); use `getNextPositionForUpdate()` when the position will actually be used for an insert inside the same transaction. Serialize first inserts into an empty scope with a caller-owned lock shared by all competing writers. See [Package Reference §5.4 and §7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) for the full locking, clamping, savepoint, and MariaDB-hazard rules.

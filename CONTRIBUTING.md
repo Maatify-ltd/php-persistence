@@ -21,10 +21,14 @@ A change that would alter the public API, add a new capability, change a documen
 
 ## Local verification
 
-These are the exact commands CI runs; see [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) for the full local/CI parity table.
+The commands below cover local setup and verification; see [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) for the full local/CI parity table.
 
 ```bash
-composer install              # resolves dependencies; no lock file is committed (see below)
+composer update --prefer-stable --no-progress
+composer validate --strict
+composer check-platform-reqs
+composer dump-autoload --optimize --strict-psr
+composer audit --no-interaction --abandoned=fail
 composer analyse               # PHPStan, level max, zero errors, no baseline
 composer format:check          # PER-CS 3.1 code style, non-mutating
 composer syntax                # php -l over src, tests, scripts, examples
@@ -33,6 +37,7 @@ composer test:unit             # no Docker needed
 composer test:regression       # no Docker needed
 composer test:integration      # needs Docker; starts a disposable MySQL/MariaDB service
 composer examples:smoke        # needs Docker; smoke-executes examples/ against a real engine
+actionlint .github/workflows/*.yml
 ```
 
 `composer format` (without `:check`) applies PER-CS 3.1 fixes; do not commit an automatic reformat of code you did not otherwise touch.
@@ -51,7 +56,7 @@ This package does not commit `composer.lock`. CI resolves both `latest` and `low
 
 - Keep a pull request to one coherent change; include its own tests and any directly affected documentation in the same change rather than splitting them across separate pull requests.
 - Describe the change, its rationale, and which local commands above you ran.
-- All applicable CI gates (static checks, compatibility matrix, Integration) must pass before a merge is considered; CI gating and Git/merge permissions follow [AGENTS.md](AGENTS.md) and the pinned `AI_COLLABORATION_WORKFLOW_AR.md`/`GITHUB_PHASE_STACK_WORKFLOW_AR.md` — in particular, merges require explicit Owner authorization.
+- All applicable CI gates (workflow lint, static checks, compatibility matrix, Integration, and example smoke) must pass before a merge is considered; CI gating and Git/merge permissions follow [AGENTS.md](AGENTS.md) and the pinned `AI_COLLABORATION_WORKFLOW_AR.md`/`GITHUB_PHASE_STACK_WORKFLOW_AR.md` — in particular, merges require explicit Owner authorization.
 
 ## Reporting a security issue
 

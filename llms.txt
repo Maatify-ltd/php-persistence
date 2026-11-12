@@ -2,7 +2,7 @@
 
 > Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB, over a caller-supplied `PDO` connection. Development/Unpublished: not installable from Packagist today.
 
-This file is a navigation map for an AI agent acting as a **consumer** of this package, not as a contributor to this repository. Only the sources linked below are the supported consumer contract. Do not treat `src/` internals, private or `@internal` classes, undocumented methods, tests, fixtures, `AGENTS.md`, or the internal engineering-standards snapshot under `docs/php-engineering-standards/` as a supported consumer contract merely because they are visible in the repository: being visible is not the same as being supported.
+This map is for package consumers. Use the Package Reference for the public runtime contract and the guide and examples for usage. Repository workflow and governance are documented separately for contributors in CONTRIBUTING.md.
 
 ## Consumer documentation
 
@@ -15,7 +15,3 @@ This file is a navigation map for an AI agent acting as a **consumer** of this p
 
 - [CHANGELOG.md](CHANGELOG.md): release history and unreleased changes.
 - [SECURITY.md](SECURITY.md): supported state and the vulnerability-reporting channel.
-
-## Optional
-
-- [CONTRIBUTING.md](CONTRIBUTING.md): contribution process and local verification commands, useful background for a consumer evaluating the project's maintenance state.
