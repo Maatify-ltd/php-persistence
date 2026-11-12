@@ -37,6 +37,7 @@ composer test:unit             # no Docker needed
 composer test:regression       # no Docker needed
 composer test:integration      # needs Docker; starts a disposable MySQL/MariaDB service
 composer examples:smoke        # needs Docker; smoke-executes examples/ against a real engine
+composer test:consumer         # needs Docker; two fresh external Composer verification runs
 actionlint .github/workflows/*.yml
 ```
 
@@ -56,7 +57,7 @@ This package does not commit `composer.lock`. CI resolves both `latest` and `low
 
 - Keep a pull request to one coherent change; include its own tests and any directly affected documentation in the same change rather than splitting them across separate pull requests.
 - Describe the change, its rationale, and which local commands above you ran.
-- All applicable CI gates (workflow lint, static checks, compatibility matrix, Integration, and example smoke) must pass before a merge is considered; CI gating and Git/merge permissions follow [AGENTS.md](AGENTS.md) and the pinned `AI_COLLABORATION_WORKFLOW_AR.md`/`GITHUB_PHASE_STACK_WORKFLOW_AR.md` — in particular, merges require explicit Owner authorization.
+- All applicable CI gates (workflow lint, static checks, compatibility matrix, Integration, example smoke, and consumer verification) must pass before a merge is considered; CI gating and Git/merge permissions follow [AGENTS.md](AGENTS.md) and the pinned `AI_COLLABORATION_WORKFLOW_AR.md`/`GITHUB_PHASE_STACK_WORKFLOW_AR.md` — in particular, merges require explicit Owner authorization.
 
 ## Reporting a security issue
 

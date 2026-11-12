@@ -181,7 +181,7 @@ final class IntegrationInfrastructureTest extends TestCase
             $names[] = $chunks[$index];
             self::assertStringContainsString('timeout-minutes:', $chunks[$index + 1], $chunks[$index] . ' needs a timeout');
         }
-        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'examples-smoke', 'exploratory', 'ci-gate'], $names);
+        self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'examples-smoke', 'consumer-verification', 'exploratory', 'ci-gate'], $names);
     }
 
     private static function constantSeconds(string $source, string $name): int
@@ -209,7 +209,7 @@ final class IntegrationInfrastructureTest extends TestCase
             + 600;
 
         $workflow = self::read('.github/workflows/ci.yml');
-        foreach (['integration', 'examples-smoke', 'exploratory'] as $job) {
+        foreach (['integration', 'examples-smoke', 'consumer-verification', 'exploratory'] as $job) {
             self::assertGreaterThanOrEqual(
                 $needed,
                 self::jobTimeoutMinutes($workflow, $job) * 60,
@@ -224,7 +224,7 @@ final class IntegrationInfrastructureTest extends TestCase
 
         [, $gate] = array_pad(explode("\n  ci-gate:\n", $workflow, 2), 2, '');
         self::assertMatchesRegularExpression(
-            '/^    needs: \[workflow-lint, static, compat, integration, examples-smoke\]$/m',
+            '/^    needs: \[workflow-lint, static, compat, integration, examples-smoke, consumer-verification\]$/m',
             $gate,
         );
         self::assertStringNotContainsString('exploratory', $gate, 'the exploratory job is not required');

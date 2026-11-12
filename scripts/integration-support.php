@@ -348,8 +348,9 @@ function connect(array $suiteEnvironment, string $user, string $password): PDO
  * @param list<string> $compose
  * @param array{engine: string, image: string, tag: string, digest: string, expectedVersion: string, tier: string, platform: ?string, required: bool} $cell
  * @param array{cell: ?string, freshRuns: int, suitePasses: int} $options
+ * @param (callable(array<string, string>): int)|null $verification Optional external verification, with the same service lifecycle and residue checks.
  */
-function runOnService(string $root, string $cellKey, array $cell, array $options, array $environment, array $compose): int
+function runOnService(string $root, string $cellKey, array $cell, array $options, array $environment, array $compose, ?callable $verification = null): int
 {
     [$upStatus, , $upError] = execute([...$compose, 'up', '--detach', '--wait', '--wait-timeout', (string) HEALTH_TIMEOUT_SECONDS], $environment, $root, boxed(secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', HEALTH_TIMEOUT_SECONDS + 420)));
     if ($upStatus !== 0) {
@@ -423,8 +424,11 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
             return EXIT_INFRASTRUCTURE;
         }
         echo '--- suite pass ' . $pass . '/' . $options['suitePasses'] . "\n";
-        if (passthrough($phpunit, $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900))) !== 0) {
-            return EXIT_TEST_FAILURE;
+        $result = $verification === null
+            ? passthrough($phpunit, $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)))
+            : $verification($suiteEnvironment);
+        if ($result !== 0) {
+            return $verification === null ? EXIT_TEST_FAILURE : $result;
         }
         try {
             // The application user has no PROCESS privilege; the disposable root account inspects the server.
@@ -452,8 +456,9 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
  *
  * @param array{engine: string, image: string, tag: string, digest: string, expectedVersion: string, tier: string, platform: ?string, required: bool} $cell
  * @param array{cell: ?string, freshRuns: int, suitePasses: int} $options
+ * @param (callable(array<string, string>): int)|null $verification Optional external verification, with the same service lifecycle and residue checks.
  */
-function lifecycle(string $root, string $cellKey, array $cell, array $options, int $number): int
+function lifecycle(string $root, string $cellKey, array $cell, array $options, int $number, ?callable $verification = null): int
 {
     $project = 'phppersist-it-' . bin2hex(random_bytes(4));
     $environment = [
@@ -483,7 +488,7 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
 
     $status = EXIT_INFRASTRUCTURE;
     try {
-        $status = runOnService($root, $cellKey, $cell, $options, $environment, $compose);
+        $status = runOnService($root, $cellKey, $cell, $options, $environment, $compose, $verification);
     } finally {
         $torndown = teardown($compose, $project, $environment, $root);
     }
