@@ -20,6 +20,10 @@ const CONSUMER_CELL = 'mysql-8.4.13';
  */
 function consumerCommand(array $command, string $directory, array $environment = []): string
 {
+    if (remainingWorkSeconds() < 1) {
+        throw new RuntimeException('Consumer verification time budget exhausted');
+    }
+
     [$status, $out, $error] = execute($command, $environment, $directory, boxed(180));
     if ($status !== 0) {
         throw new RuntimeException($command[0] . ' failed (' . $status . '): ' . $error);
@@ -42,7 +46,7 @@ function writeConsumerManifest(string $directory, array $config): void
  * @param array<string, string> $environment
  * @param array<string, mixed> $policy
  */
-function runConsumerRoot(string $root, string $workspace, string $scenario, string $candidateRef, string $candidateTree, array $environment, array $policy): int
+function runConsumerRoot(string $workspace, string $scenario, string $candidateRef, string $candidateTree, array $environment, array $policy): int
 {
     $directory = $workspace . '/' . $scenario;
     $candidateVersion = 'dev-candidate';
@@ -103,53 +107,76 @@ function runConsumerRoot(string $root, string $workspace, string $scenario, stri
         throw new RuntimeException('Candidate installation is not an independent copy of the exact artifact');
     }
 
-    if (!copy($root . '/harness/consumer.php', $directory . '/consumer.php')) {
-        throw new RuntimeException('Cannot stage consumer workload');
+    consumerCommand(['tar', '-xf', $workspace . '/harness.tar', '-C', $directory], $workspace);
+    if (remainingWorkSeconds() < 1) {
+        throw new RuntimeException('Consumer verification time budget exhausted before running ' . $scenario);
     }
     echo "CONSUMER-INSTALL scenario={$scenario} candidate={$candidateRef} tree={$candidateTree} legacy={$legacyRef}\n";
 
     return passthrough([PHP_BINARY, $directory . '/consumer.php', $scenario], $environment, $directory, boxed(120));
 }
 
-/**
- * @param array<string, string> $environment
- * @param array<string, mixed> $policy
- */
-function verifyConsumer(string $root, array $environment, array $policy): int
+function cleanupConsumerWorkspace(string $workspace): bool
+{
+    [$cleanupStatus] = execute(['rm', '-rf', '--', $workspace]);
+    if ($cleanupStatus !== 0 || file_exists($workspace)) {
+        fwrite(STDERR, "Consumer workspace cleanup failed\n");
+
+        return false;
+    }
+
+    return true;
+}
+
+/** @param array<string, string> $environment */
+function verifyConsumer(string $root, string $candidateRef, string $candidateTree, array $environment, int $suiteTimeout): int
 {
     $workspace = sys_get_temp_dir() . '/pp-consumer-' . bin2hex(random_bytes(12));
     if (!mkdir($workspace, 0700)) {
         throw new RuntimeException('Cannot create consumer workspace');
     }
 
+    $overallDeadline = OrchestrationBudget::$deadline;
+    OrchestrationBudget::$deadline = microtime(true) + boxed($suiteTimeout) + reserveSeconds();
     $status = EXIT_INFRASTRUCTURE;
     try {
-        $candidateRef = consumerCommand(['git', 'rev-parse', 'HEAD'], $root);
-        $candidateTree = consumerCommand(['git', 'rev-parse', $candidateRef . '^{tree}'], $root);
         $archive = $workspace . '/candidate.tar';
         consumerCommand(['git', 'archive', '--format=tar', '--output=' . $archive, $candidateRef], $root);
         if (!mkdir($workspace . '/candidate', 0700)) {
             throw new RuntimeException('Cannot create candidate artifact directory');
         }
         consumerCommand(['tar', '-xf', $archive, '-C', $workspace . '/candidate'], $root);
+        consumerCommand(['git', 'archive', '--format=tar', '--output=' . $workspace . '/harness.tar', $candidateRef . ':harness'], $root);
+        $manifest = json_decode((string) file_get_contents($workspace . '/candidate/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        $config = is_array($manifest) ? ($manifest['config'] ?? null) : null;
+        if (!is_array($config) || !is_array($config['policy'] ?? null)) {
+            throw new RuntimeException('Missing Composer policy in the candidate archive');
+        }
+        /** @var array<string, mixed> $policy */
+        $policy = $config['policy'];
         $legacyArchive = $workspace . '/legacy.tar.gz';
         consumerCommand(['curl', '--fail', '--silent', '--show-error', '--location', '--output', $legacyArchive,
             'https://codeload.github.com/Maatify/persistence/tar.gz/' . LEGACY_SOURCE_REF], $workspace);
         consumerCommand(['tar', '-xzf', $legacyArchive], $workspace);
 
         $status = EXIT_TEST_FAILURE;
-        if (runConsumerRoot($root, $workspace, 'coexistence', $candidateRef, $candidateTree, $environment, $policy) === 0
-            && runConsumerRoot($root, $workspace, 'differential', $candidateRef, $candidateTree, $environment, $policy) === 0
+        if (runConsumerRoot($workspace, 'coexistence', $candidateRef, $candidateTree, $environment, $policy) === 0
+            && runConsumerRoot($workspace, 'differential', $candidateRef, $candidateTree, $environment, $policy) === 0
         ) {
             $status = 0;
         }
     } catch (RuntimeException $exception) {
         fwrite(STDERR, $exception->getMessage() . "\n");
     } finally {
-        [$cleanupStatus] = execute(['rm', '-rf', '--', $workspace]);
-        if ($cleanupStatus !== 0 || file_exists($workspace)) {
-            fwrite(STDERR, "Consumer workspace cleanup failed\n");
-            $status = EXIT_INFRASTRUCTURE;
+        OrchestrationBudget::$deadline = $overallDeadline;
+        try {
+            if (!cleanupConsumerWorkspace($workspace)) {
+                $status = EXIT_INFRASTRUCTURE;
+            }
+        } catch (ConsumerVerificationInterrupted $interruption) {
+            cleanupConsumerWorkspace($workspace);
+
+            throw $interruption;
         }
     }
 
@@ -161,9 +188,10 @@ $arguments = $_SERVER['argv'] ?? null;
 if (!is_array($arguments) || count($arguments) !== 1) {
     fail(EXIT_USAGE, 'Usage: composer test:consumer');
 }
-foreach (['PP_UP_TIMEOUT_SECONDS', 'PP_SUITE_TIMEOUT_SECONDS', 'PP_TEARDOWN_TIMEOUT_SECONDS'] as $setting) {
+foreach (['PP_UP_TIMEOUT_SECONDS', 'PP_TEARDOWN_TIMEOUT_SECONDS'] as $setting) {
     secondsFromEnvironment($setting, 1);
 }
+$suiteTimeout = secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900);
 startBudget();
 
 foreach ([['docker', 'compose', 'version'], ['docker', 'info'], ['composer', '--version'], ['git', '--version'], ['curl', '--version'], ['tar', '--version']] as $check) {
@@ -176,14 +204,12 @@ if (!extension_loaded('pdo_mysql')) {
     fail(EXIT_INFRASTRUCTURE, 'Prerequisite failed: ext-pdo_mysql is not loaded');
 }
 
-$manifest = json_decode((string) file_get_contents($root . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
-$config = is_array($manifest) ? ($manifest['config'] ?? null) : null;
-if (!is_array($config) || !is_array($config['policy'] ?? null)) {
-    fail(EXIT_USAGE, 'Missing Composer policy');
+try {
+    $candidateRef = consumerCommand(['git', 'rev-parse', 'HEAD'], $root);
+    $candidateTree = consumerCommand(['git', 'rev-parse', $candidateRef . '^{tree}'], $root);
+} catch (RuntimeException $exception) {
+    fail(EXIT_INFRASTRUCTURE, $exception->getMessage());
 }
-/** @var array<string, mixed> $policy */
-$policy = $config['policy'];
-
 $cell = loadMatrix($root)['cells'][CONSUMER_CELL];
 $options = ['cell' => CONSUMER_CELL, 'freshRuns' => 2, 'suitePasses' => 1];
 for ($run = 1; $run <= $options['freshRuns']; $run++) {
@@ -191,7 +217,7 @@ for ($run = 1; $run <= $options['freshRuns']; $run++) {
         fail(EXIT_INFRASTRUCTURE, 'No time remains for another clean consumer lifecycle');
     }
 
-    $status = lifecycle($root, CONSUMER_CELL, $cell, $options, $run, static fn(array $environment): int => verifyConsumer($root, $environment, $policy));
+    $status = lifecycle($root, CONSUMER_CELL, $cell, $options, $run, static fn(array $environment): int => verifyConsumer($root, $candidateRef, $candidateTree, $environment, $suiteTimeout));
     if ($status !== 0) {
         exit($status);
     }

@@ -20,6 +20,11 @@ const TIMEOUT_EXIT_STATUS = 124;
 const TERMINATION_GRACE_SECONDS = 5;
 
 /**
+ * A catchable signal in consumer verification. It unwinds the workspace before Compose teardown.
+ */
+final class ConsumerVerificationInterrupted extends Exception {}
+
+/**
  * Positive integer seconds from an environment variable, or the default when it is not set.
  * A set but invalid value is a configuration error.
  */
@@ -145,32 +150,44 @@ function execute(array $command, array $environment = [], ?string $cwd = null, i
         stream_set_blocking($stream, false);
     }
     $deadline = microtime(true) + $timeoutSeconds;
-    while ($open !== []) {
-        if (microtime(true) >= $deadline) {
-            terminateProcess($process);
-            foreach ($open as $stream) {
-                fclose($stream);
-            }
-            proc_close($process);
+    try {
+        while ($open !== []) {
+            if (microtime(true) >= $deadline) {
+                terminateProcess($process);
+                foreach ($open as $stream) {
+                    fclose($stream);
+                }
+                proc_close($process);
 
-            return [TIMEOUT_EXIT_STATUS, $buffers[1], $buffers[2] . "\n" . $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n"];
-        }
-        $read = array_values($open);
-        $write = null;
-        $except = null;
-        if (stream_select($read, $write, $except, 1) === false) {
-            break;
-        }
-        foreach ($open as $index => $stream) {
-            $chunk = fread($stream, 65536);
-            if ($chunk !== false && $chunk !== '') {
-                $buffers[$index] .= $chunk;
+                return [TIMEOUT_EXIT_STATUS, $buffers[1], $buffers[2] . "\n" . $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n"];
             }
-            if (feof($stream)) {
+            $read = array_values($open);
+            $write = null;
+            $except = null;
+            if (stream_select($read, $write, $except, 1) === false) {
+                break;
+            }
+            foreach ($open as $index => $stream) {
+                $chunk = fread($stream, 65536);
+                if ($chunk !== false && $chunk !== '') {
+                    $buffers[$index] .= $chunk;
+                }
+                if (feof($stream)) {
+                    fclose($stream);
+                    unset($open[$index]);
+                }
+            }
+        }
+    } catch (ConsumerVerificationInterrupted $exception) {
+        terminateProcess($process);
+        foreach ($open as $stream) {
+            if (is_resource($stream)) {
                 fclose($stream);
-                unset($open[$index]);
             }
         }
+        proc_close($process);
+
+        throw $exception;
     }
 
     return [proc_close($process), $buffers[1], $buffers[2]];
@@ -190,21 +207,30 @@ function passthrough(array $command, array $environment, string $cwd, int $timeo
         return 127;
     }
     $deadline = microtime(true) + $timeoutSeconds;
-    while (true) {
-        $status = proc_get_status($process);
-        if (!$status['running']) {
-            $code = proc_close($process);
+    try {
+        while (true) {
+            $status = proc_get_status($process);
+            if (!$status['running']) {
+                $code = proc_close($process);
 
-            return $code === -1 ? $status['exitcode'] : $code;
+                return $code === -1 ? $status['exitcode'] : $code;
+            }
+            if (microtime(true) >= $deadline) {
+                terminateProcess($process);
+                proc_close($process);
+                fwrite(STDERR, $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n");
+
+                return TIMEOUT_EXIT_STATUS;
+            }
+            usleep(100_000);
         }
-        if (microtime(true) >= $deadline) {
+    } catch (ConsumerVerificationInterrupted $exception) {
+        if (is_resource($process)) {
             terminateProcess($process);
             proc_close($process);
-            fwrite(STDERR, $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n");
-
-            return TIMEOUT_EXIT_STATUS;
         }
-        usleep(100_000);
+
+        throw $exception;
     }
 }
 
@@ -477,7 +503,13 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
         pcntl_async_signals(true);
         foreach ([SIGINT, SIGTERM] as $signal) {
-            pcntl_signal($signal, static function () use ($compose, $project, $environment, $root): void {
+            pcntl_signal($signal, static function () use ($compose, $project, $environment, $root, $verification): void {
+                if ($verification !== null) {
+                    pcntl_signal(SIGINT, SIG_IGN);
+                    pcntl_signal(SIGTERM, SIG_IGN);
+
+                    throw new ConsumerVerificationInterrupted();
+                }
                 teardown($compose, $project, $environment, $root);
                 exit(130);
             });
@@ -489,8 +521,15 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     $status = EXIT_INFRASTRUCTURE;
     try {
         $status = runOnService($root, $cellKey, $cell, $options, $environment, $compose, $verification);
+    } catch (ConsumerVerificationInterrupted) {
+        $status = 130;
     } finally {
-        $torndown = teardown($compose, $project, $environment, $root);
+        try {
+            $torndown = teardown($compose, $project, $environment, $root);
+        } catch (ConsumerVerificationInterrupted) {
+            $torndown = teardown($compose, $project, $environment, $root);
+            $status = 130;
+        }
     }
 
     return $status === 0 && !$torndown ? EXIT_INFRASTRUCTURE : $status;

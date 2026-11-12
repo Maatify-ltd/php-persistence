@@ -147,6 +147,17 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         verifySame(true, $manager->moveWithinScope($pdo, $config, 7, 1, 3), 'Move at current position succeeds');
         verifySame(false, $manager->moveWithinScope($pdo, $config, 7, 99, 2), 'Missing move reports false');
 
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->beginTransaction();
+        verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Initial snapshot sees the old maximum');
+        $writer->exec("INSERT INTO `{$table}` (id, scope_id, position, deleted_at) VALUES (9, 7, 9, NULL)");
+        verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Plain snapshot remains stale after the independent commit');
+        verifySame(true, $manager->moveWithinScope($pdo, $config, 7, 1, 99), 'Move uses the current locked maximum');
+        verifySame(9, (int) $pdo->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Move clamps to the new maximum instead of the snapshot maximum');
+        $pdo->rollBack();
+        verifySame(3, (int) $writer->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Caller can undo the stale-snapshot move');
+        $writer->exec("DELETE FROM `{$table}` WHERE id = 9");
+
         $timestampedConfig = $legacy
             ? new LegacyOrderingConfig(table: $table, scopeColumn: 'scope_id', orderColumn: 'position', updatedAtColumn: 'stamp')
             : new ScopedOrderingConfig(table: $table, scopeColumn: 'scope_id', orderColumn: 'position', updatedAtColumn: 'stamp');
@@ -232,28 +243,30 @@ function exerciseSharedConnection(PDO $pdo, bool $legacySource): void
         $legacy = $legacySource ? new LegacySourceSavepointRunner($pdo) : new LegacyReleasedSavepointRunner($pdo);
         verifySame(false, is_a($candidate, $legacy::class), 'Candidate is a distinct type');
         verifySame(false, is_a($legacy, $candidate::class), 'Legacy is a distinct type');
-        $pdo->beginTransaction();
-        $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (1, NULL, 1, NULL)');
-        $failure = new RuntimeException('Rollback the nested operation');
-        $outerResult = $legacy->run(static function () use ($candidate, $pdo, $failure): string {
-            $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (2, NULL, 2, NULL)');
-            try {
-                $candidate->run(static function () use ($pdo, $failure): never {
-                    $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (3, NULL, 3, NULL)');
-                    throw $failure;
-                });
-                throw new LogicException('Nested runner did not propagate the callback exception');
-            } catch (RuntimeException $error) {
-                verifySame($failure, $error, 'Nested candidate propagated the same exception');
-            }
-            verifySame([1, 2], catalogIds($pdo, 'consumer_coexistence'), 'Nested rollback retained caller and legacy work');
+        foreach ([[$legacy, $candidate], [$candidate, $legacy]] as [$outer, $inner]) {
+            $pdo->beginTransaction();
+            $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (1, NULL, 1, NULL)');
+            $failure = new RuntimeException('Rollback the nested operation');
+            $outerResult = $outer->run(static function () use ($inner, $pdo, $failure): string {
+                $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (2, NULL, 2, NULL)');
+                try {
+                    $inner->run(static function () use ($pdo, $failure): never {
+                        $pdo->exec('INSERT INTO consumer_coexistence (id, scope_id, position, deleted_at) VALUES (3, NULL, 3, NULL)');
+                        throw $failure;
+                    });
+                    throw new LogicException('Nested runner did not propagate the callback exception');
+                } catch (RuntimeException $error) {
+                    verifySame($failure, $error, 'Nested runner propagated the same exception');
+                }
+                verifySame([1, 2], catalogIds($pdo, 'consumer_coexistence'), 'Nested rollback retained caller and outer runner work');
 
-            return 'outer result';
-        });
-        verifySame('outer result', $outerResult, 'Legacy savepoint returns the callback result');
-        verifySame(true, $pdo->inTransaction(), 'Outer transaction remains caller-owned');
-        $pdo->rollBack();
-        verifySame([], catalogIds($pdo, $table), 'Caller still decides whether to persist both packages’ work');
+                return 'outer result';
+            });
+            verifySame('outer result', $outerResult, 'Outer savepoint returns the callback result');
+            verifySame(true, $pdo->inTransaction(), 'Outer transaction remains caller-owned');
+            $pdo->rollBack();
+            verifySame([], catalogIds($pdo, $table), 'Caller still decides whether to persist both packages’ work');
+        }
     } finally {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
@@ -262,7 +275,138 @@ function exerciseSharedConnection(PDO $pdo, bool $legacySource): void
     }
 }
 
+/**
+ * Runs the other side of the retry fixture on an independent PDO connection.
+ */
+function runRetryPartner(): void
+{
+    $pdo = new CatalogConnection();
+    $pdo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+    $pdo->beginTransaction();
+    try {
+        // Modified rows make this transaction heavier than the single-write consumer attempt.
+        $pdo->exec('UPDATE consumer_retry SET weight = weight + 1 WHERE id >= 100');
+        $pdo->query('SELECT id FROM consumer_retry WHERE id = 2 FOR UPDATE')->fetchColumn();
+        fwrite(STDOUT, "LOCKED\n");
+        fflush(STDOUT);
+        verifySame("REQUEST\n", fgets(STDIN), 'Retry partner received request to form the cycle');
+        $pdo->query('SELECT id FROM consumer_retry WHERE id = 1 FOR UPDATE')->fetchColumn();
+    } finally {
+        $pdo->rollBack();
+    }
+    fwrite(STDOUT, "ROLLED BACK\n");
+    fflush(STDOUT);
+}
+
+/** @param resource $pipe */
+function expectRetryPartnerLine($pipe, string $line): void
+{
+    $read = [$pipe];
+    $write = null;
+    $except = null;
+    if (stream_select($read, $write, $except, 15) !== 1) {
+        throw new RuntimeException('Timed out waiting for the retry partner');
+    }
+    verifySame($line . "\n", fgets($pipe), 'Retry partner protocol');
+}
+
+/**
+ * Coordinates the conflicting row locks and propagates the actual driver exception to the runner.
+ */
+function induceConsumerDeadlock(PDO $pdo): never
+{
+    $pdo->query('SELECT id FROM consumer_retry WHERE id = 1 FOR UPDATE')->fetchColumn();
+    $child = proc_open([PHP_BINARY, __FILE__, 'retry-partner'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => STDERR], $pipes);
+    if (!is_resource($child)) {
+        throw new RuntimeException('Cannot start the retry partner');
+    }
+
+    $finished = false;
+    try {
+        expectRetryPartnerLine($pipes[1], 'LOCKED');
+        fwrite($pipes[0], "REQUEST\n");
+        fflush($pipes[0]);
+        try {
+            $pdo->query('SELECT id FROM consumer_retry WHERE id = 2 FOR UPDATE')->fetchColumn();
+        } catch (PDOException $error) {
+            verifySame('40001', $error->errorInfo[0] ?? null, 'Deadlock SQLSTATE');
+            verifySame(1213, (int) ($error->errorInfo[1] ?? 0), 'InnoDB chose the consumer as deadlock victim');
+            expectRetryPartnerLine($pipes[1], 'ROLLED BACK');
+            $finished = true;
+
+            throw $error;
+        }
+
+        throw new LogicException('The consumer did not receive a real deadlock');
+    } finally {
+        if (!$finished) {
+            proc_terminate($child);
+        }
+        fclose($pipes[0]);
+        fclose($pipes[1]);
+        $status = proc_close($child);
+        if ($finished) {
+            verifySame(0, $status, 'Retry partner exited successfully after rollback');
+        }
+    }
+}
+
+/**
+ * Proves replay from a fresh transaction and a single persisted result for both runner forms.
+ *
+ * @return array<string, array{attempts: int, committed: int, result: string}>
+ */
+function exerciseDeadlockRetry(PDO $pdo, bool $legacy): array
+{
+    $pdo->exec('CREATE TABLE consumer_retry (id INT PRIMARY KEY, weight INT NOT NULL) ENGINE=InnoDB');
+    $observer = new CatalogConnection();
+    try {
+        $pdo->exec('INSERT INTO consumer_retry VALUES (1, 0), (2, 0), (3, 0)');
+        $pdo->exec('INSERT INTO consumer_retry WITH RECURSIVE seq(n) AS (SELECT 100 UNION ALL SELECT n + 1 FROM seq WHERE n < 163) SELECT n, 0 FROM seq');
+        $pdo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+        $runners = $legacy
+            ? ['plain' => new LegacySourceRunner($pdo, 1), 'savepoint' => new LegacySourceSavepointRunner($pdo, 1)]
+            : ['plain' => new PdoTransactionRunner($pdo, 1), 'savepoint' => new PdoSavepointTransactionRunner($pdo, 1)];
+        $evidence = [];
+        foreach ($runners as $kind => $runner) {
+            $attempts = 0;
+            $result = $runner->run(static function () use ($pdo, &$attempts): string {
+                $attempts++;
+                verifySame(true, $pdo->inTransaction(), 'Every attempt begins in an active transaction');
+                $weight = (int) $pdo->query('SELECT weight FROM consumer_retry WHERE id = 3')->fetchColumn();
+                verifySame(0, $weight, 'The first attempt leaves no write visible to the replay');
+                $write = $pdo->prepare('UPDATE consumer_retry SET weight = :attempt WHERE id = 3');
+                $write->execute(['attempt' => $attempts]);
+                if ($attempts === 1) {
+                    induceConsumerDeadlock($pdo);
+                }
+
+                return 'replayed';
+            });
+            $committed = (int) $observer->query('SELECT weight FROM consumer_retry WHERE id = 3')->fetchColumn();
+            verifySame(2, $attempts, 'One real deadlock replays the full callback once');
+            verifySame(2, $committed, 'Only the second attempt is committed');
+            verifySame('replayed', $result, 'Replay returns the callback result');
+            verifySame(false, $pdo->inTransaction(), 'Runner ended its owned transaction');
+            verifySame(0, (int) $observer->query('SELECT SUM(weight) FROM consumer_retry WHERE id >= 100')->fetchColumn(), 'Partner left no writes');
+            $evidence[$kind] = ['attempts' => $attempts, 'committed' => $committed, 'result' => $result];
+            $pdo->exec('UPDATE consumer_retry SET weight = 0 WHERE id = 3');
+        }
+
+        return $evidence;
+    } finally {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $pdo->exec('DROP TABLE consumer_retry');
+    }
+}
+
 $scenario = $argv[1] ?? '';
+if ($scenario === 'retry-partner') {
+    runRetryPartner();
+    exit(0);
+}
 if (!in_array($scenario, ['coexistence', 'differential'], true)) {
     throw new InvalidArgumentException('Unknown consumer scenario');
 }
@@ -276,5 +420,9 @@ $candidate = exerciseCatalog($pdo, 'consumer_candidate', false);
 if ($scenario === 'differential') {
     $legacy = exerciseCatalog($pdo, 'consumer_legacy', true);
     verifySame($legacy, $candidate, 'Legacy baseline and candidate observable pagination results');
+    $candidateRetries = exerciseDeadlockRetry($pdo, false);
+    $legacyRetries = exerciseDeadlockRetry($pdo, true);
+    verifySame($legacyRetries, $candidateRetries, 'Both owned runner forms replay and commit equivalently');
+    echo 'CONSUMER RETRY OK scenarios=plain,savepoint baseline=candidate,legacy-source' . "\n";
 }
 echo "CONSUMER WORKFLOW OK scenario={$scenario}\n";
