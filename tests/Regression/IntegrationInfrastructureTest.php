@@ -257,13 +257,14 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
     }
 
-    public function testReleaseArtifactGateVerifiesTheExactWorkflowSha(): void
+    public function testReleaseArtifactGateVerifiesTheQualifiedRcTag(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');
         [, $following] = array_pad(explode("\n  release-artifact:\n", $workflow, 2), 2, '');
         [$job] = explode("\n  exploratory:\n", $following, 2);
-        self::assertStringContainsString('ref: ${{ github.event.pull_request.head.sha || github.sha }}', $job);
-        self::assertStringContainsString('ARTIFACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}', $job);
+        self::assertStringContainsString('ref: refs/tags/v1.0.0-rc.1', $job);
+        self::assertStringContainsString('ARTIFACT_SHA: 34c3b874525d36ae064c162cdd553bc75d18772b', $job);
+        self::assertStringContainsString('test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"', $job);
         self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"', $job);
         self::assertStringContainsString('persist-credentials: false', $job);
         self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));

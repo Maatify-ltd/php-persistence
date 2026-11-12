@@ -8,11 +8,15 @@
   <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
 </picture>
 
-[![Status at preparation](https://img.shields.io/badge/Status%20at%20preparation-Development-blue)](README.md#overview)
+[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1)
+[![Version](https://img.shields.io/badge/Version-1.0.0--rc.1-blue)](https://packagist.org/packages/maatify/php-persistence)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
 [![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](README.md#quality-status)
 
+[![Registry](https://img.shields.io/badge/Registry-Packagist-F28D1A)](https://packagist.org/packages/maatify/php-persistence)
+[![Monthly downloads](https://img.shields.io/packagist/dm/maatify/php-persistence)](https://packagist.org/packages/maatify/php-persistence/stats)
+[![Total downloads](https://img.shields.io/packagist/dt/maatify/php-persistence)](https://packagist.org/packages/maatify/php-persistence/stats)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
 
 [![Usage Guide](https://img.shields.io/badge/Docs-Usage_Guide-blue)](docs/guides/USAGE_GUIDE.md)
@@ -32,7 +36,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-This tree is prepared as the **Release Candidate artifact `1.0.0-rc.1`**. Its **publication state at qualification** is **Unpublished**.
+**Release Candidate `1.0.0-rc.1`** is published on [Packagist](https://packagist.org/packages/maatify/php-persistence) and available as a [GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1). The package has no Stable release.
 
 ## Key Features
 
@@ -53,13 +57,13 @@ These are declared runtime requirements, not a statement that any specific datab
 
 ## Installation
 
-The exact Composer installation target for this artifact is:
+Install the exact release candidate from Packagist:
 
 ```bash
 composer require maatify/php-persistence:1.0.0-rc.1
 ```
 
-This command resolves through the approved Composer distribution source only after that exact version is published. See the [target changelog](CHANGELOG.md#100-rc1) and [security policy](SECURITY.md) for lifecycle and support details.
+See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md) for release and support details.
 
 ## Usage
 
