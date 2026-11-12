@@ -218,6 +218,28 @@ final class IntegrationInfrastructureTest extends TestCase
         }
     }
 
+    #[DataProvider('suiteDeadlines')]
+    public function testSuiteDeadlinePreservesBothBudgets(?float $overall, float $now, int $suite, ?float $expected): void
+    {
+        require_once self::root() . '/scripts/integration-support.php';
+
+        self::assertSame($expected, suiteDeadline($overall, $now, $suite, 210));
+    }
+
+    /** @return array<string, array{?float, float, int, ?float}> */
+    public static function suiteDeadlines(): array
+    {
+        return [
+            'overall budget is tighter' => [322.5, 100.25, 30, 322.5],
+            'suite budget is tighter' => [400.0, 100.25, 30, 340.25],
+            'equal budgets' => [340.25, 100.25, 30, 340.25],
+            'no overall budget' => [null, 100.25, 30, 340.25],
+            'one whole second remains' => [311.25, 100.25, 30, 311.25],
+            'second cycle has subsecond work budget' => [322.5, 111.75, 30, null],
+            'second cycle has exhausted work budget' => [322.5, 112.5, 30, null],
+        ];
+    }
+
     public function testGateInspectsEveryRequiredJob(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');

@@ -131,15 +131,22 @@ function cleanupConsumerWorkspace(string $workspace): bool
 /** @param array<string, string> $environment */
 function verifyConsumer(string $root, string $candidateRef, string $candidateTree, array $environment, int $suiteTimeout): int
 {
+    $overallDeadline = OrchestrationBudget::$deadline;
+    $deadline = suiteDeadline($overallDeadline, microtime(true), $suiteTimeout, reserveSeconds());
+    if ($deadline === null) {
+        fwrite(STDERR, "Consumer verification time budget exhausted before suite startup\n");
+
+        return EXIT_INFRASTRUCTURE;
+    }
+
     $workspace = sys_get_temp_dir() . '/pp-consumer-' . bin2hex(random_bytes(12));
     if (!mkdir($workspace, 0700)) {
         throw new RuntimeException('Cannot create consumer workspace');
     }
 
-    $overallDeadline = OrchestrationBudget::$deadline;
-    OrchestrationBudget::$deadline = microtime(true) + boxed($suiteTimeout) + reserveSeconds();
     $status = EXIT_INFRASTRUCTURE;
     try {
+        OrchestrationBudget::$deadline = $deadline;
         $archive = $workspace . '/candidate.tar';
         consumerCommand(['git', 'archive', '--format=tar', '--output=' . $archive, $candidateRef], $root);
         if (!mkdir($workspace . '/candidate', 0700)) {

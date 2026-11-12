@@ -101,6 +101,21 @@ function boxed(int $ownSeconds): int
     return max(1, min($ownSeconds, remainingWorkSeconds()));
 }
 
+
+/**
+ * Computes a suite's absolute deadline without extending the overall budget.
+ * Returns null when fewer than one whole second remains for work before teardown.
+ */
+function suiteDeadline(?float $overallDeadline, float $now, int $suiteTimeout, int $reserve): ?float
+{
+    $deadline = $now + $suiteTimeout + $reserve;
+    if ($overallDeadline !== null) {
+        $deadline = min($deadline, $overallDeadline);
+    }
+
+    return $deadline - $now - $reserve >= 1 ? $deadline : null;
+}
+
 /**
  * Stops a process that exceeded its deadline: SIGTERM, a short grace period, then SIGKILL.
  *
