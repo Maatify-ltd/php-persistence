@@ -203,6 +203,27 @@ jobs:
           test -z "$(docker ps -aq --filter 'label=com.docker.compose.project')"
           test -z "$(docker volume ls -q --filter 'label=com.docker.compose.project')"
 
+  consumer-verification:
+    name: Consumer verification and coexistence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-php-composer
+        with:
+          php-version: "8.4"
+      - name: Install and verify external consumer twice on fresh MySQL
+        run: composer test:consumer
+      - name: No Compose resources remain
+        if: always()
+        run: |
+          set -euo pipefail
+          test -z "$(docker ps -aq --filter 'label=com.docker.compose.project')"
+          test -z "$(docker volume ls -q --filter 'label=com.docker.compose.project')"
+
   exploratory:
     name: Exploratory MySQL Innovation (not required)
     if: github.event_name == 'workflow_dispatch' && inputs.exploratory
@@ -225,7 +246,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [workflow-lint, static, compat, integration, examples-smoke]
+    needs: [workflow-lint, static, compat, integration, examples-smoke, consumer-verification]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

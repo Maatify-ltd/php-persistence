@@ -21,9 +21,10 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Regression suite | `composer test:regression` | Compat |
 | Integration suite (real database) | `composer test:integration` | Integration |
 | Standalone examples (real database) | `composer examples:smoke` | Examples smoke |
+| Consumer verification and coexistence | `composer test:consumer` | Consumer verification and coexistence |
 | Workflow lint | `actionlint` over `.github/workflows` | Workflow lint |
 
-Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, and Examples smoke. The exploratory cell is optional.
+Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, Examples smoke, and Consumer verification and coexistence. The exploratory cell is optional.
 
 ## 2. Integration lifecycle
 
@@ -77,6 +78,8 @@ PP_DB_CELL=mariadb-11.8.9 composer examples:smoke
 ```
 
 CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4. This smoke matrix is separate from the capability Integration matrix below.
+
+[Consumer verification](../guides/CONSUMER_VERIFICATION.md) uses two fresh MySQL lifecycles and separate production Composer roots.
 
 ## 3. Test matrix
 
