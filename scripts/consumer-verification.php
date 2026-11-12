@@ -48,11 +48,12 @@ function runConsumerRoot(string $root, string $workspace, string $scenario, stri
     $candidateVersion = 'dev-candidate';
     $legacyVersion = $scenario === 'coexistence' ? LEGACY_RELEASE : 'dev-baseline';
     $legacyRef = $scenario === 'coexistence' ? LEGACY_RELEASE_REF : LEGACY_SOURCE_REF;
-    $repositories = [
-        ['type' => 'path', 'url' => $workspace . '/candidate', 'options' => [
-            'symlink' => false, 'reference' => 'none', 'versions' => [CONSUMER_PACKAGE => $candidateVersion],
-        ]],
+    $candidateRepository = [
+        'type' => 'path',
+        'url' => $workspace . '/candidate',
+        'options' => ['symlink' => false, 'reference' => 'none', 'versions' => [CONSUMER_PACKAGE => $candidateVersion]],
     ];
+    $repositories = [$candidateRepository];
     if ($scenario === 'differential') {
         $repositories[] = ['type' => 'path', 'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF, 'options' => [
             'symlink' => false, 'reference' => 'none', 'versions' => [LEGACY_PACKAGE => $legacyVersion],
