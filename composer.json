@@ -16,7 +16,7 @@
     "php",
     "maatify"
   ],
-  "homepage": "https://github.com/Maatify/php-persistence",
+  "homepage": "https://github.com/Maatify-ltd/php-persistence",
   "type": "library",
   "license": "proprietary",
   "authors": [
@@ -27,8 +27,8 @@
     }
   ],
   "support": {
-    "issues": "https://github.com/Maatify/php-persistence/issues",
-    "source": "https://github.com/Maatify/php-persistence"
+    "issues": "https://github.com/Maatify-ltd/php-persistence/issues",
+    "source": "https://github.com/Maatify-ltd/php-persistence"
   },
   "autoload": {
     "psr-4": {
