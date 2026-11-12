@@ -6,6 +6,13 @@
     "pdo",
     "mysql",
     "mariadb",
+    "transaction",
+    "savepoint",
+    "deadlock-retry",
+    "pagination",
+    "ordering",
+    "scoped-ordering",
+    "row-locking",
     "php",
     "maatify"
   ],
