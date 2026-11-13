@@ -150,7 +150,12 @@ See [docs/architecture/QUALITY_TOOLING.md](docs/architecture/QUALITY_TOOLING.md)
 
 ## License
 
-Maatify Proprietary License — see [LICENSE](LICENSE). No usage rights are granted beyond what that file states.
+This package is proprietary. For use under the terms on this branch, request
+a free written license from [support@maatify.dev](mailto:support@maatify.dev).
+Include your organization name, if applicable, and an email address for
+security advisories and critical update notices. Maatify uses these details
+to administer licenses and send those notices. See [LICENSE](LICENSE) for
+the terms. Published versions carry their own license file.
 
 ## 👤 Author
 
