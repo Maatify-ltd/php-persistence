@@ -2,12 +2,12 @@
 
 - **Decision ID:** `DEC-002`
 - **Title:** Proprietary licensing
-- **Status:** `ACTIVE`
+- **Status:** `SUPERSEDED`
 - **Date:** `2026-10-23`
 - **Decision Authority:** `Project Owner`
 - **Scope / Concern:** License of the repository and of any package distributed from it.
 - **Supersedes:** `—`
-- **Superseded By:** `—`
+- **Superseded By:** `DEC-014`
 - **Canonical Contract / Current Owner:** [LICENSE](../../LICENSE)
 
 ## Context
