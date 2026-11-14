@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - Documented free written licenses and registration for security advisories and critical update notices.
 
+- Recorded Maatify Ltd. as the copyright holder and licensor for the next release.
+
 ## [1.0.0-rc.1] - 2026-11-12
 
 First release candidate, published on [Packagist](https://packagist.org/packages/maatify/php-persistence).
