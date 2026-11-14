@@ -17,7 +17,7 @@
 [![Registry](https://img.shields.io/badge/Registry-Packagist-F28D1A)](https://packagist.org/packages/maatify/php-persistence)
 [![Monthly downloads](https://img.shields.io/packagist/dm/maatify/php-persistence)](https://packagist.org/packages/maatify/php-persistence/stats)
 [![Total downloads](https://img.shields.io/packagist/dt/maatify/php-persistence)](https://packagist.org/packages/maatify/php-persistence/stats)
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify-ltd)
 
 [![Usage Guide](https://img.shields.io/badge/Docs-Usage_Guide-blue)](docs/guides/USAGE_GUIDE.md)
 [![Examples](https://img.shields.io/badge/Docs-Examples-blue)](examples/)
@@ -153,7 +153,7 @@ See [docs/architecture/QUALITY_TOOLING.md](docs/architecture/QUALITY_TOOLING.md)
 This package is proprietary. For use under the terms on this branch, request
 a free written license from [support@maatify.dev](mailto:support@maatify.dev).
 Include your organization name, if applicable, and an email address for
-security advisories and critical update notices. Maatify uses these details
+security advisories and critical update notices. Maatify Ltd. uses these details
 to administer licenses and send those notices. See [LICENSE](LICENSE) for
 the terms. Published versions carry their own license file.
 
