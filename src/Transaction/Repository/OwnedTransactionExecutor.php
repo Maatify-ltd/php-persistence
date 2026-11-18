@@ -209,13 +209,12 @@ final readonly class OwnedTransactionExecutor
 
     private function rollBackIfActive(): void
     {
-        if (!$this->pdo->inTransaction()) {
-            return;
-        }
-
         try {
-            $this->pdo->rollBack();
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
         } catch (Throwable) {
+            // A failed state check or rollback must not mask the primary failure.
         }
     }
 }
