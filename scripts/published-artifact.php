@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/integration-support.php';
 
 const PAV_PACKAGE = 'maatify/php-persistence';
-const PAV_TARGET = '1.0.0-rc.1';
+const PAV_TARGET = '1.0.0-rc.2';
 const PAV_REPOSITORY = 'Maatify-ltd/php-persistence';
 
 /** @param list<string> $command */

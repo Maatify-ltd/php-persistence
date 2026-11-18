@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/integration-support.php';
 
 const RELEASE_PACKAGE = 'maatify/php-persistence';
-const RELEASE_TARGET = '1.0.0-rc.1';
+const RELEASE_TARGET = '1.0.0-rc.2';
 const RELEASE_FILES = [
     'composer.json',
     'LICENSE',
