@@ -64,12 +64,13 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         ]];
     }
 
-    writeConsumerManifest($directory, [
+    $manifest = [
         'name' => 'verification/consumer',
         'repositories' => $repositories,
         'require' => [CONSUMER_PACKAGE => $candidateVersion, LEGACY_PACKAGE => $legacyVersion],
         'config' => ['policy' => $policy],
-    ]);
+    ];
+    writeConsumerManifest($directory, $manifest);
     $composerEnvironment = [
         'COMPOSER' => $directory . '/composer.json',
         'COMPOSER_HOME' => $directory . '/composer-home',
@@ -78,27 +79,56 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     ];
     consumerCommand(['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--no-progress'], $directory, $composerEnvironment);
     consumerCommand(['composer', 'check-platform-reqs', '--no-dev'], $directory, $composerEnvironment);
-    $audit = consumerCommand(['composer', 'audit', '--no-dev', '--no-interaction', '--abandoned=fail'], $directory, $composerEnvironment);
-    echo $audit . "\n";
 
-    $installed = json_decode((string) file_get_contents($directory . '/composer.lock'), true, 512, JSON_THROW_ON_ERROR);
-    if (!is_array($installed) || !is_array($installed['packages'] ?? null)) {
+    $lock = json_decode((string) file_get_contents($directory . '/composer.lock'), true, 512, JSON_THROW_ON_ERROR);
+    if (!is_array($lock) || !is_array($lock['packages'] ?? null)) {
         throw new RuntimeException('Invalid production lock metadata');
     }
 
-    $references = [];
-    foreach ($installed['packages'] as $package) {
+    $lockedPackages = [];
+    foreach ($lock['packages'] as $package) {
         if (is_array($package) && is_string($package['name'] ?? null)) {
-            $dist = $package['dist'] ?? null;
-            $references[$package['name']] = is_array($dist) ? ($dist['reference'] ?? null) : null;
+            $name = $package['name'];
+            if (isset($lockedPackages[$name])) {
+                throw new RuntimeException('Duplicate package in production lock metadata');
+            }
+
+            $lockedPackages[$name] = $package;
         }
     }
-    if (!array_key_exists(CONSUMER_PACKAGE, $references)
-        || !array_key_exists(LEGACY_PACKAGE, $references)
-        || ($scenario === 'coexistence' && $references[LEGACY_PACKAGE] !== $legacyRef)
-    ) {
+    $legacy = $lockedPackages[LEGACY_PACKAGE] ?? null;
+    if (!isset($lockedPackages[CONSUMER_PACKAGE]) || $legacy === null) {
         throw new RuntimeException('Installed lock does not identify the intended dependencies');
     }
+
+    if ($scenario === 'coexistence') {
+        $dist = $legacy['dist'] ?? null;
+        if (!in_array($legacy['version'] ?? null, [LEGACY_RELEASE, 'v' . LEGACY_RELEASE], true)
+            || !is_array($dist) || ($dist['reference'] ?? null) !== LEGACY_RELEASE_REF
+        ) {
+            throw new RuntimeException('DEC-016 requires the exact published legacy coexistence fixture in composer.lock');
+        }
+
+        // Composer matches abandoned ignores by package name. Apply this rule
+        // only after confirming the exact version and dist reference above.
+        $abandoned = $policy['abandoned'] ?? null;
+        if (!is_array($abandoned) || ($abandoned['audit'] ?? null) !== 'fail' || array_key_exists('ignore', $abandoned)) {
+            throw new RuntimeException('DEC-016 requires the default abandoned audit policy with no existing ignores');
+        }
+        $abandoned['ignore'] = [LEGACY_PACKAGE => [
+            'constraint' => LEGACY_RELEASE,
+            'on-block' => false,
+            'reason' => 'DEC-016: the exact legacy release is used only to verify migration coexistence.',
+        ]];
+        $manifest['config']['policy']['abandoned'] = $abandoned;
+        $auditManifest = json_encode($manifest, JSON_THROW_ON_ERROR);
+        if (file_put_contents($directory . '/composer.json', $auditManifest) !== strlen($auditManifest)) {
+            throw new RuntimeException('Cannot configure the scoped coexistence audit');
+        }
+    }
+
+    $audit = consumerCommand(['composer', 'audit', '--no-dev', '--no-interaction', '--abandoned=fail'], $directory, $composerEnvironment);
+    echo $audit . "\n";
 
     $candidateClass = '/src/Transaction/Repository/PdoTransactionRunner.php';
     $installedPath = $directory . '/vendor/' . CONSUMER_PACKAGE;
