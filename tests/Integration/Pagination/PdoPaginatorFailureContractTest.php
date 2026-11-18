@@ -8,13 +8,102 @@ use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
+use PDO;
+use Pdo\Mysql;
 use PDOException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
 use RuntimeException;
 use Throwable;
 
 final class PdoPaginatorFailureContractTest extends PaginationIntegrationTestCase
 {
+    /** @return array<string, array{bool}> */
+    public static function bufferingModes(): array
+    {
+        return ['buffered' => [true], 'unbuffered' => [false]];
+    }
+
+    #[DataProvider('bufferingModes')]
+    public function testSameConnectionCanBeReusedAfterMapperThrows(bool $buffered): void
+    {
+        [$pdo, $table] = $this->beginPaginationTransaction($buffered);
+        $failure = new RuntimeException('mapper failed on the first row');
+
+        try {
+            try {
+                (new PdoPaginator())->paginate(
+                    $pdo,
+                    $this->descriptor($table),
+                    new PageRequest(),
+                    $this->config(),
+                    static fn(array $row): never => throw $failure,
+                );
+                self::fail('Expected the mapper failure.');
+            } catch (RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+
+            $this->assertSameConnectionCanBeReused($pdo, $table);
+        } finally {
+            $pdo->rollBack();
+        }
+    }
+
+    #[DataProvider('bufferingModes')]
+    public function testSameConnectionCanBeReusedAfterInvalidMappedItem(bool $buffered): void
+    {
+        [$pdo, $table] = $this->beginPaginationTransaction($buffered);
+
+        try {
+            try {
+                $this->invokePaginatorWithMapper($pdo, $table, static fn(array $row): int => 1);
+                self::fail('Expected an invalid mapped item failure.');
+            } catch (PaginationExecutionException $caught) {
+                self::assertSame('Pagination mapper must return array or object.', $caught->getMessage());
+            }
+
+            $this->assertSameConnectionCanBeReused($pdo, $table);
+        } finally {
+            $pdo->rollBack();
+        }
+    }
+
+    #[DataProvider('bufferingModes')]
+    public function testSameConnectionCanBeReusedWhileRetainingRowValidationException(bool $buffered): void
+    {
+        [$pdo, $table] = $this->beginPaginationTransaction($buffered);
+        $query = $this->descriptor($table);
+        $invalidRowQuery = new PdoPaginationQueryDescriptor(
+            $query->totalSql,
+            $query->totalParams,
+            $query->filteredCountSql,
+            $query->filteredCountParams,
+            "SELECT id AS `0`, created_at FROM `$table` WHERE tenant_id = :tenant_data AND deleted_at IS NULL AND is_active = :active_data",
+            $query->dataParams,
+        );
+
+        // Keep exception arguments enabled so a retained trace can keep a statement alive.
+        $previousSetting = ini_set('zend.exception_ignore_args', '0');
+        self::assertNotFalse($previousSetting);
+
+        try {
+            try {
+                (new PdoPaginator())->paginate($pdo, $invalidRowQuery, new PageRequest(), $this->config(), static fn(array $row): array => $row);
+                self::fail('Expected an invalid row failure.');
+            } catch (PaginationExecutionException $caught) {
+                self::assertSame('Pagination row keys must be strings.', $caught->getMessage());
+            }
+
+            $this->assertSameConnectionCanBeReused($pdo, $table);
+        } finally {
+            // Release the trace only after the reuse attempt, so test teardown can roll back.
+            unset($caught);
+            ini_set('zend.exception_ignore_args', $previousSetting);
+            $pdo->rollBack();
+        }
+    }
+
     public function testCountShapeFailures(): void
     {
         [$pdo, $table] = $this->connectWithPaginationTable();
@@ -164,7 +253,26 @@ final class PdoPaginatorFailureContractTest extends PaginationIntegrationTestCas
         }
     }
 
-    private function invokePaginatorWithMapper(\PDO $pdo, string $table, callable $mapper): void
+    /** @return array{PDO, string} */
+    private function beginPaginationTransaction(bool $buffered): array
+    {
+        [$pdo, $table] = $this->connectWithPaginationTable();
+        $this->insertMultiTenantDataset($pdo, $table);
+        self::assertTrue($pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, $buffered));
+        self::assertSame($buffered, (bool) $pdo->getAttribute(Mysql::ATTR_USE_BUFFERED_QUERY));
+        self::assertTrue($pdo->beginTransaction());
+
+        return [$pdo, $table];
+    }
+
+    private function assertSameConnectionCanBeReused(PDO $pdo, string $table): void
+    {
+        self::assertTrue($pdo->inTransaction());
+        self::assertSame('6', $this->scalar($pdo, "SELECT COUNT(*) FROM `$table`"));
+        self::assertTrue($pdo->inTransaction());
+    }
+
+    private function invokePaginatorWithMapper(PDO $pdo, string $table, callable $mapper): void
     {
         $method = new ReflectionMethod(PdoPaginator::class, 'paginate');
         $method->invokeArgs(new PdoPaginator(), [

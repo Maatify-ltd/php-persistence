@@ -12,6 +12,7 @@ use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOStatement;
+use Throwable;
 
 /**
  * Paginates caller-supplied SQL on a caller-owned PDO connection.
@@ -80,15 +81,26 @@ final readonly class PdoPaginator
             throw new PaginationExecutionException('Failed to execute pagination data query.');
         }
 
-        while (true) {
-            $row = $this->fetchAssociativeOrEof($statement);
-            if ($row === false) {
-                break;
+        try {
+            while (true) {
+                $row = $this->fetchAssociativeOrEof($statement);
+                if ($row === false) {
+                    break;
+                }
+                $this->assertAssociativeDataRow($row);
+                $item = $mapper($row);
+                $this->assertMappedItem($item);
+                $data[] = $item;
             }
-            $this->assertAssociativeDataRow($row);
-            $item = $mapper($row);
-            $this->assertMappedItem($item);
-            $data[] = $item;
+        } catch (Throwable $failure) {
+            // The exception trace may keep the statement alive after this call exits.
+            try {
+                $statement->closeCursor();
+            } catch (Throwable) {
+                // Preserve the failure that stopped pagination.
+            }
+
+            throw $failure;
         }
 
         return new PageResultDTO($data, $page, $perPage, $total, $filtered, $totalPages, $page < $totalPages, $page > 1 && $totalPages > 0, $sortBy, $sortDirection);

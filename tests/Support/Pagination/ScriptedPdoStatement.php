@@ -18,6 +18,8 @@ final class ScriptedPdoStatement extends PDOStatement
 
     public int $fetchCalls = 0;
 
+    public int $closeCursorCalls = 0;
+
     /**
      * @param list<mixed> $fetchQueue
      * @param array<string, bool|Throwable> $bindResults
@@ -28,6 +30,7 @@ final class ScriptedPdoStatement extends PDOStatement
         private bool|Throwable $executeResult = true,
         private ?string $statementErrorCode = '00000',
         private array $bindResults = [],
+        private bool|Throwable $closeCursorResult = true,
     ) {}
 
     public static function count(mixed $value): self
@@ -96,5 +99,15 @@ final class ScriptedPdoStatement extends PDOStatement
     public function errorCode(): ?string
     {
         return $this->statementErrorCode;
+    }
+
+    public function closeCursor(): bool
+    {
+        $this->closeCursorCalls++;
+        if ($this->closeCursorResult instanceof Throwable) {
+            throw $this->closeCursorResult;
+        }
+
+        return $this->closeCursorResult;
     }
 }
