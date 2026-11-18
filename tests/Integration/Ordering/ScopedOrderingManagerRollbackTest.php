@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Support\Ordering\OrderingFailureInjector;
 use PDO;
 use PDOException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
 /**
@@ -141,6 +143,50 @@ final class ScopedOrderingManagerRollbackTest extends OrderingIntegrationTestCas
         } finally {
             $failureInjector->dropConstraint($this->scopedTable, $constraint);
         }
+    }
+
+    #[DataProvider('transactionOwnershipModes')]
+    public function testSilentTargetWriteFailureUndoesTheRangeShift(bool $callerOwned): void
+    {
+        $ids = $this->insertGlobalOrders(1, 2, 3, 4);
+        $before = $this->reader()->globalOrdersById();
+        $injector = new OrderingFailureInjector($this->controlPdo);
+        $constraint = $injector->createTargetUpdateFailure($this->globalTable, $ids[3], 2);
+        $pdo = $this->pdo();
+        $priorWrite = null;
+
+        try {
+            self::assertTrue($pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT));
+            if ($callerOwned) {
+                self::assertTrue($pdo->beginTransaction());
+                $priorWrite = $this->fixture->insertScoped('prior-work', 1);
+            }
+
+            $failure = $this->captureMoveFailure($this->globalConfig(), null, $ids[3], 2);
+
+            self::assertInstanceOf(OrderingExecutionException::class, $failure);
+            self::assertSame('Failed to execute the ordering statement for updateTargetOrder.', $failure->getMessage());
+            self::assertSame($callerOwned, $pdo->inTransaction());
+            self::assertSame($before, $this->reader()->globalOrdersById());
+            if ($priorWrite !== null) {
+                self::assertSame([$priorWrite => 1], $this->reader()->scopedOrdersById('prior-work'));
+                self::assertTrue($pdo->commit());
+                self::assertSame([$priorWrite => 1], $this->reader($this->controlPdo)->scopedOrdersById('prior-work'));
+            }
+            self::assertSame($before, $this->reader($this->controlPdo)->globalOrdersById());
+        } finally {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $injector->dropConstraint($this->globalTable, $constraint);
+        }
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function transactionOwnershipModes(): iterable
+    {
+        yield 'package-owned' => [false];
+        yield 'caller-owned' => [true];
     }
 
     private function captureMoveFailure(

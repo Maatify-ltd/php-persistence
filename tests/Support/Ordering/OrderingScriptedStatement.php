@@ -10,7 +10,7 @@ use PDOStatement;
 /**
  * Minimal scripted PDOStatement for ScopedOrderingManagerSavepointWiringTest: a queue of
  * fetchColumn() return values (consumed one call at a time, `false` ends a locking-read loop)
- * and a fixed rowCount(), the only two statement outcomes moveWithinScope() inspects.
+ * and a fixed rowCount(). Its statements report a successful SQLSTATE.
  */
 final class OrderingScriptedStatement extends PDOStatement
 {
@@ -45,6 +45,11 @@ final class OrderingScriptedStatement extends PDOStatement
         }
 
         return array_shift($this->fetchColumnQueue);
+    }
+
+    public function errorCode(): string
+    {
+        return '00000';
     }
 
     public function closeCursor(): bool

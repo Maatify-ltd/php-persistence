@@ -6,6 +6,8 @@ namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * B-01 and B-07: getNextPosition() and rowExistsInScope(), ported from legacy
@@ -19,6 +21,38 @@ final class ScopedOrderingManagerReadOperationsTest extends OrderingIntegrationT
     {
         parent::setUp();
         $this->manager = new ScopedOrderingManager();
+    }
+
+    #[DataProvider('nonThrowingErrorModes')]
+    public function testOrderingOperationsPreserveHostPdoErrorMode(int $mode): void
+    {
+        $pdo = $this->pdo();
+        self::assertTrue($pdo->setAttribute(PDO::ATTR_ERRMODE, $mode));
+        $config = $this->globalConfig();
+        self::assertSame(1, $this->manager->getNextPosition($pdo, $config));
+        self::assertFalse($this->manager->rowExistsInScope($pdo, $config, null, 1));
+
+        $pdo->beginTransaction();
+        try {
+            self::assertSame(1, $this->manager->getNextPositionForUpdate($pdo, $config));
+            $first = $this->fixture->insertGlobal(1);
+            $second = $this->fixture->insertGlobal(2);
+            self::assertTrue($this->manager->rowExistsInScope($pdo, $config, null, $second));
+            self::assertSame(3, $this->manager->getNextPositionForUpdate($pdo, $config));
+            self::assertTrue($this->manager->moveWithinScope($pdo, $config, null, $second, 1));
+            self::assertSame([$first => 2, $second => 1], $this->reader()->globalOrdersById());
+            self::assertSame($mode, $pdo->getAttribute(PDO::ATTR_ERRMODE));
+            self::assertTrue($pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function nonThrowingErrorModes(): iterable
+    {
+        yield 'silent' => [PDO::ERRMODE_SILENT];
+        yield 'warning' => [PDO::ERRMODE_WARNING];
     }
 
     public function testGetNextPositionReturnsOneForEmptyGlobalTable(): void

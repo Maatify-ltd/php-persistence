@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - Recorded Maatify Ltd. as the copyright holder and licensor for the next release.
 
+### Fixed
+
+- Ordering reports PDO statement failures as exceptions across error modes. Failed reads cannot report an empty scope or a missing row, and a failed range shift or target update enters the transaction rollback path.
+
 ## [1.0.0-rc.1] - 2026-11-12
 
 First release candidate, published on [Packagist](https://packagist.org/packages/maatify/php-persistence).
