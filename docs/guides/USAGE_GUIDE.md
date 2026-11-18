@@ -152,6 +152,8 @@ See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.
 
 **Requirements:** the table's identifiers (table, id column, order column, and optionally a scope column, a soft-delete column, and an updated-at column) as **trusted application constants** — never raw user input, since they are quoted, not bound as parameters.
 
+Use an InnoDB table for the locking and rollback behavior shown here. A failed move on a nontransactional table can leave rows shifted. Before choosing `moveWithinScope()`, check whether a key enforces unique positions globally or within each scope. The range shift can temporarily collide with the target row's original position. If your schema requires that key, use a move strategy that maintains uniqueness during each update. See the [Ordering contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
+
 **Non-goals:** the manager does not create or alter the table, does not maintain a cache of positions, and does not fix a transaction the server has already rolled back (the MariaDB hazard in §7.3 of the Package Reference).
 
 **Inputs:** a `PDO` connection, a `ScopedOrderingConfig`, a scope value (or `null` for global/nullable-scope ordering), and — for a move — a row id and target order.
