@@ -408,7 +408,7 @@ These classes are reachable because PHP does not restrict class visibility, but 
 These two terms are used precisely and consistently throughout this document and the source code:
 
 - **Caller-owned transaction** — a transaction already active on the `PDO` connection (`$pdo->inTransaction() === true`) when a package method is called. The package never begins, commits, or performs a final rollback of it. Where it needs to limit the blast radius of a failure, it uses a savepoint scoped to its own operation.
-- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called. The package commits it on success or rolls it back on failure.
+- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called. The package commits it on success and attempts a best-effort rollback on failure if the transaction is still active.
 
 ---
 

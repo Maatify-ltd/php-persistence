@@ -201,7 +201,7 @@ $nextPosition = (new PdoTransactionRunner($pdo))->run(
 $moved = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 42, newOrder: 1);
 // Result: true on success (including a no-op); false if the target is absent
 // or its update affects zero rows after shifting.
-// Boundary: the target is limited to the maximum observed under the scope lock.
+// Boundary: the effective target is min($newOrder, max(1, $lockedMaximum)).
 ```
 
 Use `getNextPosition()` (a plain, non-locking read) only for previews or when no older `REPEATABLE READ` snapshot can exist yet (outside a transaction, under `READ COMMITTED`, or after your own serialization lock); use `getNextPositionForUpdate()` when the position will actually be used for an insert inside the same transaction. Serialize first inserts into an empty scope with a caller-owned lock shared by all competing writers. See [Package Reference §5.4 and §7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) for the full locking, clamping, savepoint, and MariaDB-hazard rules.

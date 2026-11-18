@@ -259,17 +259,19 @@ final readonly class ScopedOrderingManager
      * and RELEASE. While the transaction remains active, the scope lock is
      * kept, earlier work and the caller's own savepoints are
      * untouched, and the caller still owns commit and rollback. A deadlock (1213),
-     * MariaDB 1020 and 1205 with innodb_rollback_on_timeout=ON end the caller's
-     * whole transaction on the server. The failure follows the configured PDO
-     * error mode. This method does not retry or recover it. A best-effort guard throws
+     * the MariaDB 1020 hazard, or a lock-wait timeout (1205) with
+     * innodb_rollback_on_timeout=ON can end the caller's whole transaction on
+     * the server. The failure follows the configured PDO error mode. This
+     * method does not retry or recover it. A best-effort guard throws
      * TransactionExecutionException before the first mutation when the SAVEPOINT
      * reply shows that the transaction has ended; it is not a proof of
      * transaction identity.
      *
      * The same MariaDB 1020 hazard described for getNextPositionForUpdate()
      * was observed at the scope lock, before this method opens a savepoint.
-     * The original exception propagates without retry. An operation-local
-     * savepoint cannot restore a transaction rolled back by the server.
+     * When PDO throws, the original exception propagates unchanged. An
+     * operation-local savepoint cannot restore a transaction rolled back by
+     * the server.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
      * @param string|null $updatedAtValue Timestamp value bound to the target update when updatedAtColumn is configured.
