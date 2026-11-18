@@ -14,6 +14,7 @@ use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 use Maatify\PhpPersistence\Tests\Support\Pagination\ScriptedPdo;
 use Maatify\PhpPersistence\Tests\Support\Pagination\ScriptedPdoStatement;
 use PDOException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use RuntimeException;
@@ -81,6 +82,7 @@ final class PdoPaginatorFailureTest extends TestCase
         $result = (new PdoPaginator())->paginate(new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), $data]), $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
         self::assertSame([['id' => 1]], $result->data);
         self::assertSame(2, $data->fetchCalls);
+        self::assertSame(0, $data->closeCursorCalls);
     }
 
     public function testFetchFalseWithNonSuccessSqlstate(): void
@@ -130,6 +132,55 @@ final class PdoPaginatorFailureTest extends TestCase
         $data = new ScriptedPdoStatement(1, [['id' => 1], false], true, 'HY000');
         $this->assertExecutionFailure(new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), $data]), 3);
         self::assertSame(2, $data->fetchCalls);
+        self::assertSame(1, $data->closeCursorCalls);
+    }
+
+    /** @return array<string, array{bool|PDOException}> */
+    public static function cursorCleanupOutcomes(): array
+    {
+        return [
+            'cursor closed' => [true],
+            'close returns false' => [false],
+            'close throws' => [new PDOException('cursor cleanup failed')],
+        ];
+    }
+
+    #[DataProvider('cursorCleanupOutcomes')]
+    public function testCursorCleanupDoesNotReplaceDataFetchException(bool|PDOException $cleanupOutcome): void
+    {
+        $failure = new PDOException('data fetch failed');
+        $data = new ScriptedPdoStatement(fetchQueue: [['id' => 1], $failure], closeCursorResult: $cleanupOutcome);
+        $pdo = new ScriptedPdo([ScriptedPdoStatement::count(2), ScriptedPdoStatement::count(2), $data]);
+
+        try {
+            (new PdoPaginator())->paginate($pdo, $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+            self::fail('Expected the data fetch exception.');
+        } catch (PDOException $caught) {
+            self::assertSame($failure, $caught);
+        }
+
+        self::assertSame(2, $data->fetchCalls);
+        self::assertSame(1, $data->closeCursorCalls);
+        self::assertCount(3, $pdo->preparedSql);
+    }
+
+    #[DataProvider('cursorCleanupOutcomes')]
+    public function testCursorCleanupDoesNotReplaceMapperException(bool|PDOException $cleanupOutcome): void
+    {
+        $failure = new RuntimeException('mapper failed');
+        $data = new ScriptedPdoStatement(fetchQueue: [['id' => 1], ['id' => 2], false], closeCursorResult: $cleanupOutcome);
+        $pdo = new ScriptedPdo([ScriptedPdoStatement::count(2), ScriptedPdoStatement::count(2), $data]);
+
+        try {
+            (new PdoPaginator())->paginate($pdo, $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): never => throw $failure);
+            self::fail('Expected the mapper exception.');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
+
+        self::assertSame(1, $data->fetchCalls);
+        self::assertSame(1, $data->closeCursorCalls);
+        self::assertCount(3, $pdo->preparedSql);
     }
 
     public function testPdoExceptionIdentityFromPrepareBindExecuteAndFetch(): void
