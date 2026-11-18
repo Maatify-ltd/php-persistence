@@ -257,14 +257,13 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
     }
 
-    public function testReleaseArtifactGateVerifiesTheExactCandidateCommit(): void
+    public function testReleaseArtifactGateVerifiesTheQualifiedRcTag(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');
         [, $following] = array_pad(explode("\n  release-artifact:\n", $workflow, 2), 2, '');
         [$job] = explode("\n  exploratory:\n", $following, 2);
-        $candidateSha = '${{ github.event.pull_request.head.sha || github.sha }}';
-        self::assertStringContainsString('ref: ' . $candidateSha, $job);
-        self::assertStringContainsString('ARTIFACT_SHA: ' . $candidateSha, $job);
+        self::assertStringContainsString('ref: refs/tags/v1.0.0-rc.2', $job);
+        self::assertStringContainsString('ARTIFACT_SHA: 71dc61548e48fd053376db69149a00bc87069b70', $job);
         self::assertStringContainsString('set -euo pipefail', $job);
         self::assertStringContainsString('test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"', $job);
         self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.2 --sha="$ARTIFACT_SHA"', $job);

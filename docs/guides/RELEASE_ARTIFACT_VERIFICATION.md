@@ -1,20 +1,21 @@
 # Release Artifact Verification
 
-The exact target is `maatify/php-persistence:1.0.0-rc.2`. At preparation, it was unpublished.
+[`maatify/php-persistence:1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) was published from the qualified commit tagged [`v1.0.0-rc.2`](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2).
 
-Set `CANDIDATE_SHA` to the full SHA of the committed candidate. Run the same archive checks as CI from a checkout containing that commit. The command needs Git, tar, PHP, and Composer.
+Run the same archive checks as CI from a checkout containing the release tag. The command needs Git, tar, PHP, and Composer.
 
 ```sh
-composer release:verify -- --target=1.0.0-rc.2 --sha="$CANDIDATE_SHA"
+QUALIFIED_SHA=71dc61548e48fd053376db69149a00bc87069b70
+composer release:verify -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"
 ```
 
 The verifier creates an isolated checkout of the selected commit. It generates a VCS archive with `git archive` and a Composer archive with `composer archive`, independently of each other. The verification checks the actual entries and bytes, including required consumer files, the full runtime source, manifest identity and production PSR-4 mapping, and repository-only or sensitive paths. The log records the target, commit, tree, and a file inventory and SHA-256 for each generated archive. The temporary workspace is removed when verification ends. The sensitive-path and private-key checks are structural. The Lead reviews release claims, changelog allocation, and the contents for sensitive data in context.
 
-The CI archive job verifies the exact pull request head or the exact event SHA for runs outside a pull request. Release qualification requires Full Applicable CI and Release Artifact Verification on the same actual, Owner-authorized `main` candidate commit. The [Consumer Verification Harness](CONSUMER_VERIFICATION.md) separately exercises runtime consumption.
+The CI archive job checks out `v1.0.0-rc.2` and verifies it against the recorded qualified SHA. The other jobs continue to verify the pull request or pushed commit. Qualification for a future release requires Full Applicable CI and Release Artifact Verification on the same actual, Owner-authorized `main` candidate commit for that target. The [Consumer Verification Harness](CONSUMER_VERIFICATION.md) separately exercises runtime consumption.
 
 ## Published Artifact Verification
 
-Once authorized publication makes the exact version available through Packagist, run this command from a repository checkout containing the qualified commit and its `v1.0.0-rc.2` tag. Set `QUALIFIED_SHA` to the full SHA from the recorded qualification evidence.
+Run this command from the same checkout to verify the published Composer distribution. Use the `QUALIFIED_SHA` recorded above.
 
 ```sh
 composer release:verify-published -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"

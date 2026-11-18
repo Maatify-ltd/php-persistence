@@ -5,7 +5,7 @@
 
 ## Supported Versions
 
-This artifact represents Release Candidate `1.0.0-rc.2`. At preparation, the target was **Unpublished** and the package had no supported Stable release line. This release candidate establishes no Stable support commitment.
+[`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) is a published Release Candidate. The package has no supported Stable release line.
 
 ## Reporting a Vulnerability
 

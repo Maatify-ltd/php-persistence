@@ -233,13 +233,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: refs/tags/v1.0.0-rc.2
       - uses: ./.github/actions/setup-php-composer
         with:
           php-version: "8.4"
-      - name: Verify the exact candidate artifact
+      - name: Verify the immutable RC artifact
         env:
-          ARTIFACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ARTIFACT_SHA: 71dc61548e48fd053376db69149a00bc87069b70
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"

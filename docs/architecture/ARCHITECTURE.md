@@ -4,7 +4,7 @@
 
 This document records the architecture decided in WU-3. WU-4 and WU-5 established Composer packaging, quality tooling, and real-database CI. WU-6 through WU-8 implemented Transaction, Pagination, and Ordering. Ordering reuses the Transaction capability's Gen2 runner and its `@internal` savepoint helper under [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). WU-9 delivered the canonical [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md), usage guidance, and runnable examples.
 
-WU-10 added [consumer verification and coexistence](../guides/CONSUMER_VERIFICATION.md). WU-11 prepares the `1.0.0-rc.1` artifact and its [archive verification](../guides/RELEASE_ARTIFACT_VERIFICATION.md). See the [README](../../README.md#installation) for installation and the publication state recorded for this artifact. The [database policy](DATABASE_SUPPORT_AND_TEST_POLICY.md) records test evidence for named MySQL and MariaDB versions, including deadlocks, pagination snapshots, and ordering concurrency. That evidence is limited to the tested versions.
+WU-10 added [consumer verification and coexistence](../guides/CONSUMER_VERIFICATION.md). WU-11 prepared the `1.0.0-rc.1` artifact. See the [README](../../README.md#installation) for the current release and [Release Artifact Verification](../guides/RELEASE_ARTIFACT_VERIFICATION.md) for its archive checks. The [database policy](DATABASE_SUPPORT_AND_TEST_POLICY.md) records test evidence for named MySQL and MariaDB versions, including deadlocks, pagination snapshots, and ordering concurrency. That evidence is limited to the tested versions.
 
 ## 1. Document map
 
