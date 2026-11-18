@@ -45,6 +45,8 @@ php examples/ordering_basic_usage.php
 **Outputs:** the callback's return value, or the callback's original `Throwable` rethrown unchanged.
 **Boundary:** the runner never begins/commits/rolls back a transaction it did not itself begin.
 
+The callback owns its PDO statements. Check failure return values from those statements and throw from the callback so an owned transaction follows the rollback path.
+
 ### Walkthrough: `Input → Public Call → Result → Boundary`
 
 ```php
@@ -59,10 +61,17 @@ $runner = new PdoTransactionRunner($pdo, maxDeadlockRetries: 1);
 try {
     // Public Call: run() decides ownership for you.
     $invoiceId = $runner->run(function () use ($pdo): int {
-        $pdo->prepare('INSERT INTO invoices (total_cents) VALUES (:total)')
-            ->execute(['total' => 1999]);
+        $statement = $pdo->prepare('INSERT INTO invoices (total_cents) VALUES (:total)');
+        if ($statement === false || !$statement->execute(['total' => 1999])) {
+            throw new RuntimeException('Could not insert the invoice.');
+        }
 
-        return (int) $pdo->lastInsertId();
+        $id = $pdo->lastInsertId();
+        if ($id === false) {
+            throw new RuntimeException('Could not read the new invoice ID.');
+        }
+
+        return (int) $id;
     });
     // Result: the callback value. If run() began the transaction, it committed
     // before returning. Otherwise, the caller still decides whether to commit.
@@ -70,9 +79,11 @@ try {
     // Boundary: BEGIN/COMMIT returned false instead of throwing, or a transaction-
     // control statement failed. A BEGIN failure prevents the callback from
     // running. An owned COMMIT failure triggers a best-effort rollback.
+    throw $e;
 } catch (\Throwable $e) {
     // Boundary: the callback's own failure, rethrown unchanged after a best-effort
     // rollback (only when this call owned the transaction).
+    throw $e;
 }
 ```
 
@@ -177,8 +188,10 @@ $nextPosition = (new PdoTransactionRunner($pdo))->run(
     function () use ($pdo, $manager, $config): int {
         // Public Call: read the next position and insert before releasing the lock.
         $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
-        $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)')
-            ->execute(['method' => 7, 'position' => $position]);
+        $statement = $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)');
+        if ($statement === false || !$statement->execute(['method' => 7, 'position' => $position])) {
+            throw new RuntimeException('Could not insert the shipping rate.');
+        }
 
         return $position;
     },

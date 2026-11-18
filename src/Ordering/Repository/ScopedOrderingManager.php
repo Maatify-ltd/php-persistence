@@ -25,10 +25,12 @@ use Throwable;
  * - moveWithinScope() uses the Gen2 {@see PdoTransactionRunner} (DEC-007, DEC-011).
  * - It owns the transaction when called outside an active PDO transaction.
  * - It participates in an active caller-owned PDO transaction without
- *   committing or fully rolling it back. There it undoes its own mutation
- *   window with an operation-local savepoint, taken through the shared
- *   {@see SavepointScope} (DEC-011 item 2) after the scope lock and the
- *   read-only checks and before the first mutating statement.
+ *   committing or fully rolling it back. After the scope lock and the
+ *   read-only checks, it creates an operation-local savepoint through
+ *   {@see SavepointScope} (DEC-011 item 2) before the first mutating statement.
+ *   The savepoint allows best-effort rollback of a failed mutation.
+ * - Locking and rollback require a transactional storage engine with row locks
+ *   and savepoints, such as InnoDB. The host owns the table schema.
  *
  * Ordering model:
  * - getNextPosition() returns max(order) + 1 with a plain read and no lock.
@@ -36,8 +38,8 @@ use Throwable;
  *   state using a locking read inside an active caller-owned PDO transaction.
  * - moveWithinScope() locks the whole ordering scope with SELECT ... FOR UPDATE,
  *   then reads the current row order from the database inside the transaction.
- * - newOrder is clamped to the maximum position read by that same locking read,
- *   so the clamp reflects the latest committed state even when the caller's
+ * - The positive newOrder is capped at the locked maximum, with a minimum
+ *   cap of 1. The cap reflects the locking read even when the caller's
  *   REPEATABLE READ snapshot is older.
  *
  * The caller controls the PDO error mode. Statement failures reported without
@@ -233,25 +235,29 @@ final readonly class ScopedOrderingManager
      * the database inside the same transaction.
      *
      * The scope lock serializes concurrent reorder operations within the same
-     * scope and prevents overlapping range updates from interleaving.
+     * scope and prevents overlapping range updates from interleaving on a
+     * transactional table that provides row locks and savepoints.
      *
-     * If $newOrder is larger than the current maximum order in the scope, it is
-     * clamped to the maximum position. This keeps ordering positions contiguous
-     * instead of creating large gaps.
+     * The positive $newOrder is capped at the locked maximum, with a minimum
+     * cap of 1. This avoids introducing gaps beyond the existing maximum.
+     * The range shift runs before the target leaves its original position.
+     * A unique key on positions globally or within a scope can reject the
+     * intermediate update even when the intended final order is valid.
      *
      * Return values:
      * - true when the move succeeds.
      * - true when the target row is already at the requested/clamped position.
      * - false when the target row does not exist in the given scope.
+     * - false when the target update affects zero rows and the move is undone.
      *
-     * Caller-owned transaction: a Throwable in the range shift or the target
-     * write, or `false` after the shifts, is followed by ROLLBACK TO SAVEPOINT of
-     * an operation-local savepoint ({@see SavepointScope}), so the shifted rows
-     * do not remain; the original Throwable is rethrown unchanged and a cleanup
-     * failure never replaces it. If the undo behind `false` itself fails, that
-     * failure is thrown instead of `false`. A no-op move and a missing row issue
-     * no savepoint statement; a mutating move adds SAVEPOINT and RELEASE. The
-     * scope lock is kept, earlier work and the caller's own savepoints are
+     * Caller-owned transaction: a Throwable in the range shift or target write
+     * triggers best-effort rollback to and release of the operation-local
+     * savepoint ({@see SavepointScope}). The original Throwable is rethrown
+     * unchanged. If the target update affects zero rows, rollback to the
+     * savepoint must succeed before returning false. A no-op move and a
+     * missing row issue no savepoint statement. A mutating move adds SAVEPOINT
+     * and RELEASE. While the transaction remains active, the scope lock is
+     * kept, earlier work and the caller's own savepoints are
      * untouched, and the caller still owns commit and rollback. A deadlock (1213),
      * MariaDB 1020 and 1205 with innodb_rollback_on_timeout=ON end the caller's
      * whole transaction on the server. The failure follows the configured PDO

@@ -77,10 +77,17 @@ use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 $runner = new PdoTransactionRunner($pdo); // $maxDeadlockRetries defaults to 0 (no replay)
 
 $orderId = $runner->run(function () use ($pdo): int {
-    $pdo->prepare('INSERT INTO orders (customer_id) VALUES (:customer_id)')
-        ->execute(['customer_id' => 42]);
+    $statement = $pdo->prepare('INSERT INTO orders (customer_id) VALUES (:customer_id)');
+    if ($statement === false || !$statement->execute(['customer_id' => 42])) {
+        throw new RuntimeException('Could not insert the order.');
+    }
 
-    return (int) $pdo->lastInsertId();
+    $id = $pdo->lastInsertId();
+    if ($id === false) {
+        throw new RuntimeException('Could not read the new order ID.');
+    }
+
+    return (int) $id;
 });
 ```
 
@@ -92,7 +99,7 @@ The public surface is three independent capability namespaces under `Maatify\Php
 
 - `Transaction\Repository\{TransactionRunnerInterface, SavepointTransactionRunnerInterface, PdoTransactionRunner, PdoSavepointTransactionRunner}` and `Transaction\Exception\{InvalidTransactionConfigurationException, TransactionExecutionException}`.
 - `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`.
-- `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException}`.
+- `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
 Two internal helper classes (`Transaction\Repository\{OwnedTransactionExecutor, SavepointScope}`) are reachable but are explicitly **not** part of the public contract or SemVer.

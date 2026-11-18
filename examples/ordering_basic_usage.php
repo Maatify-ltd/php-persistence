@@ -41,6 +41,7 @@ function php_persistence_example_read_orders(PDO $pdo, string $quotedTable): arr
         }
         $orders[php_persistence_example_to_int($row[0])] = php_persistence_example_to_int($row[1]);
     }
+    php_persistence_example_assert($statement->errorCode() === '00000', 'failed to fetch display_order values');
 
     return $orders;
 }
@@ -49,11 +50,14 @@ $pdo = php_persistence_example_connect();
 $table = php_persistence_example_table_name('shipping_rates');
 $quotedTable = '`' . $table . '`';
 
-$pdo->exec(
-    "CREATE TABLE {$quotedTable} ("
-    . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
-    . 'method_id INT UNSIGNED NOT NULL, '
-    . 'display_order INT UNSIGNED NOT NULL) ENGINE=InnoDB',
+php_persistence_example_assert(
+    $pdo->exec(
+        "CREATE TABLE {$quotedTable} ("
+        . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
+        . 'method_id INT UNSIGNED NOT NULL, '
+        . 'display_order INT UNSIGNED NOT NULL) ENGINE=InnoDB',
+    ) !== false,
+    'failed to create the ordering fixture table',
 );
 
 try {
@@ -62,7 +66,10 @@ try {
         'failed to prepare the seed insert',
     );
     foreach ([[1, 1], [2, 2], [3, 3]] as [$id, $order]) {
-        $insert->execute(['id' => $id, 'method_id' => 7, 'display_order' => $order]);
+        php_persistence_example_assert(
+            $insert->execute(['id' => $id, 'method_id' => 7, 'display_order' => $order]),
+            'failed to insert an ordering fixture row',
+        );
     }
 
     $config = new ScopedOrderingConfig(table: $table, scopeColumn: 'method_id', deletedAtColumn: null);
@@ -74,7 +81,10 @@ try {
         static function () use ($pdo, $config, $manager, $insert): int {
             $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
             // Keep the dependent insert in the same transaction as the locking read.
-            $insert->execute(['id' => 4, 'method_id' => 7, 'display_order' => $position]);
+            php_persistence_example_assert(
+                $insert->execute(['id' => 4, 'method_id' => 7, 'display_order' => $position]),
+                'failed to insert the shipping rate',
+            );
 
             return $position;
         },
@@ -99,14 +109,14 @@ try {
     // Boundary: moveWithinScope() only ever participates in a caller-owned
     // transaction; it never commits or finally rolls it back. The caller alone
     // decides the outcome of the surrounding transaction.
-    $pdo->beginTransaction();
+    php_persistence_example_assert($pdo->beginTransaction(), 'failed to begin the caller-owned transaction');
     try {
         $participatingMove = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 1, newOrder: 1);
         php_persistence_example_assert($participatingMove === true, 'expected the participating move to succeed');
         php_persistence_example_assert($pdo->inTransaction(), 'the participating move ended the caller transaction');
     } finally {
         if ($pdo->inTransaction()) {
-            $pdo->rollBack();
+            php_persistence_example_assert($pdo->rollBack(), 'failed to roll back the caller-owned transaction');
         }
     }
 
@@ -118,7 +128,7 @@ try {
     echo "Boundary -> the caller's own rollBack() undid the participating move; moveWithinScope() never commits for the caller\n";
 } finally {
     if (!$pdo->inTransaction()) {
-        $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
+        php_persistence_example_assert($pdo->exec("DROP TABLE IF EXISTS {$quotedTable}") !== false, 'failed to drop the ordering fixture table');
     }
 }
 
