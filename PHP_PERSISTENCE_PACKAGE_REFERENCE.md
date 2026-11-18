@@ -469,6 +469,8 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 
 The host selects the PDO error mode. Ordering uses it as configured, including `ERRMODE_EXCEPTION`, `ERRMODE_SILENT`, and `ERRMODE_WARNING`. A statement failure reported through a return value raises `OrderingExecutionException`. In warning mode, PDO can also emit its usual warning. Any throwable from PDO or the host's warning handler propagates unchanged. A successful empty scope or missing row keeps the result documented below.
 
+Returned order values must be integers in the running PHP process's `PHP_INT_MIN..PHP_INT_MAX` range. The manager validates decimal strings returned by PDO before conversion. A non-integer or out-of-range value raises `OrderingExecutionException`. Both next-position methods raise that exception when the maximum is `PHP_INT_MAX`. A move rejects an out-of-range order encountered in its locking reads before writing any rows. See [DEC-017](docs/decisions/DEC-017-ordering-integer-boundaries.md).
+
 #### `getNextPosition()`
 
 Returns `MAX(orderColumn) + 1` (or `1` for an empty scope) with a **plain, non-locking read**, excluding soft-deleted rows when `deletedAtColumn` is configured. It does not start a transaction and does not lock anything; concurrent inserts into the same scope must be serialized by the caller (for example a lock on a parent row). Under `REPEATABLE READ`, this read uses the transaction's existing consistent-read snapshot — a locking read taken afterward does **not** refresh it, so this value can be stale inside a long-running caller transaction unless no older snapshot exists yet (outside a transaction, under `READ COMMITTED`, or when the caller's own serialization lock was already taken before this read).
@@ -537,7 +539,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidOrderingConfigurationException` | `SystemMaatifyException` | Invalid `ScopedOrderingConfig` construction (bad table/column identifier, or `nullableScope` without a `scopeColumn`). |
 | `InvalidOrderingOperationException` | `ValidationMaatifyException` | Invalid runtime arguments or an unmet precondition on a `ScopedOrderingManager` call: inconsistent scope usage, an invalid row id or target order in `moveWithinScope()`, an updated-at value/column mismatch, or a locking next-position read (`getNextPositionForUpdate()`) requested without an active PDO transaction. |
-| `OrderingExecutionException` | `SystemMaatifyException` | Preparing, executing, fetching, or closing an Ordering statement fails without throwing, or the next-position aggregate query returns no row. A fetch with SQLSTATE `00000` and no row is ordinary end of results for reads that allow no row. |
+| `OrderingExecutionException` | `SystemMaatifyException` | Preparing, executing, fetching, or closing an Ordering statement fails without throwing, the next-position aggregate query returns no row, an ordering value is not a representable integer, or the next position exceeds `PHP_INT_MAX`. A fetch with SQLSTATE `00000` and no row is ordinary end of results for reads that allow no row. |
 
 ---
 

@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use PDO;
+use PDOException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Throwable;
 
 /**
  * B-01 and B-07: getNextPosition() and rowExistsInScope(), ported from legacy
@@ -53,6 +57,37 @@ final class ScopedOrderingManagerReadOperationsTest extends OrderingIntegrationT
     {
         yield 'silent' => [PDO::ERRMODE_SILENT];
         yield 'warning' => [PDO::ERRMODE_WARNING];
+    }
+
+    /** @param class-string<Throwable> $expectedFailure */
+    #[DataProvider('selectFailureModes')]
+    public function testNextPositionReportsAReadExecutionFailure(int $mode, string $expectedFailure): void
+    {
+        $pdo = $this->pdo();
+        self::assertTrue($pdo->setAttribute(PDO::ATTR_ERRMODE, $mode));
+        // Emulated prepare leaves column validation to the server on execute.
+        self::assertTrue($pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, true));
+        $config = new ScopedOrderingConfig(table: $this->globalTable, orderColumn: 'fixture_missing_order');
+
+        try {
+            $this->manager->getNextPosition($pdo, $config);
+            self::fail('Expected the failed ordering query to throw.');
+        } catch (PDOException|OrderingExecutionException $failure) {
+            self::assertInstanceOf($expectedFailure, $failure);
+
+            if ($failure instanceof PDOException) {
+                self::assertSame('42S22', $failure->errorInfo[0] ?? null);
+            } else {
+                self::assertSame('Failed to execute the ordering statement for getNextPosition.', $failure->getMessage());
+            }
+        }
+    }
+
+    /** @return iterable<string, array{int, class-string<Throwable>}> */
+    public static function selectFailureModes(): iterable
+    {
+        yield 'silent' => [PDO::ERRMODE_SILENT, OrderingExecutionException::class];
+        yield 'exception' => [PDO::ERRMODE_EXCEPTION, PDOException::class];
     }
 
     public function testGetNextPositionReturnsOneForEmptyGlobalTable(): void

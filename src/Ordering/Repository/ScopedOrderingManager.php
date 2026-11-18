@@ -79,7 +79,8 @@ final readonly class ScopedOrderingManager
      * for the cases above where no older snapshot exists.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
-     * @throws OrderingExecutionException When the aggregate read fails without throwing or yields no row.
+     * @throws OrderingExecutionException When the read fails without throwing, yields no row, or produces an invalid or unrepresentable position.
+     * @throws Throwable When a PDO operation throws.
      */
     public function getNextPosition(
         PDO $pdo,
@@ -107,7 +108,7 @@ final readonly class ScopedOrderingManager
             throw new OrderingExecutionException('The next-position aggregate did not return a row.');
         }
 
-        return $value + 1;
+        return $this->nextPosition($value);
     }
 
     /**
@@ -169,7 +170,7 @@ final readonly class ScopedOrderingManager
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
      *
      * @throws InvalidOrderingOperationException When no PDO transaction is active or scope usage is inconsistent.
-     * @throws OrderingExecutionException When a statement fails without throwing.
+     * @throws OrderingExecutionException When a statement fails without throwing or the next position cannot be represented as a PHP integer.
      * @throws Throwable When a PDO/database operation throws.
      */
     public function getNextPositionForUpdate(
@@ -217,7 +218,7 @@ final readonly class ScopedOrderingManager
             $tail = $value === false ? 0 : $value;
 
             if ($tail === $previousTail) {
-                return $tail + 1;
+                return $this->nextPosition($tail);
             }
 
             $previousTail = $tail;
@@ -268,7 +269,7 @@ final readonly class ScopedOrderingManager
      * @param string|null $updatedAtValue Timestamp value bound to the target update when updatedAtColumn is configured.
      *
      * @throws InvalidOrderingOperationException When id/order/scope arguments are invalid.
-     * @throws OrderingExecutionException When a statement fails without throwing.
+     * @throws OrderingExecutionException When a statement fails without throwing or a stored order cannot be represented as a PHP integer.
      * @throws Throwable When a PDO/database operation throws.
      */
     public function moveWithinScope(
@@ -648,11 +649,15 @@ final readonly class ScopedOrderingManager
     {
         try {
             $value = $statement->fetchColumn($column);
-            if ($value === false && $statement->errorCode() !== '00000') {
-                throw new OrderingExecutionException(sprintf('Failed to fetch the ordering result for %s.', $operation));
+            if ($value === false) {
+                if ($statement->errorCode() !== '00000') {
+                    throw new OrderingExecutionException(sprintf('Failed to fetch the ordering result for %s.', $operation));
+                }
+
+                return false;
             }
 
-            return $value === false ? false : (int) $value;
+            return $this->parseStoredInteger($value);
         } catch (Throwable $failure) {
             // Release an open result before the transaction owner attempts rollback.
             try {
@@ -663,6 +668,43 @@ final readonly class ScopedOrderingManager
 
             throw $failure;
         }
+    }
+
+    /**
+     * PDO may return integer columns as decimal strings, including unsigned
+     * numbers greater than PHP_INT_MAX. Check the magnitude before casting
+     * so distinct positions cannot collapse into the same PHP integer.
+     */
+    private function parseStoredInteger(mixed $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (!is_string($value) || preg_match('/\A([+-]?)([0-9]+)\z/', $value, $parts) !== 1) {
+            throw new OrderingExecutionException('The ordering result must be an integer.');
+        }
+
+        $digits = ltrim($parts[2], '0');
+        if ($digits === '') {
+            return 0;
+        }
+
+        $negative = $parts[1] === '-';
+        $limit = $negative ? substr((string) PHP_INT_MIN, 1) : (string) PHP_INT_MAX;
+        if (strlen($digits) > strlen($limit) || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
+            throw new OrderingExecutionException('The ordering result is outside the PHP integer range.');
+        }
+
+        return (int) (($negative ? '-' : '') . $digits);
+    }
+
+    private function nextPosition(int $maximum): int
+    {
+        if ($maximum === PHP_INT_MAX) {
+            throw new OrderingExecutionException('The next ordering position is outside the PHP integer range.');
+        }
+
+        return $maximum + 1;
     }
 
     private function closeCursor(PDOStatement $statement, string $operation): void

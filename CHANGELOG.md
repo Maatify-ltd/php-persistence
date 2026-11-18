@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed
 
 - Ordering reports PDO statement failures as exceptions across error modes. Failed reads cannot report an empty scope or a missing row, and a failed range shift or target update enters the transaction rollback path.
+- Ordering rejects unrepresentable stored positions and next-position overflow with `OrderingExecutionException`.
 
 ## [1.0.0-rc.1] - 2026-11-12
 

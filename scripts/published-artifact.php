@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/integration-support.php';
-
 const PAV_PACKAGE = 'maatify/php-persistence';
 const PAV_TARGET = '1.0.0-rc.2';
 const PAV_REPOSITORY = 'Maatify-ltd/php-persistence';
@@ -53,8 +51,17 @@ function publishedRead(string $path): string
 
 function publishedVersion(mixed $version): bool
 {
-    // Composer can normalize the separator before the RC number in registry metadata.
-    return is_string($version) && preg_match('/^v?1\.0\.0-rc\.?1$/iD', $version) === 1;
+    if (!is_string($version)) {
+        return false;
+    }
+
+    // Composer can omit the dot before the RC number and include a tag prefix.
+    $version = strtolower($version);
+    if (str_starts_with($version, 'v')) {
+        $version = substr($version, 1);
+    }
+
+    return preg_replace('/-rc([0-9]+)\z/', '-rc.$1', $version) === PAV_TARGET;
 }
 
 /** @return array<string, string> */
@@ -101,6 +108,14 @@ function publishedReference(array $metadata, string $sha): void
         throw new RuntimeException('Packagist must expose GitHub dist and source for the exact qualified SHA');
     }
 }
+
+// Regression tests load the same metadata checks without starting publication verification.
+$scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
+if (!is_string($scriptFilename) || realpath($scriptFilename) !== __FILE__) {
+    return;
+}
+
+require __DIR__ . '/integration-support.php';
 
 $arguments = $_SERVER['argv'] ?? [];
 if (!is_array($arguments) || count($arguments) !== 3 || ($arguments[1] ?? null) !== '--target=' . PAV_TARGET

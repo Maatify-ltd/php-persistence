@@ -11,7 +11,7 @@ use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 
 /**
  * Reports an ordering statement failure when PDO does not throw an exception,
- * or an aggregate query that does not return its required row.
+ * an invalid ordering result, or a next position outside the PHP integer range.
  */
 final class OrderingExecutionException extends SystemMaatifyException implements PhpPersistenceExceptionInterface
 {

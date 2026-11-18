@@ -272,6 +272,19 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));
     }
 
+    public function testPublishedVerificationAcceptsOnlyTheCurrentTarget(): void
+    {
+        require_once self::root() . '/scripts/published-artifact.php';
+
+        self::assertTrue(publishedVersion(PAV_TARGET));
+        self::assertTrue(publishedVersion('v' . PAV_TARGET));
+        self::assertTrue(publishedVersion('v' . str_replace('-rc.', '-RC', PAV_TARGET)));
+        self::assertFalse(publishedVersion(PAV_TARGET . '0'));
+        self::assertFalse(publishedVersion(' ' . PAV_TARGET));
+        self::assertFalse(publishedVersion('1.0.0'));
+        self::assertFalse(publishedVersion(null));
+    }
+
     public function testComposerAndToolingAreProvisionedDeterministically(): void
     {
         $action = self::read('.github/actions/setup-php-composer/action.yml');

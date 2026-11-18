@@ -10,8 +10,7 @@ use PHPUnit\Framework\AssertionFailedError;
 
 /**
  * Forces a specific row's UPDATE of `display_order` to fail with a real, server-raised
- * CHECK constraint violation (MySQL/MariaDB error 3819), so that moveWithinScope()'s
- * target write fails after its range shift already ran.
+ * CHECK constraint violation on either an intermediate shift or the final target write.
  *
  * Legacy (1f6a7aa) proved this with a BEFORE UPDATE trigger issuing SIGNAL. That requires
  * either the SUPER privilege or `log_bin_trust_function_creators=ON`, neither of which the

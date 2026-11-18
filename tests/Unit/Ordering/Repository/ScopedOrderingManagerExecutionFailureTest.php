@@ -8,6 +8,7 @@ use Closure;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+use Maatify\PhpPersistence\Tests\Support\Ordering\OrderingScriptedPdo;
 use Maatify\PhpPersistence\Tests\Support\Ordering\OrderingScriptedStatement;
 use PDO;
 use PDOException;
@@ -17,6 +18,80 @@ use PHPUnit\Framework\TestCase;
 
 final class ScopedOrderingManagerExecutionFailureTest extends TestCase
 {
+    public function testNextPositionsReturnTheLargestRepresentableValue(): void
+    {
+        $manager = new ScopedOrderingManager();
+        $config = new ScopedOrderingConfig('items');
+        $plain = new OrderingScriptedPdo([new OrderingScriptedStatement(fetchColumnQueue: [PHP_INT_MAX - 1])]);
+        $locking = new OrderingScriptedPdo([new OrderingScriptedStatement(fetchColumnQueue: [PHP_INT_MAX - 1, PHP_INT_MAX - 1])]);
+
+        self::assertSame(PHP_INT_MAX, $manager->getNextPosition($plain, $config));
+        self::assertSame(PHP_INT_MAX, $manager->getNextPositionForUpdate($locking, $config));
+    }
+
+    #[DataProvider('representableDecimalOrders')]
+    public function testNextPositionKeepsRepresentablePdoDecimalStrings(string $order, int $next): void
+    {
+        $statement = $this->createMock(PDOStatement::class);
+        $statement->expects(self::once())->method('execute')->willReturn(true);
+        $statement->expects(self::once())->method('fetchColumn')->willReturn($order);
+        $statement->expects(self::once())->method('closeCursor')->willReturn(true);
+        $pdo = $this->createMock(PDO::class);
+        $pdo->expects(self::once())->method('prepare')->willReturn($statement);
+
+        self::assertSame($next, (new ScopedOrderingManager())->getNextPosition($pdo, new ScopedOrderingConfig('items')));
+    }
+
+    /** @return iterable<string, array{string, int}> */
+    public static function representableDecimalOrders(): iterable
+    {
+        yield 'zero-padded positive' => ['+00' . (PHP_INT_MAX - 1), PHP_INT_MAX];
+        yield 'minimum signed integer' => [(string) PHP_INT_MIN, PHP_INT_MIN + 1];
+    }
+
+    #[DataProvider('nextPositionMethods')]
+    public function testNextPositionRejectsOverflow(bool $locking): void
+    {
+        $manager = new ScopedOrderingManager();
+        $config = new ScopedOrderingConfig('items');
+        $pdo = new OrderingScriptedPdo([new OrderingScriptedStatement(fetchColumnQueue: [PHP_INT_MAX, PHP_INT_MAX])]);
+
+        $this->expectException(OrderingExecutionException::class);
+        $this->expectExceptionMessage('The next ordering position is outside the PHP integer range.');
+
+        if ($locking) {
+            $manager->getNextPositionForUpdate($pdo, $config);
+        } else {
+            $manager->getNextPosition($pdo, $config);
+        }
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function nextPositionMethods(): iterable
+    {
+        yield 'plain' => [false];
+        yield 'locking' => [true];
+    }
+
+    public function testMoveRejectsUnrepresentableStoredOrderBeforeMutation(): void
+    {
+        $statement = $this->createMock(PDOStatement::class);
+        $statement->expects(self::once())->method('execute')->willReturn(true);
+        $statement->expects(self::once())->method('fetchColumn')->with(1)->willReturn(PHP_INT_MAX . '0');
+        $statement->expects(self::once())->method('closeCursor')->willReturn(true);
+        $pdo = $this->createMock(PDO::class);
+        $pdo->method('inTransaction')->willReturn(false, false, true);
+        $pdo->expects(self::once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects(self::once())->method('prepare')->willReturn($statement);
+        $pdo->expects(self::once())->method('rollBack')->willReturn(true);
+        $pdo->expects(self::never())->method('commit');
+
+        $this->expectException(OrderingExecutionException::class);
+        $this->expectExceptionMessage('The ordering result is outside the PHP integer range.');
+
+        (new ScopedOrderingManager())->moveWithinScope($pdo, new ScopedOrderingConfig('items'), null, 1, PHP_INT_MAX);
+    }
+
     public function testPrepareFailureIsReportedBeforeExecutingAnOrderingRead(): void
     {
         $pdo = $this->createMock(PDO::class);
