@@ -78,7 +78,12 @@ final readonly class SavepointScope
     /** After a Throwable in the window: best-effort ROLLBACK TO and RELEASE. The caller rethrows the original. */
     public function cleanupAfterFailure(): void
     {
-        if (!$this->pdo->inTransaction()) {
+        try {
+            if (!$this->pdo->inTransaction()) {
+                return;
+            }
+        } catch (Throwable) {
+            // The caller still has the primary failure to rethrow.
             return;
         }
 
