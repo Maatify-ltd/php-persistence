@@ -2,7 +2,9 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-Published release candidate: [`1.0.0-rc.1`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.1), published on 2026-11-12. This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
+This reference accompanies Release Candidate artifact `1.0.0-rc.2`. At preparation, this target was unpublished. The earlier candidate [`1.0.0-rc.1`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.1) was published on 2026-11-12.
+
+This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
 Composer package identity, PHP/extension requirements, dependencies, autoloading, configuration and distribution are owned exclusively by [`composer.json`](composer.json) under the pinned [Composer Package Standard](docs/php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md). This document explains runtime implications of that manifest; it does not restate or override it.
 
@@ -390,7 +392,7 @@ public function rowExistsInScope(
 
 #### Ordering exceptions
 
-`InvalidOrderingConfigurationException`, `InvalidOrderingOperationException` — see §6.3.
+`InvalidOrderingConfigurationException`, `InvalidOrderingOperationException`, and `OrderingExecutionException` — see §6.3.
 
 ### 3.5 `@internal` types (excluded from the public contract)
 
@@ -406,7 +408,7 @@ These classes are reachable because PHP does not restrict class visibility, but 
 These two terms are used precisely and consistently throughout this document and the source code:
 
 - **Caller-owned transaction** — a transaction already active on the `PDO` connection (`$pdo->inTransaction() === true`) when a package method is called. The package never begins, commits, or performs a final rollback of it. Where it needs to limit the blast radius of a failure, it uses a savepoint scoped to its own operation.
-- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called. The package commits it on success or rolls it back on failure.
+- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called. The package commits it on success and attempts a best-effort rollback on failure if the transaction is still active.
 
 ---
 
@@ -463,7 +465,13 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 
 ### 5.4 `ScopedOrderingManager`
 
+The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
+
 `$updatedAtValue` must be null if and only if `updatedAtColumn` is null. When configured, the timestamp is written only to the target row when it actually moves. All four methods first validate scope usage (`$scopeValue` consistent with `$config->scopeColumn`/`$config->nullableScope`); `getNextPosition`, `getNextPositionForUpdate`, and `moveWithinScope` throw `InvalidOrderingOperationException` on misuse, while `rowExistsInScope` additionally just returns `false` for `$id <= 0` without throwing (`moveWithinScope` throws `InvalidOrderingOperationException` for `$id <= 0` or `$newOrder <= 0`).
+
+The host selects the PDO error mode. Ordering uses it as configured, including `ERRMODE_EXCEPTION`, `ERRMODE_SILENT`, and `ERRMODE_WARNING`. A statement failure reported through a return value raises `OrderingExecutionException`. In warning mode, PDO can also emit its usual warning. Any throwable from PDO or the host's warning handler propagates unchanged. A successful empty scope or missing row keeps the result documented below.
+
+Returned order values must be integers in the running PHP process's `PHP_INT_MIN..PHP_INT_MAX` range. The manager validates decimal strings returned by PDO before conversion. A non-integer or out-of-range value raises `OrderingExecutionException`. Both next-position methods raise that exception when the maximum is `PHP_INT_MAX`. A move rejects an out-of-range order encountered in its locking reads before writing any rows. See [DEC-017](docs/decisions/DEC-017-ordering-integer-boundaries.md).
 
 #### `getNextPosition()`
 
@@ -471,17 +479,19 @@ Returns `MAX(orderColumn) + 1` (or `1` for an empty scope) with a **plain, non-l
 
 #### `getNextPositionForUpdate()`
 
-Requires an **active caller-owned PDO transaction**; throws `InvalidOrderingOperationException` otherwise. Issues a locking read (`SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`) and repeats it until two consecutive reads agree, so every call issues at least two locking reads — including for an empty scope. A successful current read can see newly committed rows and the transaction’s own writes. See §7.3 for the observed MariaDB failure mode. Limits: an empty scope has no row to lock, so concurrent first inserts into it are not serialized by this method alone; the row scan (and lock) may cover more than the scope's active rows without a suitable `(scope, order)` index; under `REPEATABLE READ` the lock also covers the gap above the last scanned row; the call may fail with a lock-wait-timeout or deadlock `PDOException`, which propagates unchanged — the caller decides whether to retry.
+Requires an **active caller-owned PDO transaction**; throws `InvalidOrderingOperationException` otherwise. Issues a locking read (`SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`) and repeats it until two consecutive reads agree, so every call issues at least two locking reads — including for an empty scope. A successful current read can see newly committed rows and the transaction’s own writes. See §7.3 for the observed MariaDB failure mode. Limits: an empty scope has no row to lock, so concurrent first inserts into it are not serialized by this method alone; the row scan (and lock) may cover more than the scope's active rows without a suitable `(scope, order)` index; under `REPEATABLE READ` the lock also covers the gap above the last scanned row; a lock-wait timeout or deadlock follows the error-mode policy above. The caller decides whether to retry.
 
 #### `moveWithinScope()`
 
 Never trusts a caller-supplied "current order"; it first locks the active ordering scope and derives its maximum from that locking read. It then reads the target’s current order through a separate locking query. A positive `$newOrder` is limited to `min($newOrder, max(1, $lockedMaximum))`. Runs through `PdoTransactionRunner` (so it owns a transaction when none is active, or participates in the caller's with the behavior of §5.1).
 
+The range shift runs while the target row still occupies its original position. A uniqueness constraint on the order column or on the scope and order columns can reject an intermediate update, even when the intended final order would satisfy the constraint. For general reordering, use a schema that permits these intermediate positions. If the host must enforce uniqueness on positions, use a move strategy that preserves that invariant at each write.
+
 - Returns `true` on a successful move, and `true` (as a no-op, no SQL mutation issued beyond the scope lock and the read) when the row is already at the requested/clamped position.
 - Returns `false` when the target row does not exist in the given scope at the moment it is read under the scope lock — **this is not an exception**, and in this common case **no savepoint statement is issued at all**: the absence is detected before any savepoint is opened.
 - **Participating in a caller-owned transaction:** only once the row is confirmed to exist *and* its clamped target order actually differs from its current order (the no-op and missing-row cases above never reach this point) does it open an operation-local savepoint (`SavepointScope::begin()`), immediately before the first mutating statement. A `Throwable` from the range-shift or target-write statements triggers `cleanupAfterFailure()` (best-effort `ROLLBACK TO`/`RELEASE`) and the original `Throwable` is rethrown unchanged. In the narrower case where the shifts succeed but the final target-row `UPDATE` itself still affects zero rows, the open savepoint is undone through `undoOrFail()` before returning `false` — there, `ROLLBACK TO` is **not** best-effort: its own failure is thrown instead of the `false` result; the following `RELEASE SAVEPOINT` is still best effort. If releasing the savepoint after a successful update fails, the method attempts to undo the operation and throws the release failure. The caller owns the surrounding transaction and its earlier work while that transaction remains active.
 - **Owned path (no active caller transaction):** the method uses no savepoint. It requests a whole-transaction rollback on an exception, on a missing target, or when the target update affects zero rows. Rollback is best effort through `PdoTransactionRunner`.
-- A deadlock (`1213`), the MariaDB `1020` hazard (§7.3), or a lock-wait timeout with `innodb_rollback_on_timeout=ON` can end the **caller's whole transaction** on the server; these surface as the original exception and are never swallowed or retried by this method.
+- A deadlock (`1213`), the MariaDB `1020` hazard (§7.3), or a lock-wait timeout with `innodb_rollback_on_timeout=ON` can end the **caller's whole transaction** on the server. If PDO throws, that exception propagates unchanged. If PDO reports the statement failure by return value, the method raises `OrderingExecutionException`. This method does not retry either failure.
 
 #### `rowExistsInScope()`
 
@@ -533,6 +543,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidOrderingConfigurationException` | `SystemMaatifyException` | Invalid `ScopedOrderingConfig` construction (bad table/column identifier, or `nullableScope` without a `scopeColumn`). |
 | `InvalidOrderingOperationException` | `ValidationMaatifyException` | Invalid runtime arguments or an unmet precondition on a `ScopedOrderingManager` call: inconsistent scope usage, an invalid row id or target order in `moveWithinScope()`, an updated-at value/column mismatch, or a locking next-position read (`getNextPositionForUpdate()`) requested without an active PDO transaction. |
+| `OrderingExecutionException` | `SystemMaatifyException` | Preparing, executing, fetching, or closing an Ordering statement fails without throwing, the next-position aggregate query returns no row, an ordering value is not a representable integer, or the next position exceeds `PHP_INT_MAX`. A fetch with SQLSTATE `00000` and no row is ordinary end of results for reads that allow no row. |
 
 ---
 
@@ -547,7 +558,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 | Callback/operation throws | The original `Throwable` is rethrown unchanged. A cleanup (rollback/savepoint-undo) failure never replaces it. |
 | Deadlock (`40001`/`1213`) in a package-owned transaction | Replayed only under the exact conditions of §5.1, default off (`$maxDeadlockRetries = 0`). |
 | Deadlock or any error in a caller-owned transaction | Never replayed by this package; it propagates to the caller, which decides. |
-| Engine ends the transaction on the server (e.g. MariaDB `1020`, §7.3) | The error propagates unchanged. The package never retries the caller's work and never changes a setting to work around it. |
+| Engine ends the transaction on the server (e.g. MariaDB `1020`, §7.3) | A thrown error propagates unchanged. Ordering reports a return-value failure as described in §5.4. The package never retries the caller's work and never changes a setting to work around it. |
 
 ### 7.2 Savepoint ownership
 
@@ -559,12 +570,12 @@ This is a **documented hazard with evidence**, not an advertised, unconditional 
 
 What is verified, by named Integration tests (`tests/Integration/Ordering/ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest.php`, `ScopedOrderingManagerStaleSnapshotTest.php`, `ScopedOrderingManagerMoveStaleSnapshotTest.php`), on real MariaDB cells:
 
-- With `innodb_snapshot_isolation=ON` (the MariaDB 11.8+ default), a locking read inside `getNextPositionForUpdate()` or the scope lock inside `moveWithinScope()`, taken after an older `REPEATABLE READ` snapshot and touching a row changed since that snapshot, fails with the driver's `PDOException` carrying driver code `1020`. It propagates **completely unchanged** — no savepoint is attempted, no retry happens, and no setting is overridden.
+- With `innodb_snapshot_isolation=ON` (the MariaDB 11.8+ default), a locking read inside `getNextPositionForUpdate()` or the scope lock inside `moveWithinScope()`, taken after an older `REPEATABLE READ` snapshot and touching a row changed since that snapshot, fails with driver code `1020`. In the tested exception mode, the driver's `PDOException` propagates unchanged. A failure reported by return value follows the error-mode policy in §5.4. No savepoint is attempted, no retry happens, and no setting is overridden.
 - In the covered scenarios the server rolled back the caller’s whole transaction, including an earlier write, while `PDO::inTransaction()` could still report `true`. Continuing to use the connection as if the transaction were alive risks later statements running under an unintended implicit/autocommit transaction.
 - With the setting `OFF` (several ratified test cells default to `OFF`; see [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) §3), the ordinary "locking read sees the latest committed state" guarantee holds, matching MySQL 8.0/8.4 behavior.
 - The package **never** sets `innodb_snapshot_isolation`, the isolation level, or any other connection/session attribute, on any engine.
 
-The connection owner must account for the observed difference between the server’s transaction state and PDO’s report. The package leaves the original exception and session settings to the caller. Handling and recovery policy for this case remain deferred in DEC-009.
+The connection owner must account for the observed difference between the server’s transaction state and PDO’s report. The package preserves any original exception and leaves session settings to the caller. Handling and recovery policy for this case remain deferred in DEC-009.
 
 ### 7.4 Deadlock replay bounds
 
@@ -598,7 +609,7 @@ This section exists so that every behavioral claim above can be checked directly
 |---|---|---|
 | Transaction | `tests/Regression/TransactionPublicApiRegressionTest.php`, `tests/Regression/Exception/*ContractTest.php` | `tests/Unit/Transaction/Repository/{PdoTransactionRunnerTest,PdoSavepointTransactionRunnerTest,PdoSavepointTransactionRunnerRetryTest,OwnedTransactionExecutorTest,DeadlockRetryFailClosedTest,SavepointScopeTest}.php`; `tests/Integration/Transaction/{PdoTransactionRunnerIntegrationTest,PdoSavepointTransactionRunnerIntegrationTest,DeadlockRetryIntegrationTest}.php` (genuine deadlocks via a real partner process) |
 | Pagination | `tests/Regression/Pagination/{PaginationPublicApiRegressionTest,PaginationSqlContractRegressionTest}.php` | `tests/Unit/Pagination/*.php`; `tests/Integration/Pagination/{PdoPaginatorQuerySemanticsTest,PdoPaginatorFailureContractTest,PdoPaginatorSnapshotConsistencyTest,PdoPaginatorTransactionTest}.php` (deterministic concurrent-writer snapshot test) |
-| Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
+| Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest,Repository/ScopedOrderingManagerExecutionFailureTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
 
 A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its legacy-vs-current delta) remains available in [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as a framed historical/evidence record; this section and §§5–8 above are the current normative restatement for a consumer.
 

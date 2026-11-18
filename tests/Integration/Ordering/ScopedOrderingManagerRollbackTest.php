@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Support\Ordering\OrderingFailureInjector;
 use PDO;
 use PDOException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
 /**
@@ -141,6 +143,84 @@ final class ScopedOrderingManagerRollbackTest extends OrderingIntegrationTestCas
         } finally {
             $failureInjector->dropConstraint($this->scopedTable, $constraint);
         }
+    }
+
+    #[DataProvider('failedWriteModes')]
+    public function testWriteFailurePreservesOrderingAndTransactionOwnership(
+        bool $callerOwned,
+        int $errorMode,
+        bool $duringShift,
+    ): void {
+        $ids = $this->insertGlobalOrders(1, 2, 3, 4);
+        $before = $this->reader()->globalOrdersById();
+        $injector = new OrderingFailureInjector($this->controlPdo);
+        // An upward move sends the row at 2 to 3 before moving the target from 4 to 2.
+        $constraint = $injector->createTargetUpdateFailure(
+            $this->globalTable,
+            $duringShift ? $ids[1] : $ids[3],
+            $duringShift ? 3 : 2,
+        );
+        $pdo = $this->pdo();
+        $priorWrite = null;
+
+        try {
+            self::assertTrue($pdo->setAttribute(PDO::ATTR_ERRMODE, $errorMode));
+            if ($callerOwned) {
+                self::assertTrue($pdo->beginTransaction());
+                $priorWrite = $this->fixture->insertScoped('prior-work', 1);
+            }
+
+            $failure = $this->captureMoveFailure($this->globalConfig(), null, $ids[3], 2);
+
+            if ($errorMode === PDO::ERRMODE_EXCEPTION) {
+                self::assertInstanceOf(PDOException::class, $failure);
+            } else {
+                self::assertInstanceOf(OrderingExecutionException::class, $failure);
+                $operation = $duringShift ? 'shiftOrdersUp' : 'updateTargetOrder';
+                self::assertSame(sprintf('Failed to execute the ordering statement for %s.', $operation), $failure->getMessage());
+            }
+            self::assertSame($callerOwned, $pdo->inTransaction());
+            self::assertSame($before, $this->reader()->globalOrdersById());
+            if ($priorWrite !== null) {
+                self::assertSame([$priorWrite => 1], $this->reader()->scopedOrdersById('prior-work'));
+                self::assertTrue($pdo->commit());
+                self::assertSame([$priorWrite => 1], $this->reader($this->controlPdo)->scopedOrdersById('prior-work'));
+            }
+            self::assertSame($before, $this->reader($this->controlPdo)->globalOrdersById());
+        } finally {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $injector->dropConstraint($this->globalTable, $constraint);
+        }
+    }
+
+    public function testOutOfRangeStoredOrderDoesNotReportASuccessfulMove(): void
+    {
+        $pdo = $this->pdo();
+        $pdo->exec('ALTER TABLE `' . $this->globalTable . '` MODIFY `display_order` BIGINT UNSIGNED NOT NULL');
+        $pdo->exec('INSERT INTO `' . $this->globalTable . '` (`display_order`, `label`) VALUES (18446744073709551615, \'wide\')');
+        $id = (int) $pdo->lastInsertId();
+
+        $failure = $this->captureMoveFailure($this->globalConfig(), null, $id, PHP_INT_MAX);
+
+        self::assertInstanceOf(OrderingExecutionException::class, $failure);
+        self::assertSame('The ordering result is outside the PHP integer range.', $failure->getMessage());
+        self::assertFalse($pdo->inTransaction());
+        $read = $this->controlPdo->query('SELECT CAST(`display_order` AS CHAR) FROM `' . $this->globalTable . '`');
+        self::assertNotFalse($read);
+        self::assertSame('18446744073709551615', $read->fetchColumn());
+    }
+
+    /** @return iterable<string, array{bool, int, bool}> */
+    public static function failedWriteModes(): iterable
+    {
+        yield 'silent target update, package-owned' => [false, PDO::ERRMODE_SILENT, false];
+        yield 'silent target update, caller-owned' => [true, PDO::ERRMODE_SILENT, false];
+        yield 'silent shift, package-owned' => [false, PDO::ERRMODE_SILENT, true];
+        yield 'silent shift, caller-owned' => [true, PDO::ERRMODE_SILENT, true];
+        yield 'throwing shift, package-owned' => [false, PDO::ERRMODE_EXCEPTION, true];
+        yield 'throwing shift, caller-owned' => [true, PDO::ERRMODE_EXCEPTION, true];
     }
 
     private function captureMoveFailure(

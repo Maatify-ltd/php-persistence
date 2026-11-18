@@ -6,9 +6,11 @@ namespace Maatify\PhpPersistence\Ordering\Repository;
 
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Repository\SavepointScope;
 use PDO;
+use PDOStatement;
 use Throwable;
 
 /**
@@ -23,10 +25,12 @@ use Throwable;
  * - moveWithinScope() uses the Gen2 {@see PdoTransactionRunner} (DEC-007, DEC-011).
  * - It owns the transaction when called outside an active PDO transaction.
  * - It participates in an active caller-owned PDO transaction without
- *   committing or fully rolling it back. There it undoes its own mutation
- *   window with an operation-local savepoint, taken through the shared
- *   {@see SavepointScope} (DEC-011 item 2) after the scope lock and the
- *   read-only checks and before the first mutating statement.
+ *   committing or fully rolling it back. After the scope lock and the
+ *   read-only checks, it creates an operation-local savepoint through
+ *   {@see SavepointScope} (DEC-011 item 2) before the first mutating statement.
+ *   The savepoint allows best-effort rollback of a failed mutation.
+ * - Locking and rollback require a transactional storage engine with row locks
+ *   and savepoints, such as InnoDB. The host owns the table schema.
  *
  * Ordering model:
  * - getNextPosition() returns max(order) + 1 with a plain read and no lock.
@@ -34,9 +38,13 @@ use Throwable;
  *   state using a locking read inside an active caller-owned PDO transaction.
  * - moveWithinScope() locks the whole ordering scope with SELECT ... FOR UPDATE,
  *   then reads the current row order from the database inside the transaction.
- * - newOrder is clamped to the maximum position read by that same locking read,
- *   so the clamp reflects the latest committed state even when the caller's
+ * - The positive newOrder is capped at the locked maximum, with a minimum
+ *   cap of 1. The cap reflects the locking read even when the caller's
  *   REPEATABLE READ snapshot is older.
+ *
+ * The caller controls the PDO error mode. Statement failures reported without
+ * a thrown exception raise OrderingExecutionException. Exceptions raised by
+ * PDO propagate unchanged.
  *
  * Tests with MariaDB innodb_snapshot_isolation=ON observed driver code 1020
  * when a locking read visited a row changed after an older caller snapshot.
@@ -73,6 +81,8 @@ final readonly class ScopedOrderingManager
      * for the cases above where no older snapshot exists.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
+     * @throws OrderingExecutionException When the read fails without throwing, yields no row, or produces an invalid or unrepresentable position.
+     * @throws Throwable When a PDO operation throws.
      */
     public function getNextPosition(
         PDO $pdo,
@@ -83,15 +93,24 @@ final readonly class ScopedOrderingManager
 
         [$whereSql, $params] = $this->buildScopeWhere($config, $scopeValue);
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'SELECT COALESCE(MAX(' . $config->quotedOrderColumn() . '), 0)
                FROM ' . $config->quotedTable()
             . $whereSql,
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
 
-        return ((int) $stmt->fetchColumn()) + 1;
+        $value = $this->fetchIntegerOrEof($stmt, __FUNCTION__);
+        $this->closeCursor($stmt, __FUNCTION__);
+
+        if ($value === false) {
+            throw new OrderingExecutionException('The next-position aggregate did not return a row.');
+        }
+
+        return $this->nextPosition($value);
     }
 
     /**
@@ -138,10 +157,10 @@ final readonly class ScopedOrderingManager
      *   lock footprint and the contention and deadlock surface compared with a
      *   single read.
      * - The call may wait for locks and fail with a lock wait timeout or
-     *   deadlock PDOException, which propagates unchanged; retrying is the
-     *   caller's responsibility. Under REPEATABLE READ, a call queued behind a
-     *   transaction that then inserts above the locked row typically fails with
-     *   a deadlock instead of resuming.
+     *   deadlock. The failure follows the configured PDO error mode, and
+     *   retrying is the caller's responsibility. Under REPEATABLE READ, a call
+     *   queued behind a transaction that then inserts above the locked row
+     *   typically fails with a deadlock instead of resuming.
      *
      * MariaDB innodb_snapshot_isolation: tests with the setting ON observed
      * PDOException with driver code 1020 after a locking read touched a row
@@ -153,7 +172,8 @@ final readonly class ScopedOrderingManager
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
      *
      * @throws InvalidOrderingOperationException When no PDO transaction is active or scope usage is inconsistent.
-     * @throws Throwable When a PDO/database operation fails.
+     * @throws OrderingExecutionException When a statement fails without throwing or the next position cannot be represented as a PHP integer.
+     * @throws Throwable When a PDO/database operation throws.
      */
     public function getNextPositionForUpdate(
         PDO $pdo,
@@ -173,7 +193,9 @@ final readonly class ScopedOrderingManager
         // ORDER BY ... DESC LIMIT 1 lets InnoDB stop at the last active row when
         // an (scope, order) index exists. MAX(...) FOR UPDATE would lock every
         // row of the scanned scope range instead.
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'SELECT ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
             . $whereSql
@@ -190,15 +212,15 @@ final readonly class ScopedOrderingManager
         $previousTail = null;
 
         while (true) {
-            $stmt->execute($params);
+            $this->executeStatement($stmt, $params, __FUNCTION__);
 
-            $value = $stmt->fetchColumn();
-            $stmt->closeCursor();
+            $value = $this->fetchIntegerOrEof($stmt, __FUNCTION__);
+            $this->closeCursor($stmt, __FUNCTION__);
 
-            $tail = $value === false ? 0 : (int) $value;
+            $tail = $value === false ? 0 : $value;
 
             if ($tail === $previousTail) {
-                return $tail + 1;
+                return $this->nextPosition($tail);
             }
 
             $previousTail = $tail;
@@ -213,43 +235,50 @@ final readonly class ScopedOrderingManager
      * the database inside the same transaction.
      *
      * The scope lock serializes concurrent reorder operations within the same
-     * scope and prevents overlapping range updates from interleaving.
+     * scope and prevents overlapping range updates from interleaving on a
+     * transactional table that provides row locks and savepoints.
      *
-     * If $newOrder is larger than the current maximum order in the scope, it is
-     * clamped to the maximum position. This keeps ordering positions contiguous
-     * instead of creating large gaps.
+     * The positive $newOrder is capped at the locked maximum, with a minimum
+     * cap of 1. This avoids introducing gaps beyond the existing maximum.
+     * The range shift runs before the target leaves its original position.
+     * A unique key on positions globally or within a scope can reject the
+     * intermediate update even when the intended final order is valid.
      *
      * Return values:
      * - true when the move succeeds.
      * - true when the target row is already at the requested/clamped position.
      * - false when the target row does not exist in the given scope.
+     * - false when the target update affects zero rows and the move is undone.
      *
-     * Caller-owned transaction: a Throwable in the range shift or the target
-     * write, or `false` after the shifts, is followed by ROLLBACK TO SAVEPOINT of
-     * an operation-local savepoint ({@see SavepointScope}), so the shifted rows
-     * do not remain; the original Throwable is rethrown unchanged and a cleanup
-     * failure never replaces it. If the undo behind `false` itself fails, that
-     * failure is thrown instead of `false`. A no-op move and a missing row issue
-     * no savepoint statement; a mutating move adds SAVEPOINT and RELEASE. The
-     * scope lock is kept, earlier work and the caller's own savepoints are
+     * Caller-owned transaction: a Throwable in the range shift or target write
+     * triggers best-effort rollback to and release of the operation-local
+     * savepoint ({@see SavepointScope}). The original Throwable is rethrown
+     * unchanged. If the target update affects zero rows, rollback to the
+     * savepoint must succeed before returning false. A no-op move and a
+     * missing row issue no savepoint statement. A mutating move adds SAVEPOINT
+     * and RELEASE. While the transaction remains active, the scope lock is
+     * kept, earlier work and the caller's own savepoints are
      * untouched, and the caller still owns commit and rollback. A deadlock (1213),
-     * MariaDB 1020 and 1205 with innodb_rollback_on_timeout=ON end the caller's
-     * whole transaction on the server: they surface as the original exception, are
-     * not rescued, and must not be swallowed. A best-effort guard throws
+     * the MariaDB 1020 hazard, or a lock-wait timeout (1205) with
+     * innodb_rollback_on_timeout=ON can end the caller's whole transaction on
+     * the server. The failure follows the configured PDO error mode. This
+     * method does not retry or recover it. A best-effort guard throws
      * TransactionExecutionException before the first mutation when the SAVEPOINT
      * reply shows that the transaction has ended; it is not a proof of
      * transaction identity.
      *
      * The same MariaDB 1020 hazard described for getNextPositionForUpdate()
      * was observed at the scope lock, before this method opens a savepoint.
-     * The original exception propagates without retry. An operation-local
-     * savepoint cannot restore a transaction rolled back by the server.
+     * When PDO throws, the original exception propagates unchanged. An
+     * operation-local savepoint cannot restore a transaction rolled back by
+     * the server.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
      * @param string|null $updatedAtValue Timestamp value bound to the target update when updatedAtColumn is configured.
      *
      * @throws InvalidOrderingOperationException When id/order/scope arguments are invalid.
-     * @throws Throwable When a PDO/database operation fails.
+     * @throws OrderingExecutionException When a statement fails without throwing or a stored order cannot be represented as a PHP integer.
+     * @throws Throwable When a PDO/database operation throws.
      */
     public function moveWithinScope(
         PDO $pdo,
@@ -344,6 +373,7 @@ final readonly class ScopedOrderingManager
      * Soft-deleted rows are treated as non-existing when deletedAtColumn is configured.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
+     * @throws OrderingExecutionException When the read fails without throwing.
      */
     public function rowExistsInScope(
         PDO $pdo,
@@ -364,16 +394,21 @@ final readonly class ScopedOrderingManager
         $this->appendScopeCondition($config, $scopeValue, $where, $params);
         $this->appendSoftDeleteCondition($config, $where);
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'SELECT 1
                FROM ' . $config->quotedTable() . '
               WHERE ' . implode(' AND ', $where) . '
               LIMIT 1',
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
 
-        return (bool) $stmt->fetchColumn();
+        $value = $this->fetchIntegerOrEof($stmt, __FUNCTION__);
+        $this->closeCursor($stmt, __FUNCTION__);
+
+        return (bool) $value;
     }
 
     /**
@@ -410,7 +445,9 @@ final readonly class ScopedOrderingManager
 
         $whereSql = $where !== [] ? ' WHERE ' . implode(' AND ', $where) : '';
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'SELECT ' . $config->quotedIdColumn() . ', ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
             . $whereSql
@@ -418,16 +455,16 @@ final readonly class ScopedOrderingManager
               FOR UPDATE',
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
 
         $maxOrder = 0;
 
         // Column 1 is the order column; false marks the end of the result set.
-        while (($order = $stmt->fetchColumn(1)) !== false) {
-            $maxOrder = (int) $order;
+        while (($order = $this->fetchIntegerOrEof($stmt, __FUNCTION__, 1)) !== false) {
+            $maxOrder = $order;
         }
 
-        $stmt->closeCursor();
+        $this->closeCursor($stmt, __FUNCTION__);
 
         return $maxOrder;
     }
@@ -454,7 +491,9 @@ final readonly class ScopedOrderingManager
         $this->appendScopeCondition($config, $scopeValue, $where, $params);
         $this->appendSoftDeleteCondition($config, $where);
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'SELECT ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable() . '
               WHERE ' . implode(' AND ', $where) . '
@@ -462,11 +501,12 @@ final readonly class ScopedOrderingManager
               FOR UPDATE',
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
 
-        $value = $stmt->fetchColumn();
+        $value = $this->fetchIntegerOrEof($stmt, __FUNCTION__);
+        $this->closeCursor($stmt, __FUNCTION__);
 
-        return $value === false ? null : (int) $value;
+        return $value === false ? null : $value;
     }
 
     /**
@@ -497,13 +537,15 @@ final readonly class ScopedOrderingManager
         $where[] = $config->quotedOrderColumn() . ' >= :new_order_where';
         $where[] = $config->quotedOrderColumn() . ' < :current_order';
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'UPDATE ' . $config->quotedTable() . '
                 SET ' . $config->quotedOrderColumn() . ' = ' . $config->quotedOrderColumn() . ' + 1
               WHERE ' . implode(' AND ', $where),
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
     }
 
     /**
@@ -534,13 +576,15 @@ final readonly class ScopedOrderingManager
         $where[] = $config->quotedOrderColumn() . ' <= :new_order_where';
         $where[] = $config->quotedOrderColumn() . ' > :current_order';
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'UPDATE ' . $config->quotedTable() . '
                 SET ' . $config->quotedOrderColumn() . ' = ' . $config->quotedOrderColumn() . ' - 1
               WHERE ' . implode(' AND ', $where),
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
     }
 
     /**
@@ -573,15 +617,109 @@ final readonly class ScopedOrderingManager
             $params['updated_at_value'] = $updatedAtValue;
         }
 
-        $stmt = $pdo->prepare(
+        $stmt = $this->prepareStatement(
+            $pdo,
+            __FUNCTION__,
             'UPDATE ' . $config->quotedTable() . '
                 SET ' . $set . '
               WHERE ' . implode(' AND ', $where),
         );
 
-        $stmt->execute($params);
+        $this->executeStatement($stmt, $params, __FUNCTION__);
 
         return $stmt->rowCount() > 0;
+    }
+
+    private function prepareStatement(PDO $pdo, string $operation, string $sql): PDOStatement
+    {
+        $statement = $pdo->prepare($sql);
+        if ($statement === false) {
+            throw new OrderingExecutionException(sprintf('Failed to prepare the ordering statement for %s.', $operation));
+        }
+
+        return $statement;
+    }
+
+    /** @param array<string, int|string|null> $params */
+    private function executeStatement(PDOStatement $statement, array $params, string $operation): void
+    {
+        if (!$statement->execute($params)) {
+            throw new OrderingExecutionException(sprintf('Failed to execute the ordering statement for %s.', $operation));
+        }
+    }
+
+    /**
+     * All selected columns are numeric. In these queries false denotes EOF
+     * only when the driver reports a successful statement. Read SQLSTATE
+     * before closing the cursor, which can replace it.
+     */
+    private function fetchIntegerOrEof(PDOStatement $statement, string $operation, int $column = 0): int|false
+    {
+        try {
+            $value = $statement->fetchColumn($column);
+            if ($value === false) {
+                if ($statement->errorCode() !== '00000') {
+                    throw new OrderingExecutionException(sprintf('Failed to fetch the ordering result for %s.', $operation));
+                }
+
+                return false;
+            }
+
+            return $this->parseStoredInteger($value);
+        } catch (Throwable $failure) {
+            // Release an open result before the transaction owner attempts rollback.
+            try {
+                $statement->closeCursor();
+            } catch (Throwable) {
+                // Cursor cleanup must not replace the primary read failure.
+            }
+
+            throw $failure;
+        }
+    }
+
+    /**
+     * PDO may return integer columns as decimal strings, including unsigned
+     * numbers greater than PHP_INT_MAX. Check the magnitude before casting
+     * so distinct positions cannot collapse into the same PHP integer.
+     */
+    private function parseStoredInteger(mixed $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (!is_string($value) || preg_match('/\A([+-]?)([0-9]+)\z/', $value, $parts) !== 1) {
+            throw new OrderingExecutionException('The ordering result must be an integer.');
+        }
+
+        $digits = ltrim($parts[2], '0');
+        if ($digits === '') {
+            return 0;
+        }
+
+        $negative = $parts[1] === '-';
+        $limit = $negative ? substr((string) PHP_INT_MIN, 1) : (string) PHP_INT_MAX;
+        if (strlen($digits) > strlen($limit) || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
+            throw new OrderingExecutionException('The ordering result is outside the PHP integer range.');
+        }
+
+        return (int) (($negative ? '-' : '') . $digits);
+    }
+
+    private function nextPosition(int $maximum): int
+    {
+        if ($maximum === PHP_INT_MAX) {
+            throw new OrderingExecutionException('The next ordering position is outside the PHP integer range.');
+        }
+
+        return $maximum + 1;
+    }
+
+    private function closeCursor(PDOStatement $statement, string $operation): void
+    {
+        if (!$statement->closeCursor()) {
+            throw new OrderingExecutionException(sprintf('Failed to close the ordering result for %s.', $operation));
+        }
     }
 
     /**

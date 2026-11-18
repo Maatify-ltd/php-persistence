@@ -257,17 +257,32 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
     }
 
-    public function testReleaseArtifactGateVerifiesTheQualifiedRcTag(): void
+    public function testReleaseArtifactGateVerifiesTheExactCandidateCommit(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');
         [, $following] = array_pad(explode("\n  release-artifact:\n", $workflow, 2), 2, '');
         [$job] = explode("\n  exploratory:\n", $following, 2);
-        self::assertStringContainsString('ref: refs/tags/v1.0.0-rc.1', $job);
-        self::assertStringContainsString('ARTIFACT_SHA: 34c3b874525d36ae064c162cdd553bc75d18772b', $job);
+        $candidateSha = '${{ github.event.pull_request.head.sha || github.sha }}';
+        self::assertStringContainsString('ref: ' . $candidateSha, $job);
+        self::assertStringContainsString('ARTIFACT_SHA: ' . $candidateSha, $job);
+        self::assertStringContainsString('set -euo pipefail', $job);
         self::assertStringContainsString('test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"', $job);
-        self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.1 --sha="$ARTIFACT_SHA"', $job);
+        self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.2 --sha="$ARTIFACT_SHA"', $job);
         self::assertStringContainsString('persist-credentials: false', $job);
         self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));
+    }
+
+    public function testPublishedVerificationAcceptsOnlyTheCurrentTarget(): void
+    {
+        require_once self::root() . '/scripts/published-artifact.php';
+
+        self::assertTrue(publishedVersion(PAV_TARGET));
+        self::assertTrue(publishedVersion('v' . PAV_TARGET));
+        self::assertTrue(publishedVersion('v' . str_replace('-rc.', '-RC', PAV_TARGET)));
+        self::assertFalse(publishedVersion(PAV_TARGET . '0'));
+        self::assertFalse(publishedVersion(' ' . PAV_TARGET));
+        self::assertFalse(publishedVersion('1.0.0'));
+        self::assertFalse(publishedVersion(null));
     }
 
     public function testComposerAndToolingAreProvisionedDeterministically(): void

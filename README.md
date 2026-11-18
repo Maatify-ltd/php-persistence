@@ -8,8 +8,8 @@
   <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
 </picture>
 
-[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1)
-[![Version](https://img.shields.io/badge/Version-1.0.0--rc.1-blue)](https://packagist.org/packages/maatify/php-persistence)
+[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](#overview)
+[![Artifact target](https://img.shields.io/badge/Artifact-1.0.0--rc.2-blue)](#installation)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
 [![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](README.md#quality-status)
@@ -36,7 +36,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-**Release Candidate `1.0.0-rc.1`** is published on [Packagist](https://packagist.org/packages/maatify/php-persistence) and available as a [GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1). The package has no Stable release.
+**Release Candidate artifact `1.0.0-rc.2`.** At preparation, this target was unpublished. The published release candidate at that time was [`1.0.0-rc.1`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.1), with [its own GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1). The package had no Stable release at preparation.
 
 ## Key Features
 
@@ -57,10 +57,10 @@ These are declared runtime requirements, not a statement that any specific datab
 
 ## Installation
 
-Install the exact release candidate from Packagist:
+This command resolves from Packagist after `1.0.0-rc.2` is published.
 
 ```bash
-composer require maatify/php-persistence:1.0.0-rc.1
+composer require maatify/php-persistence:1.0.0-rc.2
 ```
 
 See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md) for release and support details.
@@ -77,10 +77,17 @@ use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 $runner = new PdoTransactionRunner($pdo); // $maxDeadlockRetries defaults to 0 (no replay)
 
 $orderId = $runner->run(function () use ($pdo): int {
-    $pdo->prepare('INSERT INTO orders (customer_id) VALUES (:customer_id)')
-        ->execute(['customer_id' => 42]);
+    $statement = $pdo->prepare('INSERT INTO orders (customer_id) VALUES (:customer_id)');
+    if ($statement === false || !$statement->execute(['customer_id' => 42])) {
+        throw new RuntimeException('Could not insert the order.');
+    }
 
-    return (int) $pdo->lastInsertId();
+    $id = $pdo->lastInsertId();
+    if ($id === false) {
+        throw new RuntimeException('Could not read the new order ID.');
+    }
+
+    return (int) $id;
 });
 ```
 
@@ -92,7 +99,7 @@ The public surface is three independent capability namespaces under `Maatify\Php
 
 - `Transaction\Repository\{TransactionRunnerInterface, SavepointTransactionRunnerInterface, PdoTransactionRunner, PdoSavepointTransactionRunner}` and `Transaction\Exception\{InvalidTransactionConfigurationException, TransactionExecutionException}`.
 - `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`.
-- `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException}`.
+- `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
 Two internal helper classes (`Transaction\Repository\{OwnedTransactionExecutor, SavepointScope}`) are reachable but are explicitly **not** part of the public contract or SemVer.

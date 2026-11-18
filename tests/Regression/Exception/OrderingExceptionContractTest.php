@@ -11,6 +11,7 @@ use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingConfigurationException;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -37,6 +38,17 @@ final class OrderingExceptionContractTest extends TestCase
         self::assertInstanceOf(ValidationMaatifyException::class, $exception);
         self::assertInstanceOf(PhpPersistenceExceptionInterface::class, $exception);
         self::assertSame(ErrorCodeEnum::INVALID_ARGUMENT, $exception->getErrorCode());
+    }
+
+    public function testOrderingExecutionExceptionContract(): void
+    {
+        $class = new ReflectionClass(OrderingExecutionException::class);
+        $exception = new OrderingExecutionException('ordering statement failure');
+
+        self::assertTrue($class->isFinal());
+        self::assertInstanceOf(SystemMaatifyException::class, $exception);
+        self::assertInstanceOf(PhpPersistenceExceptionInterface::class, $exception);
+        self::assertSame(ErrorCodeEnum::MAATIFY_ERROR, $exception->getErrorCode());
     }
 
     /**

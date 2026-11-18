@@ -26,10 +26,13 @@ $pdo = php_persistence_example_connect();
 $table = php_persistence_example_table_name('orders');
 $quotedTable = '`' . $table . '`';
 
-$pdo->exec(
-    "CREATE TABLE {$quotedTable} ("
-    . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
-    . "status VARCHAR(16) NOT NULL)",
+php_persistence_example_assert(
+    $pdo->exec(
+        "CREATE TABLE {$quotedTable} ("
+        . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
+        . "status VARCHAR(16) NOT NULL)",
+    ) !== false,
+    'failed to create the pagination fixture table',
 );
 
 try {
@@ -38,10 +41,10 @@ try {
         'failed to prepare the seed insert',
     );
     for ($i = 0; $i < 15; $i++) {
-        $insert->execute(['status' => 'paid']);
+        php_persistence_example_assert($insert->execute(['status' => 'paid']), 'failed to insert a paid order');
     }
     for ($i = 0; $i < 10; $i++) {
-        $insert->execute(['status' => 'pending']);
+        php_persistence_example_assert($insert->execute(['status' => 'pending']), 'failed to insert a pending order');
     }
 
     // Input: an untrusted request asking for page 2 of the "paid" orders, 10 per page.
@@ -110,7 +113,7 @@ try {
     php_persistence_example_assert($emptyPage->totalPages === 0, 'an empty filter must report zero total pages');
     echo "Boundary -> status = cancelled (no rows) short-circuits to an empty page 1\n";
 } finally {
-    $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
+    php_persistence_example_assert($pdo->exec("DROP TABLE IF EXISTS {$quotedTable}") !== false, 'failed to drop the pagination fixture table');
 }
 
 echo "OK\n";

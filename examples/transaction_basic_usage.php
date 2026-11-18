@@ -24,7 +24,10 @@ $pdo = php_persistence_example_connect();
 $table = php_persistence_example_table_name('invoices');
 $quotedTable = '`' . $table . '`';
 
-$pdo->exec("CREATE TABLE {$quotedTable} (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, total_cents INT NOT NULL) ENGINE=InnoDB");
+php_persistence_example_assert(
+    $pdo->exec("CREATE TABLE {$quotedTable} (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, total_cents INT NOT NULL) ENGINE=InnoDB") !== false,
+    'failed to create the invoice fixture table',
+);
 
 try {
     // Input: no active transaction on $pdo yet, so the runner will own one.
@@ -38,9 +41,9 @@ try {
             $pdo->prepare("INSERT INTO {$quotedTable} (total_cents) VALUES (:total)"),
             'failed to prepare the insert statement',
         );
-        $statement->execute(['total' => 1999]);
+        php_persistence_example_assert($statement->execute(['total' => 1999]), 'failed to insert the invoice');
 
-        return (int) $pdo->lastInsertId();
+        return php_persistence_example_to_int($pdo->lastInsertId());
     });
 
     // Result: the committed row is visible because run() already committed it.
@@ -49,7 +52,7 @@ try {
         'failed to run the verification query',
     );
     php_persistence_example_assert(!$pdo->inTransaction(), 'the runner left its owned transaction open');
-    $persisted = (int) $countStatement->fetchColumn();
+    $persisted = php_persistence_example_to_int($countStatement->fetchColumn());
     php_persistence_example_assert($persisted === 1, 'the committed invoice row is not visible after run() returned');
     echo "Result   -> committed invoice id={$invoiceId}, visible outside the callback\n";
 
@@ -65,7 +68,7 @@ try {
                 $pdo->prepare("INSERT INTO {$quotedTable} (total_cents) VALUES (:total)"),
                 'failed to prepare the insert statement',
             );
-            $statement->execute(['total' => 500]);
+            php_persistence_example_assert($statement->execute(['total' => 500]), 'failed to insert the rollback fixture');
 
             throw $failure;
         });
@@ -79,7 +82,7 @@ try {
         $pdo->query("SELECT COUNT(*) FROM {$quotedTable}"),
         'failed to run the row-count verification query',
     )->fetchColumn();
-    php_persistence_example_assert((int) $totalRows === 1, 'the failed callback was not fully rolled back');
+    php_persistence_example_assert(php_persistence_example_to_int($totalRows) === 1, 'the failed callback was not fully rolled back');
     echo "Boundary -> the second insert was rolled back; only the first committed row remains\n";
 
     // Boundary: the configuration-validation failure of the constructor itself.
@@ -97,7 +100,7 @@ try {
     if ($pdo->inTransaction() && !$pdo->rollBack()) {
         throw new RuntimeException('Could not roll back the fixture transaction before dropping its table');
     }
-    $pdo->exec("DROP TABLE IF EXISTS {$quotedTable}");
+    php_persistence_example_assert($pdo->exec("DROP TABLE IF EXISTS {$quotedTable}") !== false, 'failed to drop the invoice fixture table');
 }
 
 echo "OK\n";

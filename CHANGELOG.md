@@ -4,13 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0-rc.2]
 
 ### Changed
 
 - Documented free written licenses and registration for security advisories and critical update notices.
 
-- Recorded Maatify Ltd. as the copyright holder and licensor for the next release.
+- Recorded Maatify Ltd. as the copyright holder and licensor.
+
+### Fixed
+
+- Ordering reports PDO statement failures as exceptions across error modes. Failed reads cannot report an empty scope or a missing row, and a failed range shift or target update enters the transaction rollback path.
+- Ordering rejects unrepresentable stored positions and next-position overflow with `OrderingExecutionException`.
 
 ## [1.0.0-rc.1] - 2026-11-12
 

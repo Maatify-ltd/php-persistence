@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-**Artifact target:** Release Candidate `1.0.0-rc.1`. See the [README](../../README.md#installation) for the exact installation target and when it resolves.
+**Artifact target:** Release Candidate `1.0.0-rc.2`. See the [README](../../README.md#installation) for the exact installation target and when it resolves.
 
 ## Before you start
 
@@ -45,6 +45,8 @@ php examples/ordering_basic_usage.php
 **Outputs:** the callback's return value, or the callback's original `Throwable` rethrown unchanged.
 **Boundary:** the runner never begins/commits/rolls back a transaction it did not itself begin.
 
+The callback owns its PDO statements. Check failure return values from those statements and throw from the callback so an owned transaction follows the rollback path.
+
 ### Walkthrough: `Input → Public Call → Result → Boundary`
 
 ```php
@@ -59,10 +61,17 @@ $runner = new PdoTransactionRunner($pdo, maxDeadlockRetries: 1);
 try {
     // Public Call: run() decides ownership for you.
     $invoiceId = $runner->run(function () use ($pdo): int {
-        $pdo->prepare('INSERT INTO invoices (total_cents) VALUES (:total)')
-            ->execute(['total' => 1999]);
+        $statement = $pdo->prepare('INSERT INTO invoices (total_cents) VALUES (:total)');
+        if ($statement === false || !$statement->execute(['total' => 1999])) {
+            throw new RuntimeException('Could not insert the invoice.');
+        }
 
-        return (int) $pdo->lastInsertId();
+        $id = $pdo->lastInsertId();
+        if ($id === false) {
+            throw new RuntimeException('Could not read the new invoice ID.');
+        }
+
+        return (int) $id;
     });
     // Result: the callback value. If run() began the transaction, it committed
     // before returning. Otherwise, the caller still decides whether to commit.
@@ -70,9 +79,11 @@ try {
     // Boundary: BEGIN/COMMIT returned false instead of throwing, or a transaction-
     // control statement failed. A BEGIN failure prevents the callback from
     // running. An owned COMMIT failure triggers a best-effort rollback.
+    throw $e;
 } catch (\Throwable $e) {
     // Boundary: the callback's own failure, rethrown unchanged after a best-effort
     // rollback (only when this call owned the transaction).
+    throw $e;
 }
 ```
 
@@ -152,6 +163,8 @@ See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.
 
 **Requirements:** the table's identifiers (table, id column, order column, and optionally a scope column, a soft-delete column, and an updated-at column) as **trusted application constants** — never raw user input, since they are quoted, not bound as parameters.
 
+Use an InnoDB table for the locking and rollback behavior shown here. A failed move on a nontransactional table can leave rows shifted. Before choosing `moveWithinScope()`, check whether a key enforces unique positions globally or within each scope. The range shift can temporarily collide with the target row's original position. If your schema requires that key, use a move strategy that maintains uniqueness during each update. See the [Ordering contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
+
 **Non-goals:** the manager does not create or alter the table, does not maintain a cache of positions, and does not fix a transaction the server has already rolled back (the MariaDB hazard in §7.3 of the Package Reference).
 
 **Inputs:** a `PDO` connection, a `ScopedOrderingConfig`, a scope value (or `null` for global/nullable-scope ordering), and — for a move — a row id and target order.
@@ -175,8 +188,10 @@ $nextPosition = (new PdoTransactionRunner($pdo))->run(
     function () use ($pdo, $manager, $config): int {
         // Public Call: read the next position and insert before releasing the lock.
         $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
-        $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)')
-            ->execute(['method' => 7, 'position' => $position]);
+        $statement = $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)');
+        if ($statement === false || !$statement->execute(['method' => 7, 'position' => $position])) {
+            throw new RuntimeException('Could not insert the shipping rate.');
+        }
 
         return $position;
     },
@@ -186,7 +201,7 @@ $nextPosition = (new PdoTransactionRunner($pdo))->run(
 $moved = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 42, newOrder: 1);
 // Result: true on success (including a no-op); false if the target is absent
 // or its update affects zero rows after shifting.
-// Boundary: the target is limited to the maximum observed under the scope lock.
+// Boundary: the effective target is min($newOrder, max(1, $lockedMaximum)).
 ```
 
 Use `getNextPosition()` (a plain, non-locking read) only for previews or when no older `REPEATABLE READ` snapshot can exist yet (outside a transaction, under `READ COMMITTED`, or after your own serialization lock); use `getNextPositionForUpdate()` when the position will actually be used for an insert inside the same transaction. Serialize first inserts into an empty scope with a caller-owned lock shared by all competing writers. See [Package Reference §5.4 and §7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) for the full locking, clamping, savepoint, and MariaDB-hazard rules.
