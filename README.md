@@ -8,8 +8,8 @@
   <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
 </picture>
 
-[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](#overview)
-[![Artifact target](https://img.shields.io/badge/Artifact-1.0.0--rc.2-blue)](#installation)
+[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2)
+[![Version](https://img.shields.io/badge/Version-1.0.0--rc.2-blue)](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.4-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
 [![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](README.md#quality-status)
@@ -36,7 +36,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-**Release Candidate artifact `1.0.0-rc.2`.** At preparation, this target was unpublished. The published release candidate at that time was [`1.0.0-rc.1`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.1), with [its own GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.1). The package had no Stable release at preparation.
+**Release Candidate `1.0.0-rc.2`** is published on [Packagist](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) and available as a [GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2). The package has no Stable release.
 
 ## Key Features
 
@@ -57,7 +57,7 @@ These are declared runtime requirements, not a statement that any specific datab
 
 ## Installation
 
-This command resolves from Packagist after `1.0.0-rc.2` is published.
+Install the exact release candidate from Packagist:
 
 ```bash
 composer require maatify/php-persistence:1.0.0-rc.2
