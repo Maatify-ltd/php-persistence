@@ -15,6 +15,8 @@ final class SortWhitelistTest extends TestCase
     public function testValidKeysQuotingCaseSensitivityAndInternalCopy(): void
     {
         $input = [
+            'id' => 'id',
+            '_id2' => 'orders.id',
             'created_at' => 'created_at',
             '_created_at' => 'p.created_at',
             'created_at2' => 'catalog.products.created_at',
@@ -23,6 +25,8 @@ final class SortWhitelistTest extends TestCase
         $whitelist = new SortWhitelist($input);
         $input['created_at'] = 'evil';
 
+        self::assertSame('`id`', $whitelist->quotedIdentifierFor('id'));
+        self::assertSame('`orders`.`id`', $whitelist->quotedIdentifierFor('_id2'));
         self::assertSame('`created_at`', $whitelist->quotedIdentifierFor('created_at'));
         self::assertSame('`p`.`created_at`', $whitelist->quotedIdentifierFor('_created_at'));
         self::assertSame('`catalog`.`products`.`created_at`', $whitelist->quotedIdentifierFor('created_at2'));
@@ -76,6 +80,24 @@ final class SortWhitelistTest extends TestCase
         $this->expectException(InvalidPaginationConfigurationException::class);
 
         (new SortWhitelist(['id' => 'id']))->quotedIdentifierFor('missing');
+    }
+
+    /** @param non-empty-array<non-empty-string, non-empty-string> $sorts */
+    #[DataProvider('sortsWithTerminalLineFeeds')]
+    public function testRejectsTerminalLineFeed(array $sorts, string $message): void
+    {
+        $this->expectException(InvalidPaginationConfigurationException::class);
+        $this->expectExceptionMessage($message);
+
+        new SortWhitelist($sorts);
+    }
+
+    /** @return iterable<string, array{non-empty-array<non-empty-string, non-empty-string>, string}> */
+    public static function sortsWithTerminalLineFeeds(): iterable
+    {
+        yield 'public key' => [["id\n" => 'id'], 'Invalid pagination sort key.'];
+        yield 'single identifier' => [['id' => "id\n"], 'Invalid pagination sort identifier segment.'];
+        yield 'last path segment' => [['id' => "orders.id\n"], 'Invalid pagination sort identifier segment.'];
     }
 
     /** @param array<mixed, mixed> $sorts */

@@ -157,6 +157,7 @@ final class ScopedOrderingConfigTest extends TestCase
     public function testRejectsInvalidTableIdentifiers(string $table): void
     {
         $this->expectException(InvalidOrderingConfigurationException::class);
+        $this->expectExceptionMessage(sprintf('Invalid SQL table identifier "%s".', $table));
 
         new ScopedOrderingConfig($table);
     }
@@ -171,6 +172,8 @@ final class ScopedOrderingConfigTest extends TestCase
         yield 'more than one dot' => ['db.schema.items'];
         yield 'leading dot' => ['.items'];
         yield 'trailing dot' => ['items.'];
+        yield 'terminal LF' => ["items\n"];
+        yield 'qualified terminal LF' => ["tenant_1.items\n"];
         yield 'sql fragment' => ['items WHERE 1=1'];
         yield 'sql comment' => ['items--comment'];
     }
@@ -182,6 +185,14 @@ final class ScopedOrderingConfigTest extends TestCase
         $this->expectException(InvalidOrderingConfigurationException::class);
 
         new ScopedOrderingConfig('items', idColumn: $column);
+    }
+
+    public function testRejectsTerminalLineFeedInColumn(): void
+    {
+        $this->expectException(InvalidOrderingConfigurationException::class);
+        $this->expectExceptionMessage("Invalid SQL column identifier \"id\n\".");
+
+        new ScopedOrderingConfig('items', idColumn: "id\n");
     }
 
     /** @param non-empty-string $column */

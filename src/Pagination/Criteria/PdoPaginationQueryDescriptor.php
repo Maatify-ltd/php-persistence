@@ -17,7 +17,7 @@ use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
  * - no SQL string may be blank, contain a literal `;`, or reference the
  *   `__pagination_` placeholder prefix reserved by `PdoPaginator`;
  * - every parameter key must be a non-prefixed, non-`:`-prefixed identifier
- *   matching `^[A-Za-z_][A-Za-z0-9_]*$`, and every value must be
+ *   matching `\A[A-Za-z_][A-Za-z0-9_]*\z`, and every value must be
  *   `string|int|bool|null`.
  *
  * This validation only rejects obviously unsafe shapes (reserved names,
@@ -25,7 +25,7 @@ use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
  */
 final readonly class PdoPaginationQueryDescriptor
 {
-    private const PARAMETER_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
+    private const PARAMETER_KEY_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_]*\z/';
     private const RESERVED_PREFIX = '__pagination_';
 
     /**

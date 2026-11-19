@@ -16,7 +16,7 @@ final class PdoPaginationQueryDescriptorTest extends TestCase
     {
         $descriptor = new PdoPaginationQueryDescriptor(
             ' SELECT COUNT(*) AS total_count ',
-            ['a' => 1],
+            ['a' => 1, '_id2' => 2],
             'SELECT COUNT(*) AS filtered_count',
             ['b' => '1.23'],
             'SELECT id FROM t',
@@ -24,7 +24,7 @@ final class PdoPaginationQueryDescriptorTest extends TestCase
         );
 
         self::assertSame(' SELECT COUNT(*) AS total_count ', $descriptor->totalSql);
-        self::assertSame(['a' => 1], $descriptor->totalParams);
+        self::assertSame(['a' => 1, '_id2' => 2], $descriptor->totalParams);
         self::assertSame(['b' => '1.23'], $descriptor->filteredCountParams);
         self::assertSame(['c' => true, 'd' => null], $descriptor->dataParams);
     }
@@ -103,6 +103,21 @@ final class PdoPaginationQueryDescriptorTest extends TestCase
         } finally {
             fclose($resource);
         }
+    }
+
+    public function testRejectsTerminalLineFeedInParameterKey(): void
+    {
+        $this->expectException(InvalidPaginationQueryException::class);
+        $this->expectExceptionMessage('Invalid pagination parameter key.');
+
+        new PdoPaginationQueryDescriptor(
+            'SELECT COUNT(*) AS total_count FROM t WHERE tenant_id = :tenant',
+            ["tenant\n" => 1],
+            'SELECT COUNT(*) AS filtered_count FROM t',
+            [],
+            'SELECT id FROM t',
+            [],
+        );
     }
 
     #[DataProvider('noParser')]
