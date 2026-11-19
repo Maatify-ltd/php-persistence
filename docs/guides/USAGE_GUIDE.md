@@ -171,7 +171,11 @@ Use an InnoDB table for the locking and rollback behavior shown here. A failed m
 **Outputs:** `int` (next position) or `bool` (whether the move succeeded, including a no-op).
 **Boundary:** `moveWithinScope()` always locks the whole scope and re-reads the current order from the database before deciding anything; it never trusts a caller-supplied "current order".
 
-### Walkthrough: `Input → Public Call → Result → Boundary`
+### Append the first item in an empty scope
+
+In this example the host owns two InnoDB tables. `shipping_methods.id` is a primary key. `shipping_rates` has an auto-generated `id`, a `method_id`, and a `display_order`. The method row already exists even when it has no rates. All writers that can change the order in that scope must lock the same method row before reading or writing positions. The host chooses that row and keeps the lock until the transaction ends.
+
+Use the same PDO connection to lock the parent row, read the next position, and insert. This works for an empty scope and for later appends.
 
 ```php
 <?php
@@ -180,28 +184,38 @@ use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 
-// Input: an InnoDB table with id, method_id and display_order columns.
+// $pdo is the host's PDO connection. Shipping method 7 already exists.
+$methodId = 7;
 $config = new ScopedOrderingConfig(table: 'shipping_rates', scopeColumn: 'method_id', deletedAtColumn: null);
 $manager = new ScopedOrderingManager();
 
 $nextPosition = (new PdoTransactionRunner($pdo))->run(
-    function () use ($pdo, $manager, $config): int {
-        // Public Call: read the next position and insert before releasing the lock.
-        $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: 7);
+    static function () use ($pdo, $manager, $config, $methodId): int {
+        $parent = $pdo->prepare('SELECT id FROM shipping_methods WHERE id = :id FOR UPDATE');
+        if ($parent === false || !$parent->execute(['id' => $methodId])) {
+            throw new RuntimeException('Could not lock the shipping method.');
+        }
+        if ($parent->fetchColumn() === false || !$parent->closeCursor()) {
+            throw new RuntimeException('Could not complete the lock read for an existing shipping method.');
+        }
+
+        $position = $manager->getNextPositionForUpdate($pdo, $config, scopeValue: $methodId);
         $statement = $pdo->prepare('INSERT INTO shipping_rates (method_id, display_order) VALUES (:method, :position)');
-        if ($statement === false || !$statement->execute(['method' => 7, 'position' => $position])) {
+        if ($statement === false || !$statement->execute(['method' => $methodId, 'position' => $position])) {
             throw new RuntimeException('Could not insert the shipping rate.');
         }
 
         return $position;
     },
 );
-
-// Public Call: if no caller transaction is active, the manager owns this move.
-$moved = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 42, newOrder: 1);
-// Result: true on success (including a no-op); false if the target is absent
-// or its update affects zero rows after shifting.
-// Boundary: the effective target is min($newOrder, max(1, $lockedMaximum)).
 ```
 
-Use `getNextPosition()` (a plain, non-locking read) only for previews or when no older `REPEATABLE READ` snapshot can exist yet (outside a transaction, under `READ COMMITTED`, or after your own serialization lock); use `getNextPositionForUpdate()` when the position will actually be used for an insert inside the same transaction. Serialize first inserts into an empty scope with a caller-owned lock shared by all competing writers. See [Package Reference §5.4 and §7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) for the full locking, clamping, savepoint, and MariaDB-hazard rules.
+If the runner starts the transaction, it commits the insert before returning the position. If the host already owns a transaction on this PDO, the host decides when to commit or roll back. A missing parent or a failed statement stops the operation. PDO exceptions propagate to the transaction owner.
+
+Run `composer examples:smoke` to see the [standalone example](../../examples/ordering_basic_usage.php) create disposable tables, assert that the first two inserts in an initially empty scope use positions 1 and 2, and demonstrate a move in a populated scope.
+
+### What the lock and the reads guarantee
+
+- The parent row gives writers the same lock target even when there are no child rows. `MAX(display_order) + 1` computes a candidate position. Taking the parent row lock with `FOR UPDATE` and inserting in the same transaction serialize competing writers. `getNextPositionForUpdate()` alone cannot reserve the first position in an empty scope.
+- `getNextPosition()` is a plain read for previews. Under `REPEATABLE READ`, an older snapshot stays in effect after the parent lock is acquired. Taking the lock before the transaction establishes its consistent-read snapshot lets the first plain read see the previous writer's commit. Use `getNextPositionForUpdate()` inside the write transaction to allocate a position.
+- With MariaDB's `innodb_snapshot_isolation=ON`, a locking read that encounters a row changed after an earlier `REPEATABLE READ` snapshot can fail with error `1020`. The server may already have rolled back the transaction while PDO still reports it active. Stop the operation and let the host handle the error. See the [MariaDB snapshot-isolation behavior](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard) and the [deferred recovery decision](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md).
