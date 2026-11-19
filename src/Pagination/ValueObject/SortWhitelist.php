@@ -14,7 +14,7 @@ use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationConfigurationEx
  */
 final readonly class SortWhitelist
 {
-    private const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
+    private const IDENTIFIER_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_]*\z/';
 
     /** @var non-empty-array<non-empty-string, non-empty-string> */
     private array $quotedSorts;

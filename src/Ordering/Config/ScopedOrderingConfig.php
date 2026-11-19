@@ -146,7 +146,7 @@ final readonly class ScopedOrderingConfig
      */
     private static function assertColumnIdentifier(string $identifier): void
     {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+        if (!preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/', $identifier)) {
             throw new InvalidOrderingConfigurationException(
                 sprintf('Invalid SQL column identifier "%s".', $identifier),
             );
@@ -170,7 +170,7 @@ final readonly class ScopedOrderingConfig
      */
     private static function assertTableIdentifier(string $identifier): void
     {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/', $identifier)) {
+        if (!preg_match('/\A[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?\z/', $identifier)) {
             throw new InvalidOrderingConfigurationException(
                 sprintf('Invalid SQL table identifier "%s".', $identifier),
             );
