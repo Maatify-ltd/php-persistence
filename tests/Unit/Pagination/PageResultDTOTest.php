@@ -47,6 +47,25 @@ final class PageResultDTOTest extends TestCase
         self::assertFalse($object->jsonSerializeCalled);
     }
 
+    public function testRejectsTerminalLineFeedInDirectSortKey(): void
+    {
+        $this->expectException(PaginationExecutionException::class);
+        $this->expectExceptionMessage('Invalid pagination result state.');
+
+        new PageResultDTO([], 1, 20, 0, 0, 0, false, false, "id\n", SortDirectionEnum::ASC);
+    }
+
+    public function testPreservesValidDirectSortKeysInSerialization(): void
+    {
+        foreach (['id', '_id2'] as $key) {
+            $result = new PageResultDTO([], 1, 20, 0, 0, 0, false, false, $key, SortDirectionEnum::ASC);
+            $array = $result->toArray();
+
+            self::assertSame($key, $array['pagination']['sort_by']);
+            self::assertSame($array, $result->jsonSerialize());
+        }
+    }
+
     /** @param list<array<array-key, mixed>|object> $data */
     #[DataProvider('validResults')]
     public function testValidResultMatrix(array $data, int $page, int $perPage, int $total, int $filtered, int $totalPages, bool $hasNext, bool $hasPrevious): void

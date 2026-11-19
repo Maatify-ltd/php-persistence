@@ -124,6 +124,27 @@ final class PdoPaginatorFailureContractTest extends PaginationIntegrationTestCas
         }
     }
 
+    public function testRejectsTotalCountWithTerminalLineFeedFromDatabase(): void
+    {
+        $pdo = $this->connect();
+        $totalSql = "SELECT CONCAT('1', CHAR(10)) AS total_count";
+        self::assertSame("1\n", $this->scalar($pdo, $totalSql));
+
+        $descriptor = new PdoPaginationQueryDescriptor(
+            $totalSql,
+            [],
+            'SELECT 0 AS filtered_count',
+            [],
+            'SELECT 1 AS id, 1 AS created_at',
+            [],
+        );
+
+        $this->expectException(PaginationExecutionException::class);
+        $this->expectExceptionMessage('Invalid pagination count value.');
+
+        (new PdoPaginator())->paginate($pdo, $descriptor, new PageRequest(), $this->config(), static fn(array $row): array => $row);
+    }
+
     public function testRepeatedNamedPlaceholder(): void
     {
         [$pdo, $table] = $this->connectWithPaginationTable();
