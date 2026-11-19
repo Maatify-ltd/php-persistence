@@ -7,9 +7,8 @@ declare(strict_types=1);
  * own MySQL/MariaDB connection, reusing the same PHP_PERSISTENCE_IT_* connection settings as
  * the Integration suite (inherited from the parent process). Golden-captured from legacy
  * tests/Support/MySql/NextPositionWaiter.php (1f6a7aa, provenance gate recorded in the WU-8
- * pull request), parameterized by table name instead of a fixed constant and reimplementing
- * getNextPositionForUpdate()'s locking-read loop directly (no Composer autoload in this
- * child process, matching the existing DeadlockPartner.php convention).
+ * pull request). The original one-wave scenarios reproduce the locking-read loop.
+ * The observe mode loads Composer and calls the actual manager, with read barriers.
  *
  * It opens a transaction, takes a plain-read snapshot, then repeats a locking read
  * (SELECT ... ORDER BY display_order DESC, id DESC LIMIT 1 FOR UPDATE) for the given scope
@@ -25,7 +24,13 @@ declare(strict_types=1);
  *   heavier one when it has to pick a deadlock victim.
  * - hold: keep the transaction (and its locks) open after reporting, until the parent closes
  *   this process's stdin.
+ * - observe [<parent-table> <parent-id>]: call the actual allocator and pause after its
+ *   first two reads so the parent can schedule two competing insert attempts.
  */
+
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+use Maatify\PhpPersistence\Tests\Integration\Support\ObservedTailStatement;
 
 /** @return non-empty-string */
 $setting = static function (string $name): string {
@@ -44,14 +49,20 @@ $table = $arguments[1] ?? '';
 $isolationLevel = $arguments[2] ?? '';
 $scope = $arguments[3] ?? '';
 $flags = array_slice($arguments, 4);
+$observe = ($flags[0] ?? null) === 'observe';
+$parentTable = $flags[1] ?? '';
+$parentId = $flags[2] ?? '';
+$validFlags = $observe
+    ? count($flags) === 1 || (count($flags) === 3 && preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/', $parentTable) === 1 && preg_match('/\A[0-9]+\z/', $parentId) === 1)
+    : array_diff($flags, ['heavy', 'hold']) === [];
 
 if (
     $table === ''
     || !in_array($isolationLevel, ['READ COMMITTED', 'REPEATABLE READ'], true)
     || $scope === ''
-    || array_diff($flags, ['heavy', 'hold']) !== []
+    || !$validFlags
 ) {
-    fwrite(STDERR, "Usage: OrderingNextPositionWaiter.php <table> \"<READ COMMITTED|REPEATABLE READ>\" <scope> [heavy] [hold]\n");
+    fwrite(STDERR, "Usage: OrderingNextPositionWaiter.php <table> \"<READ COMMITTED|REPEATABLE READ>\" <scope> [heavy] [hold] | [observe [<parent-table> <parent-id>]]\n");
     exit(2);
 }
 
@@ -68,6 +79,40 @@ $pdo->exec('SET TRANSACTION ISOLATION LEVEL ' . $isolationLevel);
 $pdo->beginTransaction();
 
 try {
+    if ($observe) {
+        require dirname(__DIR__, 3) . '/vendor/autoload.php';
+        if ($parentTable !== '') {
+            $parent = $pdo->prepare('SELECT id FROM ' . '`' . $parentTable . '`' . ' WHERE id = :id FOR UPDATE');
+            if ($parent === false || !$parent->execute(['id' => $parentId]) || $parent->fetchColumn() === false || !$parent->closeCursor()) {
+                throw new RuntimeException('The allocator could not lock its parent row.');
+            }
+        }
+
+        if (!$pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [ObservedTailStatement::class])) {
+            throw new RuntimeException('Unable to observe the allocator locking statement.');
+        }
+        $startedAt = hrtime(true);
+        $position = (new ScopedOrderingManager())->getNextPositionForUpdate(
+            $pdo,
+            new ScopedOrderingConfig(table: $table, scopeColumn: 'scope_key'),
+            $scope,
+        );
+        if (!$pdo->inTransaction()) {
+            throw new RuntimeException('The allocator ended the caller-owned transaction.');
+        }
+        fwrite(STDOUT, sprintf("POSITION %d %.3F\n", $position, (hrtime(true) - $startedAt) / 1_000_000));
+        fflush(STDOUT);
+        if (ObservedTailStatement::readCommand() === "END\n") {
+            if (!$pdo->rollBack()) {
+                throw new RuntimeException('Unable to end the measured caller-owned transaction.');
+            }
+            fwrite(STDOUT, "ENDED\n");
+            fflush(STDOUT);
+        }
+
+        return;
+    }
+
     $connectionId = $pdo->query('SELECT CONNECTION_ID()');
     $snapshot = $pdo->query('SELECT COUNT(*) FROM ' . $quotedTable);
 
