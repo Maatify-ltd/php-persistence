@@ -78,10 +78,14 @@ final class PdoPaginatorFailureTest extends TestCase
 
     public function testNormalEofProducesResult(): void
     {
+        $total = ScriptedPdoStatement::count(1);
+        $filtered = ScriptedPdoStatement::count(1);
         $data = ScriptedPdoStatement::data([['id' => 1]]);
-        $result = (new PdoPaginator())->paginate(new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), $data]), $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+        $result = (new PdoPaginator())->paginate(new ScriptedPdo([$total, $filtered, $data]), $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
         self::assertSame([['id' => 1]], $result->data);
         self::assertSame(2, $data->fetchCalls);
+        self::assertSame(0, $total->closeCursorCalls);
+        self::assertSame(0, $filtered->closeCursorCalls);
         self::assertSame(0, $data->closeCursorCalls);
     }
 
@@ -143,6 +147,25 @@ final class PdoPaginatorFailureTest extends TestCase
             'close returns false' => [false],
             'close throws' => [new PDOException('cursor cleanup failed')],
         ];
+    }
+
+    #[DataProvider('cursorCleanupOutcomes')]
+    public function testCountCursorCleanupDoesNotReplaceFetchException(bool|PDOException $cleanupOutcome): void
+    {
+        $failure = new PDOException('count fetch failed');
+        $count = new ScriptedPdoStatement(fetchQueue: [['total_count' => 1], $failure], closeCursorResult: $cleanupOutcome);
+        $pdo = new ScriptedPdo([$count]);
+
+        try {
+            (new PdoPaginator())->paginate($pdo, $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+            self::fail('Expected the count fetch exception.');
+        } catch (PDOException $caught) {
+            self::assertSame($failure, $caught);
+        }
+
+        self::assertSame(2, $count->fetchCalls);
+        self::assertSame(1, $count->closeCursorCalls);
+        self::assertSame(['T'], $pdo->preparedSql);
     }
 
     #[DataProvider('cursorCleanupOutcomes')]
