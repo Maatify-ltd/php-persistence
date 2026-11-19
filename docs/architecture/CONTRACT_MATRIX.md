@@ -191,8 +191,9 @@ enum SortDirectionEnum: string        // cases ASC = 'ASC', DESC = 'DESC'
 PdoPaginationQueryDescriptor (final readonly)
     __construct(public string $totalSql, public array $totalParams, public string $filteredCountSql,
                 public array $filteredCountParams, public string $dataSql, public array $dataParams)
-    // each *Params is array<string, string|int|bool|null>; names matching ^[A-Za-z_][A-Za-z0-9_]*$;
-    // prefix __pagination_ is reserved
+    // each *Params is array<string, string|int|bool|null>; prefix __pagination_ is reserved
+    // A and B (legacy): names match ^[A-Za-z_][A-Za-z0-9_]*$
+    // C (new package): names match \A[A-Za-z_][A-Za-z0-9_]*\z, rejecting LF anywhere
 
 PdoPaginator (final readonly, no constructor)
     paginate(PDO $pdo, PdoPaginationQueryDescriptor $query, PageRequest $request,

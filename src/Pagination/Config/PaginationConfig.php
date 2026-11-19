@@ -16,8 +16,8 @@ use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
  * {@see \Maatify\PhpPersistence\Pagination\Repository\PdoPaginator}:
  * - minPerPage must be at least 1, maxPerPage must be at least minPerPage, and
  *   defaultPerPage must fall inside [minPerPage, maxPerPage];
- * - defaultSortBy and tieBreakerSortBy must each be a valid public key
- *   (`^[A-Za-z_][A-Za-z0-9_]*$`) present in sortWhitelist.
+ * - defaultSortBy and tieBreakerSortBy must match keys in sortWhitelist
+ *   exactly. SortWhitelist enforces the full-string public key grammar.
  *
  * One instance is reused across requests for the same query shape; it carries
  * no per-request state.

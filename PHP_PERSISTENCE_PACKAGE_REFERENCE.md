@@ -214,8 +214,7 @@ public function __construct(
 Throws `InvalidPaginationConfigurationException` when constructed with:
 
 - `$minPerPage < 1`, or `$maxPerPage < $minPerPage`, or `$defaultPerPage` outside `[$minPerPage, $maxPerPage]`;
-- `$defaultSortBy` not matching `^[A-Za-z_][A-Za-z0-9_]*$` or not present in `$sortWhitelist`;
-- `$tieBreakerSortBy` failing the same check.
+- `$defaultSortBy` or `$tieBreakerSortBy` missing from `$sortWhitelist`. Both must be exact matches for keys that satisfy the full-string grammar enforced by `SortWhitelist`.
 
 #### `ValueObject\SortWhitelist` (`final readonly class`)
 
@@ -229,8 +228,9 @@ public function contains(string $key): bool
 public function quotedIdentifierFor(string $key): string
 ```
 
-- The constructor throws `InvalidPaginationConfigurationException` for an empty array, a non-string/empty key, a key failing `^[A-Za-z_][A-Za-z0-9_]*$`, a non-string identifier value, or an identifier path with more than 3 dot-separated segments or a segment failing the identifier pattern.
-- Each identifier value is a dotted path (`table.column`, up to 3 segments) that is quoted with backticks per segment at construction time (e.g. `orders.created_at` → `` `orders`.`created_at` ``).
+- Each key and each path segment must match `\A[A-Za-z_][A-Za-z0-9_]*\z` as supplied. An ASCII line feed (LF) anywhere in the name, including at the end, is invalid.
+- Each identifier path has one to three dot-separated segments. The constructor quotes each segment with backticks (e.g. `orders.created_at` → `` `orders`.`created_at` ``).
+- The constructor throws `InvalidPaginationConfigurationException` for an empty map or any key or identifier value that violates these rules, including non-string keys and values.
 - `quotedIdentifierFor()` throws `InvalidPaginationConfigurationException` for a key not in the whitelist.
 
 #### `Criteria\PdoPaginationQueryDescriptor` (`final readonly class`)
@@ -254,8 +254,10 @@ public function __construct(
 Constructor validation throws `InvalidPaginationQueryException` when:
 
 - any of the three SQL strings is blank, contains a literal `;`, or contains the reserved placeholder prefix `:__pagination_`;
-- any parameter key is not a string, starts with `:`, fails `^[A-Za-z_][A-Za-z0-9_]*$`, or starts with the reserved prefix `__pagination_`;
+- any parameter key is not a string, starts with `:`, fails the full-string pattern `\A[A-Za-z_][A-Za-z0-9_]*\z` as supplied, or starts with the reserved prefix `__pagination_`;
 - any parameter value is not `string|int|bool|null`.
+
+A parameter key containing LF anywhere, including at the end, fails the full-string pattern.
 
 The three SQL statements are the caller's own text: a count of the whole dataset (`$totalSql`), a count after filters (`$filteredCountSql`), and the unsorted/unlimited data query (`$dataSql`, to which `PdoPaginator` appends `ORDER BY`/`LIMIT`/`OFFSET`). The reserved placeholder names `__pagination_limit` and `__pagination_offset` are owned by `PdoPaginator` (§3.3, `Repository\PdoPaginator`) and must not be used by caller SQL.
 
@@ -299,7 +301,7 @@ The constructor throws `PaginationExecutionException` unless all of these invari
 - `totalPages` is the ceiling of `filtered / perPage`. When `filtered` is zero, `data` is empty, `page` is 1, and both navigation flags are false. Otherwise `page` must be within `1..totalPages`.
 - `hasNext` equals `page < totalPages`, and `hasPrevious` equals `page > 1 && totalPages > 0`.
 
-The DTO accepts `filtered > total` and can contain empty `data` even when `filtered > 0`; separately executed statements can observe different database states. `toArray()` and `jsonSerialize()` return:
+When `PdoPaginator` builds the DTO, `sortBy` is the whitelist key resolved after request normalization (§5.3). The DTO accepts `filtered > total` and can contain empty `data` even when `filtered > 0`; separately executed statements can observe different database states. `toArray()` and `jsonSerialize()` return:
 
 ```text
 array{
@@ -361,9 +363,11 @@ public function quotedUpdatedAtColumn(): ?string
 
 Throws `InvalidOrderingConfigurationException` when:
 
-- `$table` is not `table` or `schema.table` (identifier characters only: `^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`);
-- `$idColumn`, `$orderColumn`, a non-null `$scopeColumn`, a non-null `$deletedAtColumn`, or a non-null `$updatedAtColumn` fails `^[A-Za-z_][A-Za-z0-9_]*$`;
+- `$table` fails the full-string pattern `\A[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?\z` for `table` or `schema.table`;
+- `$idColumn`, `$orderColumn`, a non-null `$scopeColumn`, a non-null `$deletedAtColumn`, or a non-null `$updatedAtColumn` fails the full-string pattern `\A[A-Za-z_][A-Za-z0-9_]*\z` for a single column;
 - `$nullableScope === true` while `$scopeColumn === null` (a nullable scope requires a configured scope column).
+
+Table and column names are checked as supplied. An LF anywhere in either kind of name is invalid.
 
 All identifier arguments **must be trusted application constants**, never raw user input: they are validated and quoted but are never bound as PDO parameters (table/column names cannot be). Row ids, scope values, and order numbers *are* bound as PDO parameters by `ScopedOrderingManager`. Passing `null` for `$deletedAtColumn` disables soft-delete filtering for that configuration; passing `null` for `$updatedAtColumn` (the default) means `moveWithinScope()` never sets a mutation timestamp.
 
@@ -455,7 +459,7 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 
 - **`page` normalization:** `null`, non-integer text, text outside the `PHP_INT_MIN..PHP_INT_MAX` range, or a parsed integer below `1` → `1`. Accepted text is an optionally-signed run of decimal digits after trimming.
 - **`perPage` normalization** (independent of `page`): `null`, non-integer text, or out-of-range text → `PaginationConfig::$defaultPerPage`; an in-range integer below `$minPerPage` → `$minPerPage`; above `$maxPerPage` → `$maxPerPage`; otherwise the value itself.
-- **Sort resolution:** `sortBy` not present, empty after trimming, failing `^[A-Za-z_][A-Za-z0-9_]*$`, or absent from `$config->sortWhitelist` → `$config->defaultSortBy`. `sortDirection` is matched case-insensitively against `ASC`/`DESC`; anything else → `$config->defaultSortDirection`.
+- **Sort resolution:** For a non-null `sortBy` from `PageRequest`, the paginator applies `trim()` before checking the key and looking up `$config->sortWhitelist`. A null, empty, invalid, or unlisted key selects `$config->defaultSortBy`. For example, the request value `"id\n"` selects `id` when `id` is whitelisted. An LF within the trimmed key makes it invalid. The paginator trims a non-null `sortDirection` and matches `ASC` or `DESC` case-insensitively, falling back to `$config->defaultSortDirection` for a null or unmatched value.
 - **Counting:** `$query->totalSql` and `$query->filteredCountSql` are each executed independently and must return exactly one row with exactly one column. The value must be a non-negative PHP integer or a string of decimal digits within `0..PHP_INT_MAX`. Any other value throws `PaginationExecutionException`.
   - **The count statements and the optional data statement execute separately.** A caller that needs one snapshot must run the whole call using consistent, non-locking reads on transactional tables under a compatible isolation level such as InnoDB `REPEATABLE READ`. Autocommit and `READ COMMITTED` can observe a concurrent commit between statements, including when `READ COMMITTED` runs inside a transaction. `PdoPaginator` leaves transaction and isolation control to the caller.
 - **Empty-result shortcut:** when `filtered === 0`, the method returns immediately with `page = 1`, `data = []`, `totalPages = 0`, `hasNext = hasPrevious = false`, **without running the data query at all**.
