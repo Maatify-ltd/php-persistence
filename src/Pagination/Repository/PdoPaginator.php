@@ -190,15 +190,27 @@ final readonly class PdoPaginator
         if (! $statement->execute()) {
             throw new PaginationExecutionException('Failed to execute pagination count query.');
         }
-        if ($statement->columnCount() !== 1) {
-            throw new PaginationExecutionException('Pagination count query must return exactly one column.');
-        }
-        $row = $this->fetchAssociativeOrEof($statement);
-        if ($row === false || count($row) !== 1) {
-            throw new PaginationExecutionException('Pagination count query must return exactly one row and one column.');
-        }
-        if ($this->fetchAssociativeOrEof($statement) !== false) {
-            throw new PaginationExecutionException('Pagination count query returned more than one row.');
+
+        try {
+            if ($statement->columnCount() !== 1) {
+                throw new PaginationExecutionException('Pagination count query must return exactly one column.');
+            }
+            $row = $this->fetchAssociativeOrEof($statement);
+            if ($row === false || count($row) !== 1) {
+                throw new PaginationExecutionException('Pagination count query must return exactly one row and one column.');
+            }
+            if ($this->fetchAssociativeOrEof($statement) !== false) {
+                throw new PaginationExecutionException('Pagination count query returned more than one row.');
+            }
+        } catch (Throwable $failure) {
+            // A retained exception trace can keep the statement and its unread rows alive.
+            try {
+                $statement->closeCursor();
+            } catch (Throwable) {
+                // Preserve the count failure.
+            }
+
+            throw $failure;
         }
 
         return $this->normalizeCountValue(reset($row));

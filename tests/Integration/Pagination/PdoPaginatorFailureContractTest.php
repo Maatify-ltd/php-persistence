@@ -83,25 +83,24 @@ final class PdoPaginatorFailureContractTest extends PaginationIntegrationTestCas
             $query->dataParams,
         );
 
-        // Keep exception arguments enabled so a retained trace can keep a statement alive.
-        $previousSetting = ini_set('zend.exception_ignore_args', '0');
-        self::assertNotFalse($previousSetting);
+        $this->assertConnectionReusableWithRetainedRowKeyException($pdo, $table, $invalidRowQuery);
+    }
 
-        try {
-            try {
-                (new PdoPaginator())->paginate($pdo, $invalidRowQuery, new PageRequest(), $this->config(), static fn(array $row): array => $row);
-                self::fail('Expected an invalid row failure.');
-            } catch (PaginationExecutionException $caught) {
-                self::assertSame('Pagination row keys must be strings.', $caught->getMessage());
-            }
+    #[DataProvider('bufferingModes')]
+    public function testSameConnectionCanBeReusedWhileRetainingTotalCountValidationException(bool $buffered): void
+    {
+        [$pdo, $table] = $this->beginPaginationTransaction($buffered);
+        $query = $this->descriptor($table);
+        $invalidCountQuery = new PdoPaginationQueryDescriptor(
+            "SELECT id AS `0` FROM `$table` WHERE tenant_id = :tenant_total AND deleted_at IS NULL",
+            $query->totalParams,
+            $query->filteredCountSql,
+            $query->filteredCountParams,
+            $query->dataSql,
+            $query->dataParams,
+        );
 
-            $this->assertSameConnectionCanBeReused($pdo, $table);
-        } finally {
-            // Release the trace only after the reuse attempt, so test teardown can roll back.
-            unset($caught);
-            ini_set('zend.exception_ignore_args', $previousSetting);
-            $pdo->rollBack();
-        }
+        $this->assertConnectionReusableWithRetainedRowKeyException($pdo, $table, $invalidCountQuery);
     }
 
     public function testCountShapeFailures(): void
@@ -263,6 +262,29 @@ final class PdoPaginatorFailureContractTest extends PaginationIntegrationTestCas
         self::assertTrue($pdo->beginTransaction());
 
         return [$pdo, $table];
+    }
+
+    private function assertConnectionReusableWithRetainedRowKeyException(PDO $pdo, string $table, PdoPaginationQueryDescriptor $query): void
+    {
+        // Keep exception arguments enabled so a retained trace can keep a statement alive.
+        $previousSetting = ini_set('zend.exception_ignore_args', '0');
+        self::assertNotFalse($previousSetting);
+
+        try {
+            try {
+                (new PdoPaginator())->paginate($pdo, $query, new PageRequest(), $this->config(), static fn(array $row): array => $row);
+                self::fail('Expected an invalid row failure.');
+            } catch (PaginationExecutionException $caught) {
+                self::assertSame('Pagination row keys must be strings.', $caught->getMessage());
+            }
+
+            $this->assertSameConnectionCanBeReused($pdo, $table);
+        } finally {
+            // Release the trace only after the reuse attempt, so test teardown can roll back.
+            unset($caught);
+            ini_set('zend.exception_ignore_args', $previousSetting);
+            $pdo->rollBack();
+        }
     }
 
     private function assertSameConnectionCanBeReused(PDO $pdo, string $table): void
