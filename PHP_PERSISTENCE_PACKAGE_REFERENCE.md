@@ -297,7 +297,8 @@ public function jsonSerialize(): array    // returns toArray()
 The constructor throws `PaginationExecutionException` unless all of these invariants hold:
 
 - `data` is a list of arrays or objects, with at most `perPage` items.
-- `page` and `perPage` are positive, the counts and `totalPages` are non-negative, and `sortBy` matches `^[A-Za-z_][A-Za-z0-9_]*$`.
+- `page` and `perPage` are positive, and the counts and `totalPages` are non-negative.
+- The supplied `sortBy` must match `\A[A-Za-z_][A-Za-z0-9_]*\z` as is. An LF anywhere in the key, including at the end, causes `PaginationExecutionException` (`Invalid pagination result state.`).
 - `totalPages` is the ceiling of `filtered / perPage`. When `filtered` is zero, `data` is empty, `page` is 1, and both navigation flags are false. Otherwise `page` must be within `1..totalPages`.
 - `hasNext` equals `page < totalPages`, and `hasPrevious` equals `page > 1 && totalPages > 0`.
 
@@ -460,7 +461,7 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 - **`page` normalization:** `null`, non-integer text, text outside the `PHP_INT_MIN..PHP_INT_MAX` range, or a parsed integer below `1` → `1`. Accepted text is an optionally-signed run of decimal digits after trimming.
 - **`perPage` normalization** (independent of `page`): `null`, non-integer text, or out-of-range text → `PaginationConfig::$defaultPerPage`; an in-range integer below `$minPerPage` → `$minPerPage`; above `$maxPerPage` → `$maxPerPage`; otherwise the value itself.
 - **Sort resolution:** For a non-null `sortBy` from `PageRequest`, the paginator applies `trim()` before checking the key and looking up `$config->sortWhitelist`. A null, empty, invalid, or unlisted key selects `$config->defaultSortBy`. For example, the request value `"id\n"` selects `id` when `id` is whitelisted. An LF within the trimmed key makes it invalid. The paginator trims a non-null `sortDirection` and matches `ASC` or `DESC` case-insensitively, falling back to `$config->defaultSortDirection` for a null or unmatched value.
-- **Counting:** `$query->totalSql` and `$query->filteredCountSql` are each executed independently and must return exactly one row with exactly one column. The value must be a non-negative PHP integer or a string of decimal digits within `0..PHP_INT_MAX`. Any other value throws `PaginationExecutionException`.
+- **Counting:** `$query->totalSql` and `$query->filteredCountSql` are each executed independently and must return exactly one row with exactly one column. The value must be a non-negative PHP integer or a string matching `\A[0-9]+\z` whose numeric value is within `0..PHP_INT_MAX`. Leading zeroes are accepted. Count strings are validated as returned by PDO, so any whitespace, including a trailing LF, is invalid. Any invalid value throws `PaginationExecutionException`.
   - **The count statements and the optional data statement execute separately.** A caller that needs one snapshot must run the whole call using consistent, non-locking reads on transactional tables under a compatible isolation level such as InnoDB `REPEATABLE READ`. Autocommit and `READ COMMITTED` can observe a concurrent commit between statements, including when `READ COMMITTED` runs inside a transaction. `PdoPaginator` leaves transaction and isolation control to the caller.
 - **Empty-result shortcut:** when `filtered === 0`, the method returns immediately with `page = 1`, `data = []`, `totalPages = 0`, `hasNext = hasPrevious = false`, **without running the data query at all**.
 - **Page clamp:** when the normalized `page` exceeds the computed `totalPages`, it is reset to `1` (not clamped to the last page).

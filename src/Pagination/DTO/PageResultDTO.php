@@ -17,13 +17,15 @@ use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
  */
 final readonly class PageResultDTO implements JsonSerializable
 {
-    private const PUBLIC_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
+    private const PUBLIC_KEY_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_]*\z/';
 
     /**
      * Validates a one-based page with a positive size, non-negative counts,
      * and at most one page of mapped items. The page count and navigation
      * flags must agree with the filtered count and page size. A zero filtered
      * count requires empty data, page one, and no navigation.
+     * The supplied sort key must match the full ASCII identifier pattern
+     * `\A[A-Za-z_][A-Za-z0-9_]*\z` without trimming.
      *
      * @param list<T> $data Mapped items in page order.
      *

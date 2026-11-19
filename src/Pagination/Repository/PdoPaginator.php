@@ -291,6 +291,12 @@ final readonly class PdoPaginator
         }
     }
 
+    /**
+     * Accepts a non-negative integer or an untrimmed string of ASCII decimal
+     * digits whose value is in 0..PHP_INT_MAX. Leading zeroes are allowed.
+     *
+     * @throws PaginationExecutionException When the count is invalid or out of range.
+     */
     private function normalizeCountValue(mixed $value): int
     {
         if (is_int($value)) {
@@ -300,7 +306,7 @@ final readonly class PdoPaginator
 
             return $value;
         }
-        if (! is_string($value) || ! preg_match('/^[0-9]+$/', $value)) {
+        if (! is_string($value) || ! preg_match('/\A[0-9]+\z/', $value)) {
             throw new PaginationExecutionException('Invalid pagination count value.');
         }
         $digits = ltrim($value, '0');

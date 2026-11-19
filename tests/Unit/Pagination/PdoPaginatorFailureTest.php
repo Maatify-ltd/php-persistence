@@ -126,9 +126,50 @@ final class PdoPaginatorFailureTest extends TestCase
 
     public function testInvalidCountRepresentations(): void
     {
-        foreach ([false, null, '', '-1', '+1', '1.2', '1e2', PHP_INT_MAX . '0', []] as $value) {
+        foreach ([false, null, '', -1, '-1', '+1', '1.2', '1e2', PHP_INT_MAX . '0', []] as $value) {
             $this->assertExecutionFailure(new ScriptedPdo([new ScriptedPdoStatement(1, [['total_count' => $value], false])]), 1);
         }
+    }
+
+    #[DataProvider('countsWithTerminalLineFeed')]
+    public function testRejectsTotalCountWithTerminalLineFeed(string $value): void
+    {
+        $pdo = new ScriptedPdo([ScriptedPdoStatement::count($value), ScriptedPdoStatement::count(0)]);
+
+        try {
+            (new PdoPaginator())->paginate($pdo, $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+            self::fail('Expected the malformed total count to be rejected.');
+        } catch (PaginationExecutionException $exception) {
+            self::assertSame('Invalid pagination count value.', $exception->getMessage());
+            self::assertSame(['T'], $pdo->preparedSql);
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function countsWithTerminalLineFeed(): iterable
+    {
+        yield 'one' => ["1\n"];
+        yield 'zero' => ["0\n"];
+    }
+
+    #[DataProvider('validTotalCounts')]
+    public function testAcceptsValidTotalCount(int|string $value, int $expected): void
+    {
+        $pdo = new ScriptedPdo([ScriptedPdoStatement::count($value), ScriptedPdoStatement::count(0)]);
+
+        $result = (new PdoPaginator())->paginate($pdo, $this->queryWithoutParams(), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+
+        self::assertSame($expected, $result->total);
+    }
+
+    /** @return iterable<string, array{int|string, int}> */
+    public static function validTotalCounts(): iterable
+    {
+        yield 'integer zero' => [0, 0];
+        yield 'string zero' => ['0', 0];
+        yield 'leading zeroes' => ['0001', 1];
+        yield 'integer at PHP limit' => [PHP_INT_MAX, PHP_INT_MAX];
+        yield 'decimal string at PHP limit' => [(string) PHP_INT_MAX, PHP_INT_MAX];
     }
 
     public function testDataFetchFailureAfterMappedRowDoesNotReturnPartialResult(): void

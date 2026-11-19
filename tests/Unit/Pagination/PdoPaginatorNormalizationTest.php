@@ -132,6 +132,7 @@ final class PdoPaginatorNormalizationTest extends TestCase
         yield [' bad ', 'bad', 'created_at', 'DESC'];
         yield ['ID', 'asc', 'created_at', 'ASC'];
         yield [' id ', 'dEsC', 'id', 'DESC'];
+        yield ["id\n", null, 'id', 'DESC'];
     }
 
     private function descriptor(): PdoPaginationQueryDescriptor
