@@ -374,6 +374,113 @@ final class ScopedOrderingManagerStaleSnapshotTest extends OrderingIntegrationTe
         });
     }
 
+    #[DataProvider('tailRereadSchedules')]
+    public function testAllocatorConvergesWithTwoScheduledInsertAttempts(string $isolation, bool $sharedAnchor): void
+    {
+        $this->fixture->insertScoped('scope-a', 1);
+        $this->fixture->insertScoped('scope-a', 2);
+        $anchorId = $sharedAnchor ? $this->fixture->insertGlobal(1, 'parent') : null;
+        $this->pdo()->exec('SET SESSION TRANSACTION ISOLATION LEVEL ' . $isolation);
+        $this->pdo()->exec('SET SESSION innodb_lock_wait_timeout = 1');
+
+        $canAppend = $isolation === 'READ COMMITTED' && !$sharedAnchor;
+        $tails = $canAppend ? [2, 3, 4, 4] : [2, 2];
+        $flags = $anchorId === null ? ['observe'] : ['observe', $this->globalTable, (string) $anchorId];
+        $partner = $this->startWaitingAllocator($isolation, 'scope-a', $flags);
+        $readReports = [];
+        $writeReports = [];
+
+        try {
+            foreach ($tails as $index => $tail) {
+                $read = $partner->readLine(self::PARTNER_READ_TIMEOUT_SECONDS);
+                self::assertStringStartsWith(sprintf('TAIL %d %d ', $index + 1, $tail), $read);
+                $readReports[] = $read;
+
+                if ($index < 2) {
+                    $startedAt = hrtime(true);
+                    $error = $this->attemptTailInsert($index + 3, $anchorId);
+                    $writeReports[] = ['error' => $error, 'elapsedMs' => round((hrtime(true) - $startedAt) / 1_000_000, 3)];
+                    self::assertSame($canAppend ? null : self::LOCK_WAIT_TIMEOUT_ERROR, $error);
+                    $partner->writeLine('CONTINUE');
+                }
+            }
+
+            $orders = $this->committedScopeAOrders();
+            self::assertSame($canAppend ? [1, 2, 3, 4] : [1, 2], $orders);
+            $allocation = $partner->readLine(self::PARTNER_READ_TIMEOUT_SECONDS);
+            self::assertStringStartsWith(sprintf('POSITION %d ', max($orders) + 1), $allocation);
+
+            if (getenv('PP_N3_MEASURE') === '1') {
+                $footprint = [];
+                foreach ($orders as $order) {
+                    self::assertTrue($this->otherPdo->beginTransaction());
+                    try {
+                        $footprint[$order] = $this->probeScopeARowLock($order) === 1 ? 'free' : 'missing';
+                    } catch (PDOException $exception) {
+                        $footprint[$order] = $exception->errorInfo[1] ?? 'unknown';
+                    } finally {
+                        if ($this->otherPdo->inTransaction()) {
+                            $this->otherPdo->rollBack();
+                        }
+                    }
+                }
+                fwrite(STDERR, 'N3 ' . json_encode([
+                    'engine' => self::engine(),
+                    'isolation' => $isolation,
+                    'anchor' => $sharedAnchor,
+                    'reads' => $readReports,
+                    'writes' => $writeReports,
+                    'allocation' => $allocation,
+                    'heldRowProbes' => $footprint,
+                ], JSON_THROW_ON_ERROR) . "\n");
+            }
+
+            $partner->writeLine('END');
+            self::assertSame('ENDED', $partner->readLine(self::PARTNER_READ_TIMEOUT_SECONDS));
+        } finally {
+            $partner->stop();
+        }
+
+        if ($anchorId !== null) {
+            self::assertNull($this->attemptTailInsert(3, $anchorId));
+            self::assertSame([1, 2, 3], $this->committedScopeAOrders());
+        }
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function tailRereadSchedules(): iterable
+    {
+        yield 'read committed, bypass writer' => ['READ COMMITTED', false];
+        yield 'read committed, shared anchor' => ['READ COMMITTED', true];
+        yield 'repeatable read, bypass writer' => ['REPEATABLE READ', false];
+        yield 'repeatable read, shared anchor' => ['REPEATABLE READ', true];
+    }
+
+    private function attemptTailInsert(int $position, ?int $anchorId): ?int
+    {
+        $writer = $this->pdo();
+        self::assertTrue($writer->beginTransaction());
+        try {
+            if ($anchorId !== null) {
+                $this->lockParentRow($writer, $anchorId);
+                $position = $this->manager->getNextPositionForUpdate($writer, $this->scopedConfig(), 'scope-a');
+            }
+            $this->fixture->insertScoped('scope-a', $position);
+            self::assertTrue($writer->commit());
+
+            return null;
+        } catch (PDOException $failure) {
+            $driverCode = $failure->errorInfo[1] ?? null;
+            self::assertIsInt($driverCode);
+
+            return $driverCode;
+        } finally {
+            if ($writer->inTransaction()) {
+                $writer->rollBack();
+            }
+        }
+    }
+
     public function testPlainReadStaysStaleWhenTheCallerLocksAfterTheSnapshotWasEstablished(): void
     {
         $this->beginTransactionWithSnapshot();

@@ -18,6 +18,36 @@ use PHPUnit\Framework\TestCase;
 
 final class ScopedOrderingManagerExecutionFailureTest extends TestCase
 {
+    /** @param non-empty-list<int|false> $tails */
+    #[DataProvider('lockingTails')]
+    public function testLockingAllocatorRereadsUntilTwoConsecutiveTailsAgree(array $tails, int $position): void
+    {
+        $iterations = count($tails);
+        $statement = $this->createMock(PDOStatement::class);
+        $statement->expects(self::exactly($iterations))->method('execute')->willReturn(true);
+        $statement->expects(self::exactly($iterations))->method('fetchColumn')->willReturn(...$tails);
+        $statement->expects(self::exactly($iterations))->method('closeCursor')->willReturn(true);
+        $statement->method('errorCode')->willReturn('00000');
+
+        $pdo = $this->createMock(PDO::class);
+        $pdo->method('inTransaction')->willReturn(true);
+        $pdo->expects(self::once())->method('prepare')->willReturn($statement);
+        $pdo->expects(self::never())->method('beginTransaction');
+        $pdo->expects(self::never())->method('commit');
+        $pdo->expects(self::never())->method('rollBack');
+
+        self::assertSame($position, (new ScopedOrderingManager())->getNextPositionForUpdate($pdo, new ScopedOrderingConfig('items')));
+    }
+
+    /** @return iterable<string, array{non-empty-list<int|false>, int}> */
+    public static function lockingTails(): iterable
+    {
+        yield 'stable tail' => [[2, 2], 3];
+        yield 'empty scope' => [[false, false], 1];
+        yield 'two changes' => [[2, 3, 4, 4], 5];
+        yield 'tail jumps' => [[2, 6, 9, 9], 10];
+    }
+
     public function testNextPositionsReturnTheLargestRepresentableValue(): void
     {
         $manager = new ScopedOrderingManager();
@@ -175,6 +205,38 @@ final class ScopedOrderingManagerExecutionFailureTest extends TestCase
         $this->expectExceptionMessage('Failed to close the ordering result for getNextPositionForUpdate.');
 
         (new ScopedOrderingManager())->getNextPositionForUpdate($pdo, new ScopedOrderingConfig('items'));
+    }
+
+    public function testFailureAfterFirstTailReadPreservesFetchExceptionAndCallerOwnership(): void
+    {
+        $failure = new PDOException('Second locking read failed.');
+        $statement = $this->createMock(PDOStatement::class);
+        $statement->expects(self::exactly(2))->method('execute')->willReturn(true);
+        $fetches = 0;
+        $statement->expects(self::exactly(2))->method('fetchColumn')->willReturnCallback(
+            static function () use (&$fetches, $failure): int {
+                if (++$fetches === 2) {
+                    throw $failure;
+                }
+
+                return 2;
+            },
+        );
+        $statement->expects(self::exactly(2))->method('closeCursor')->willReturn(true);
+
+        $pdo = $this->createMock(PDO::class);
+        $pdo->method('inTransaction')->willReturn(true);
+        $pdo->expects(self::once())->method('prepare')->willReturn($statement);
+        $pdo->expects(self::never())->method('beginTransaction');
+        $pdo->expects(self::never())->method('commit');
+        $pdo->expects(self::never())->method('rollBack');
+
+        try {
+            (new ScopedOrderingManager())->getNextPositionForUpdate($pdo, new ScopedOrderingConfig('items'));
+            self::fail('Expected the second locking read to throw.');
+        } catch (PDOException $caught) {
+            self::assertSame($failure, $caught);
+        }
     }
 
     public function testScopeFetchFailureClosesCursorBeforeRollbackAndPreservesOriginalException(): void
