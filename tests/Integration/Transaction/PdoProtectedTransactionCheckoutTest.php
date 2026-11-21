@@ -107,7 +107,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
     public function testCheckoutCannotBeClonedSerializedOrRestored(): void
     {
         $checkout = PdoProtectedTransactionCheckout::attachExclusive($this->connect(), new ProtectedTransactionCommandCatalog([]));
-        $copy = static fn(object $value): object => clone $value;
+        $copy = static fn(object $value): object => clone($value);
         try {
             self::fail(sprintf('Expected PHP to reject cloning %s.', $copy($checkout)::class));
         } catch (Error $failure) {
