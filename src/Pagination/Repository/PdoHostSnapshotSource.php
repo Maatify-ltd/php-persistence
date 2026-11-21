@@ -11,6 +11,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum as Stat
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
 use PDO;
 use PDOStatement;
 use Pdo\Mysql;
@@ -140,17 +141,25 @@ final class PdoHostSnapshotSource
             }
             try {
                 $maxRows = $command->resultMode === HostSnapshotCommandResultModeEnum::BOUNDED_ROWS ? $command->maxRows : null;
-                $result = $this->connection->execute($command->sql, $params, $maxRows);
+                try {
+                    $result = $this->connection->execute($command->sql, $params, $maxRows);
+                } catch (HostSnapshotRowLimitExceeded) {
+                    $result = null;
+                }
                 $this->confirmSession($preserves ? $active : null);
                 if (! $preserves) {
                     $this->state = $this->connection->transactionActive() ? State::TRANSACTION_UNQUALIFIED : State::QUARANTINED;
                 }
 
-                return $result;
             } catch (Throwable $error) {
                 $this->quarantine();
                 throw $error;
             }
+            if ($result === null) {
+                throw new HostSnapshotPaginationException('The Host snapshot result exceeds its row limit.');
+            }
+
+            return $result;
         } finally {
             $this->busy = false;
         }

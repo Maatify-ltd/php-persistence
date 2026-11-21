@@ -67,6 +67,24 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $replacement->release();
     }
 
+    public function testBoundedRowsOverflowClosesTheResourceWithoutEndingTheHostTransaction(): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
+            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        try {
+            $lease->runRegisteredCommand('many');
+            self::fail('Expected bounded rows overflow.');
+        } catch (HostSnapshotPaginationException $error) {
+            self::assertSame('The Host snapshot result exceeds its row limit.', $error->getMessage());
+        }
+        self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
+        $lease->rollBack();
+        $lease->release();
+    }
+
     public function testCommandFailureRetainsOriginalDriverErrorAndQuarantinesSource(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
