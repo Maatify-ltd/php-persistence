@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-This reference accompanies the published Release Candidate [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1 describes repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -27,7 +27,7 @@ The package offers three independent capabilities over a **caller-supplied `PDO`
 - It is not an ORM, query builder, schema manager, or migration tool. `Pagination\Repository\PdoPaginator` executes SQL text supplied by the caller through `PdoPaginationQueryDescriptor`; it does not generate SQL from a model.
 - It owns no table, schema, or domain-owned persisted state of its own. It operates entirely on tables the host application owns and names.
 - It contains no HTTP controllers, routes, middleware, permission checks, UI, or export logic.
-- It keeps no state between calls: every public method call is self-contained given its PDO connection and arguments.
+- Public operations are self-contained. The one-shot C1 operation retains its grant and terminal outcome on its own object, as decided in [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md). It keeps no shared state across operations.
 - It is not a connection factory and does not perform dependency injection wiring; a host wires it directly or through its own container.
 
 ### 1.2 Operational Read / Reporting classification
@@ -335,9 +335,32 @@ public function paginate(
 
 Throws `PaginationExecutionException` when PDO reports failure through a return value or error status, a count result violates §5.3, a data row has no columns or a non-string key, or a mapper returns a value other than an array or object. Exceptions thrown by PDO or the mapper propagate unchanged. Behavior: see §5.3.
 
+#### `Repository\PdoSnapshotPaginator` (final, one operation per Host checkout)
+
+C1 is an opt-in source API for a single consistent page. The Host constructs and owns an eligible PDO session and declares an exclusive grant through `forExclusiveRead()`. The factory performs no SQL. The first invocation of `paginate()` consumes the operation, including on rejection or failure. Reentry or another invocation throws `SnapshotPaginationException` before database I/O. Cloning, serialization and restoration from serialized data are rejected.
+
+```php
+public static function forExclusiveRead(PDO $pdo): self;
+
+public function paginate(
+    PdoPaginationQueryDescriptor $query,
+    PageRequest $request,
+    PaginationConfig $config,
+    callable $mapper,
+): PageResultDTO;
+
+public function connectionOutcome(): ?SnapshotConnectionOutcomeDTO;
+```
+
+- `DTO\SnapshotConnectionOutcomeDTO` is readonly. The constructor takes `SnapshotConnectionDispositionEnum $disposition` and `?string $diagnostic`, also available as public readonly properties. A `DISCARD` outcome requires a non-blank diagnostic. Use the enum for decisions and the diagnostic for safe failure-stage information.
+- `Enum\SnapshotConnectionDispositionEnum` has cases `UNCHANGED`, `REUSABLE` and `DISCARD`.
+- `connectionOutcome()` returns null before a terminal outcome and the same immutable DTO afterward. The accessor performs no I/O. The operation releases its own reference to the PDO and the outcome holds only the enum and diagnostic.
+
+Behavior: see §5.3.1.
+
 #### Pagination exceptions
 
-`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException` — see §6.2.
+`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException`, `SnapshotPaginationException` — see §6.2.
 
 ### 3.4 Ordering capability — `Maatify\PhpPersistence\Ordering\`
 
@@ -413,7 +436,7 @@ These classes are reachable because PHP does not restrict class visibility, but 
 These two terms are used precisely and consistently throughout this document and the source code:
 
 - **Caller-owned transaction** — a transaction already active on the `PDO` connection (`$pdo->inTransaction() === true`) when a package method is called. The package never begins, commits, or performs a final rollback of it. Where it needs to limit the blast radius of a failure, it uses a savepoint scoped to its own operation.
-- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called. The package commits it on success and attempts a best-effort rollback on failure if the transaction is still active.
+- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called, or when C1 accepted a qualified exclusive grant and confirmed the start of its read-only transaction. The package commits it on success and attempts a best-effort rollback on failure if the transaction is still active.
 
 ---
 
@@ -467,6 +490,22 @@ Never begins, commits, or changes a transaction; it runs whatever statements the
 - **Page clamp:** when the normalized `page` exceeds the computed `totalPages`, it is reset to `1` (not clamped to the last page).
 - **Data query:** `$query->dataSql` is wrapped with an `ORDER BY <resolved sort column> <direction>[, <tie-breaker column> <tie-breaker direction>]` (the tie-breaker clause is omitted when it resolves to the same quoted column as the primary sort) and a `LIMIT`/`OFFSET` bound through the reserved parameter names `__pagination_limit`/`__pagination_offset` as integers. Each fetched row must be a non-empty associative array with string keys; it is passed to `$mapper`, whose return value must be an `array` or `object`.
 - **Result:** a `PageResultDTO` with `hasNext = page < totalPages` and `hasPrevious = page > 1 && totalPages > 0`.
+
+#### 5.3.1 Optional C1 snapshot pagination
+
+The Host grants one live PDO session exclusively for one page. The session must be clean, without an explicit or implicit transaction or pending next-transaction settings. It must use `pdo_mysql`, `PDO::ERRMODE_EXCEPTION`, server `autocommit=1` and effective `REPEATABLE READ`. The Host supplies the session provenance and the ability to keep the checkout out of circulation or discard it. C1 checks observable eligibility and session continuity. Session defaults and `PDO::inTransaction()` alone cannot certify a checkout or detect a pending one-shot override.
+
+C1 takes an already built descriptor and begins one owned `READ ONLY` transaction. Its guarantee is one InnoDB read view for the eligible non-locking count and data reads, including qualified subqueries. The consumer owns the predicates, count semantics, filters and ordering. Use a mapper that only maps the returned row, without further I/O or reliance on the connection after settlement. An independent earlier read required to build the descriptor is outside the guarantee. Page-to-page stability across calls is outside this scope.
+
+C1 closes its read resources and verifies the delegated transaction and session before and after its own `COMMIT` or `ROLLBACK`. It explicitly suppresses chaining and release on these commands. It preserves session settings and PDO attributes. Page output requires confirmed completion. A PDO or mapper throwable escapes unchanged. On failure, C1 attempts rollback only for a confirmed owned scope with confirmed resource cleanup. An unconfirmed start, cleanup or finish keeps the checkout out of circulation.
+
+| Outcome | Meaning for the Host |
+| --- | --- |
+| `UNCHANGED` | Known ineligibility before starting the transaction. The original Host policy retains the connection. This outcome grants no clearance for a new checkout. |
+| `REUSABLE` | Confirmed completion of the owned transaction on the same session with released resources. A read failure followed by confirmed cleanup can also produce this outcome. |
+| `DISCARD` | Connection or completion is unconfirmed, including a failed commit. The Host retires the checkout. |
+
+The Host settles the exact checkout after the outer invocation completes, even on exception. An attempt without a terminal outcome keeps the checkout out of circulation. The Host must hold it out of circulation by default and make it available only after successful settlement. It retains ownership of the connection, reset and disposal and rejects a stale or foreign outcome. A failed settlement must leave the checkout unavailable and must preserve any original page failure. See [the standalone example](examples/pagination_snapshot_usage.php) for a fresh non-persistent connection.
 
 ### 5.4 `ScopedOrderingManager`
 
@@ -541,6 +580,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 | `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist. |
 | `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value). |
 | `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3). |
+| `SnapshotPaginationException` | `SystemMaatifyException` | C1 rejects the delegated connection or operation state, cannot confirm resources or owned transaction control, or is given an invalid discard outcome. Driver and mapper throwables retain their identities. |
 
 ### 6.3 Ordering
 
@@ -564,6 +604,8 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 | Deadlock (`40001`/`1213`) in a package-owned transaction | Replayed only under the exact conditions of §5.1, default off (`$maxDeadlockRetries = 0`). |
 | Deadlock or any error in a caller-owned transaction | Never replayed by this package; it propagates to the caller, which decides. |
 | Engine ends the transaction on the server (e.g. MariaDB `1020`, §7.3) | A thrown error propagates unchanged. Ordering reports a return-value failure as described in §5.4. The package never retries the caller's work and never changes a setting to work around it. |
+
+Ordinary pagination leaves the transaction entirely with the Host (§5.3). C1 manages only the confirmed, delegated read transaction and uses a terminal outcome for the Host (§5.3.1).
 
 ### 7.2 Savepoint ownership
 

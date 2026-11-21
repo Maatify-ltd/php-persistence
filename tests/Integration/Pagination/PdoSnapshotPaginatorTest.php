@@ -193,7 +193,7 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         self::assertNull($snapshot->connectionOutcome());
         $this->expectException(Error::class);
         $this->expectExceptionMessage('__clone');
-        $copy = clone $snapshot;
+        $copy = clone ($snapshot);
     }
 
     public function testEligibilityUncertaintyDoesNotCertifyAnUnchangedConnection(): void

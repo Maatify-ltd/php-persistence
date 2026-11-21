@@ -123,7 +123,7 @@ Table and column identifiers passed to `ScopedOrderingConfig` and sort-key ident
 
 ## Examples
 
-Runnable, Public-API-only examples live in [examples/](examples/): one each for Transaction, Pagination, and Ordering. Every example requires a real MySQL/MariaDB connection and is validated in CI using this repository's existing Integration infrastructure (no example invents a second database stack).
+Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The current source includes an [opt-in Snapshot example](examples/pagination_snapshot_usage.php) for a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage.
 
 ## Documentation
 

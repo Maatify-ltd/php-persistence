@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-This guide covers Release Candidate `1.0.0-rc.2`. See the [README](../../README.md#installation) for the exact Packagist installation command.
+See the [README](../../README.md#installation) for installation of the published `1.0.0-rc.2` package. The C1 section describes the current repository source.
 
 ## Before you start
 
@@ -21,13 +21,14 @@ This guide covers Release Candidate `1.0.0-rc.2`. See the [README](../../README.
 
 ## Run the examples
 
-With Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs all three examples.
+With Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the examples against it.
 
 For a standalone run, use a disposable database with InnoDB available. The account must have `CREATE`, `INSERT`, `SELECT`, `UPDATE`, and `DROP` privileges in that database. Set `PHP_PERSISTENCE_IT_HOST`, `PHP_PERSISTENCE_IT_PORT`, `PHP_PERSISTENCE_IT_DATABASE`, `PHP_PERSISTENCE_IT_USER`, and `PHP_PERSISTENCE_IT_PASSWORD` in the environment, then run the example from the repository root:
 
 ```bash
 php examples/transaction_basic_usage.php
 php examples/pagination_basic_usage.php
+php examples/pagination_snapshot_usage.php
 php examples/ordering_basic_usage.php
 ```
 
@@ -154,6 +155,18 @@ $payload = $page->toArray(); // ['data' => [...], 'pagination' => ['page' => ...
 ```
 
 See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#33-pagination-capability--maatifyphppersistencepagination) for every normalization rule and the exact `PaginationExecutionException`/`InvalidPaginationQueryException`/`InvalidPaginationConfigurationException` conditions.
+
+### Optional C1 snapshot pagination
+
+C1 is available in the current repository source. Use the existing caller-controlled paginator with the published RC.2 artifact.
+
+Use C1 when all reads for one page can run through the same eligible InnoDB connection and the Host can grant that connection exclusively. Start with a new non-persistent PDO reader with server autocommit enabled, effective REPEATABLE READ and PDO exception mode. The Host proves the connection has no active transaction or pending next-transaction policy.
+
+1. Build the same descriptor, request and configuration used for standard pagination.
+2. Create the one-shot operation with `PdoSnapshotPaginator::forExclusiveRead($pdo)` and call `paginate()`.
+3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `REUSABLE` after confirmed cleanup, retains its policy for `UNCHANGED`, and retires a `DISCARD` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
+
+The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the candidate package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
 
 ---
 
