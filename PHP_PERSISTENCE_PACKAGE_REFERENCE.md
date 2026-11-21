@@ -418,9 +418,66 @@ public function jsonSerialize(): array;
 - The result constructor accepts a list of arrays or objects in supplied order, enforces `$hasNext === ($nextCursor !== null)`, rejects an empty cursor string, and rejects continuation on an empty page. Invalid construction raises `PaginationExecutionException`. JSON has the keys `data`, `hasNext`, and `nextCursor`. The paginator verifies cursor authenticity and context when consuming it.
 - `serialize()` and restoration through `unserialize()` of the paginator raise `PaginationExecutionException` with the message `Keyset paginator does not support serialization or restoration.`. Its normal `var_dump()` representation excludes key material. Library-generated messages and ordinary backtrace arguments redact signing material and sensitive request inputs. This representation is scoped to PHP's regular diagnostics. Reflection and `var_export()` have their own property-inspection semantics. The Host controls any logging of driver and mapper failures, which keep their original identity.
 
+#### Optional B API (pagination in the Host's transaction)
+
+B provides a source, an exclusive checkout, and a one-shot authorization per read. Its public surface in the Pagination namespace is:
+
+```php
+// Repository\PdoHostSnapshotSource
+public static function attachExclusive(PDO $pdo, HostSnapshotCatalog $catalog): self;
+public function checkout(): PdoHostSnapshotCheckout;
+public function retireForHost(): HostSnapshotRetirementDTO;
+public function discardForHost(): void;
+
+// Repository\PdoHostSnapshotCheckout
+public function beginRepeatableRead(HostSnapshotAccessModeEnum $mode = HostSnapshotAccessModeEnum::READ_WRITE): void;
+public function runRegisteredCommand(string $commandId, array $bindings = []): int|array;
+public function commit(): void;
+public function rollBack(): void;
+public function state(): HostSnapshotCheckoutStateEnum;
+public function authorizePage(string $queryId, array $bindings, PageRequest $request): HostSnapshotPageGrant;
+public function newAttempt(HostSnapshotPageGrant $grant): HostSnapshotPageAttempt;
+public function release(): void;
+
+// Repository\PdoHostSnapshotPaginator
+public function paginate(HostSnapshotPageAttempt $attempt): PageResultDTO;
+
+// Criteria\HostSnapshotPageAttempt
+public function state(): HostSnapshotPageAttemptStateEnum;
+public function settlement(): ?HostSnapshotPageSettlementDTO;
+
+// Criteria\HostSnapshotCatalog
+public function __construct(array $pagePlans, array $hostCommands = []);
+
+// Criteria\HostSnapshotPagePlan
+public function __construct(
+    string $totalSql,
+    string $filteredCountSql,
+    string $dataSql,
+    array $totalParameterNames,
+    array $filteredParameterNames,
+    array $dataParameterNames,
+    PaginationConfig $config,
+    Closure $mapper,
+);
+
+// Criteria\HostSnapshotCommandPlan
+public function __construct(
+    string $sql,
+    array $parameterNames,
+    HostSnapshotCommandResultModeEnum $resultMode,
+    ?int $maxRows = null,
+    HostSnapshotCommandEffectEnum $effect = HostSnapshotCommandEffectEnum::INVALIDATE_GENERATION,
+);
+```
+
+- The source issues the opaque checkout, grant, and attempt. These identities and the source reject cloning, serialization, and restoration. Members marked @internal are implementation details. Explicit B contract rejections use Pagination\Exception\HostSnapshotPaginationException and the package marker.
+- DTO\HostSnapshotPageSettlementDTO is readonly with public enum fields disposition and reason. DTO\HostSnapshotRetirementDTO is readonly with public HostSnapshotRetirementDispositionEnum disposition and PDO pdo.
+- Checkout state is IDLE, TRANSACTION_ACTIVE, TRANSACTION_UNQUALIFIED, BUSY, QUARANTINED, RELEASED, or RETIRED. The access modes are READ_WRITE and READ_ONLY. Command result modes are AFFECTED_ROWS and BOUNDED_ROWS. Effects are INVALIDATE_GENERATION and PRESERVES_TRANSACTION.
+
 #### Pagination exceptions
 
-`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException`, `SnapshotPaginationException`, `InvalidKeysetCursorException` — see §6.2.
+`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException`, `SnapshotPaginationException`, `InvalidKeysetCursorException`, `HostSnapshotPaginationException` — see §6.2.
 
 ### 3.4 Ordering capability — `Maatify\PhpPersistence\Ordering\`
 
@@ -584,6 +641,41 @@ Pass an eligible `pdo_mysql` connection, in `ERRMODE_EXCEPTION` and `CASE_NATURA
 
 **Failures.** Rejected cursors get a common `InvalidKeysetCursorException` message. The package distinguishes normal fetch completion from a PDO-reported failure, and preserves the primary failure if cleanup fails as well. A false return from PDO or invalid row and mapper results raise `PaginationExecutionException`. An unsuccessful close or cursor issuance prevents result delivery. A PDO or mapper throwable propagates unchanged. See the [runnable Composer example](examples/pagination_keyset_usage.php) for first-page and continuation calls.
 
+### 5.3.3 Optional B pagination in a Host-owned transaction
+
+**Ownership and eligibility.** The Host supplies its exclusively owned, non-persistent pdo_mysql PDO or Pdo\Mysql object with ERRMODE_EXCEPTION and the default PDOStatement class. The Host routes connection use through the source for the duration of delegation and retains it until handoff or discard. Shared references from before delegation, automatic reconnect or replay, and session multiplexing invalidate eligibility. B leaves connection attributes in the Host's control. It requires one stable session with autocommit enabled. One live source registration per PDO object is enforced in the process, including after handoff when that object still exists. The source permits one active checkout.
+
+**Registration and transaction proof.** Register non-locking, side-effect-free InnoDB page plans and trusted Host commands. Each SQL statement declares its own unique names. The values are an exact named map of string, int, bool, or null. The Host is responsible for SQL semantics and template placeholder positions. Catalog lookups use PHP array-key semantics, including decimal string identifiers that PHP stores as integer keys. A bounded command must set a positive maxRows. If it exceeds the bound, it reports the row-limit failure after cleanup and scope confirmation. If confirmation fails, the source quarantines and still reports the row-limit failure. Its rows preserve the aliases and keys returned by PDO::FETCH_ASSOC, including numeric keys. Pagination data rows require string keys before mapping. A command declared PRESERVES_TRANSACTION must be incapable of changing the session or current transaction. The default effect invalidates the generation before the command is sent. Ambiguity quarantines the source. The Host requests beginRepeatableRead() on an idle checkout. Under the reservation, B sends SET TRANSACTION ISOLATION LEVEL REPEATABLE READ followed immediately by START TRANSACTION in the requested access mode. The confirmed same session and active transaction establish a new generation. An idle session with a pending next-transaction setting that B has not confirmed consumed is eligible for reconciliation, and becomes eligible for ordinary release after a qualified begin and confirmed end. The Host's explicit commit() and rollBack() use AND NO CHAIN NO RELEASE and confirm the same session without an active transaction. There is no retry or automatic completion on a page path.
+
+**Page and settlement.** The Host authorizes a page on the proven generation, then creates an attempt before calling the paginator. A single reservation covers Host commands and page reads. Authorizations are consumed only on admission. A busy but otherwise eligible grant can be used in a fresh attempt. B completes and closes the count and data statements before calling the mapper. It checks the transaction again before publishing the terminal settlement and opening the reservation. Driver and mapper throwables propagate as the original objects. After a statement-level cardinality, data, or syntax/access-rule error in an eligible registered read, B still checks resource and transaction continuity. A driver failure that leaves the transaction effect uncertain quarantines the source. Ordinary exception arguments from B carry no PDO or statement, including through recoverable wrappers.
+
+An attempt is NEW, RUNNING, or TERMINAL. settlement() returns null before it is terminal and returns the same immutable, resource-free value afterward, including after a subsequent read, release, retirement, or discard. A repeat invocation of the same attempt rejects without changing its settlement.
+
+| Disposition | Reasons and effect |
+| --- | --- |
+| NOT_ACCEPTED | SOURCE_UNAVAILABLE, STALE_CONTEXT, GRANT_CONSUMED, or BUSY, in that order when several apply. The attempt has performed no database I/O. |
+| RETURNED_TO_HOST | PAGE_COMPLETED or READ_FAILED after confirmation of the resource and transaction scope. The source still holds the connection. |
+| HOST_ACTION_REQUIRED | RESOURCE_RELEASE_UNCONFIRMED, SCOPE_UNCONFIRMED, or SETTLEMENT_UNCONFIRMED. B invalidates the generation and quarantines the source before relinquishing the reservation. In an accepted invocation that returns or throws, a terminal fallback remains available even if ordinary settlement cannot finish. |
+
+**Release, retirement, and discard.** release() makes the source available to another checkout only after confirmed idle status and resolution of pending settings and resources. retireForHost() permanently invalidates the source and transfers the same PDO after confirmed resource release. RETURNED_IDLE certifies the known idle state; RETURNED_FOR_RECONCILIATION asks the Host to resolve the connection before further circulation. An unresolved resource prevents transfer. The Host can call discardForHost() to permanently invalidate the source and drop the library's references. This call initiates zero explicit SQL, state probes, or transaction-end commands. PDO or its driver may automatically send ROLLBACK or perform other I/O or close the session when the last reference is released. The caller does not receive an acknowledgement of transaction outcome, timing, or server closure. A retirement or discard request while a reservation is held is rejected.
+
+```php
+$checkout = $source->checkout();
+$checkout->beginRepeatableRead();
+$grant = $checkout->authorizePage('items', ['tenant' => 7], new PageRequest());
+$attempt = $checkout->newAttempt($grant);
+try {
+    $page = $paginator->paginate($attempt);
+} finally {
+    $settlement = $attempt->settlement();
+}
+// The Host uses $settlement on either path and explicitly ends its transaction.
+// The Host can reconcile after a classified handoff. Unresolved resources prevent handoff;
+// the Host may explicitly discard that connection.
+```
+
+See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md).
+
 ### 5.4 `ScopedOrderingManager`
 
 The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
@@ -735,6 +827,7 @@ This section exists so that every behavioral claim above can be checked directly
 | Transaction | `tests/Regression/TransactionPublicApiRegressionTest.php`, `tests/Regression/Exception/*ContractTest.php` | `tests/Unit/Transaction/Repository/{PdoTransactionRunnerTest,PdoSavepointTransactionRunnerTest,PdoSavepointTransactionRunnerRetryTest,OwnedTransactionExecutorTest,DeadlockRetryFailClosedTest,SavepointScopeTest}.php`; `tests/Integration/Transaction/{PdoTransactionRunnerIntegrationTest,PdoSavepointTransactionRunnerIntegrationTest,DeadlockRetryIntegrationTest}.php` (genuine deadlocks via a real partner process) |
 | Pagination | `tests/Regression/Pagination/{PaginationPublicApiRegressionTest,PaginationSqlContractRegressionTest}.php` | `tests/Unit/Pagination/*.php`; `tests/Integration/Pagination/{PdoPaginatorQuerySemanticsTest,PdoPaginatorFailureContractTest,PdoPaginatorSnapshotConsistencyTest,PdoPaginatorTransactionTest}.php` (caller-controlled pagination); `tests/Integration/Pagination/{PdoSnapshotPaginatorTest,PdoSnapshotPaginatorFailureTest}.php` (C1 snapshot, session continuity, and Host disposition) |
 | Optional Keyset | `harness/keyset-api.php` and the installed Composer example via `composer test:consumer` | `tests/Unit/Pagination/{KeysetContractTest,PdoKeysetPaginatorTest}.php` (registration, JSON, SQL/wire golden, diagnostics and failure); `tests/Integration/Pagination/PdoKeysetPaginatorIntegrationTest.php` (PDO, native/emulated, Host transaction, scope, and bounds) |
+| Optional B | `harness/host-snapshot-api.php` from Consumer Verification | `tests/Integration/Pagination/PdoHostSnapshot*Test.php` (source, isolation, commands, settlement, handoff and discard) |
 | Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest,Repository/ScopedOrderingManagerExecutionFailureTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
 
 A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its legacy-vs-current delta) remains available in [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as a framed historical/evidence record; this section and §§5–8 above are the current normative restatement for a consumer.

@@ -159,9 +159,11 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         }
     }
 
-    $status = passthrough([PHP_BINARY, $directory . '/keyset-api.php'], $environment, $directory, boxed(120));
-    if ($status !== 0) {
-        return $status;
+    foreach (['keyset-api.php', 'host-snapshot-api.php'] as $publicApiScenario) {
+        $status = passthrough([PHP_BINARY, $directory . '/' . $publicApiScenario], $environment, $directory, boxed(120));
+        if ($status !== 0) {
+            return $status;
+        }
     }
     foreach ($examples as $example) {
         $status = passthrough([PHP_BINARY, $exampleDirectory . '/' . $example], $environment, $directory, boxed(120));
