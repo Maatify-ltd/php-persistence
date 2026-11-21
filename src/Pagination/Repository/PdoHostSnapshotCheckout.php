@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 
@@ -20,6 +21,30 @@ final readonly class PdoHostSnapshotCheckout
     public function state(): HostSnapshotCheckoutStateEnum
     {
         return $this->source->checkoutState($this);
+    }
+
+    public function beginRepeatableRead(HostSnapshotAccessModeEnum $mode = HostSnapshotAccessModeEnum::READ_WRITE): void
+    {
+        $this->source->beginCheckout($this, $mode);
+    }
+
+    /**
+     * @param array<array-key, mixed> $bindings
+     * @return int|list<array<string, mixed>>
+     */
+    public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
+    {
+        return $this->source->executeCheckoutCommand($this, $commandId, $bindings);
+    }
+
+    public function commit(): void
+    {
+        $this->source->finishCheckout($this, true);
+    }
+
+    public function rollBack(): void
+    {
+        $this->source->finishCheckout($this, false);
     }
 
     public function release(): void

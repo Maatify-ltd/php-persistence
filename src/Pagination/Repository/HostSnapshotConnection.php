@@ -121,6 +121,11 @@ final class HostSnapshotConnection
         }
     }
 
+    public function transactionActive(): bool
+    {
+        return $this->pdo->inTransaction();
+    }
+
     public function resourcesReleased(): bool
     {
         return $this->statement === null;
