@@ -353,12 +353,12 @@ final class PdoHostSnapshotSource
                 $page = (new HostSnapshotPageReader($this->connection))->read($grant, $mapping);
             } catch (Throwable $error) {
                 $primary = $error;
-                // These validation failures and name-resolution errors cannot
-                // finish a Host transaction in an eligible registered read.
+                // These local validation, name-resolution and cardinality failures
+                // cannot finish a Host transaction in an eligible registered read.
                 $knownReadError = $error instanceof PaginationExecutionException
                     || ($error instanceof PDOException && in_array(
                         [$error->errorInfo[0] ?? null, $error->errorInfo[1] ?? null],
-                        [['42S22', 1054], ['42S02', 1146]],
+                        [['42S22', 1054], ['42S02', 1146], ['21000', 1242]],
                         true,
                     ));
                 if (! $this->connection->resourcesReleased() || (! $mapping && ! $knownReadError)) {

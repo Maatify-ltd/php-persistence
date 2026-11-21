@@ -197,6 +197,31 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $lease->release();
     }
 
+    #[DataProvider('prepareModes')]
+    public function testCardinalityErrorDoesNotEndAConfirmedHostTransaction(bool $emulated): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection($emulated), new HostSnapshotCatalog([
+            'invalid' => new HostSnapshotPagePlan(
+                'SELECT (SELECT 1 UNION ALL SELECT 2)',
+                'SELECT 0',
+                'SELECT 1 AS id',
+                [],
+                [],
+                [],
+                $this->config(),
+                static fn(array $row): array => $row,
+            ),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $attempt = $lease->newAttempt($lease->authorizePage('invalid', [], new PageRequest()));
+        $failure = self::failureOf(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
+        self::assertSame(1242, self::driverCode($failure));
+        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        $lease->rollBack();
+        $lease->release();
+    }
+
     /** @param (Closure(array<string, mixed>): array<string, mixed>)|null $mapper */
     private function plan(string $table, ?Closure $mapper = null, bool $bad = false): HostSnapshotPagePlan
     {
