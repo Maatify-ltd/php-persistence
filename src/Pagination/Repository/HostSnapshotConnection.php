@@ -23,7 +23,7 @@ final class HostSnapshotConnection
         $row = array_change_key_case($rows[0] ?? []);
         $id = $row['session_id'] ?? null;
         $autocommit = $row['autocommit'] ?? null;
-        if ((! is_int($id) && ! is_string($id)) || ! ctype_digit((string) $id)
+        if ((! is_int($id) && ! is_string($id)) || ! preg_match('/\A[1-9][0-9]*\z/', (string) $id)
             || ! in_array($autocommit, [0, 1, '0', '1'], true)
         ) {
             throw new HostSnapshotPaginationException('Unable to confirm the Host snapshot session.');
