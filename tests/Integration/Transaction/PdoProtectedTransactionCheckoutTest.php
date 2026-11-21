@@ -16,6 +16,7 @@ use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection
 use Closure;
 use Error;
 use PDO;
+use Pdo\Mysql;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
 use WeakReference;
@@ -148,6 +149,46 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $checkout->commit();
         self::assertSame([10], $this->values($observer, $table));
         self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+        $checkout->returnForHost();
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function cursorModes(): iterable
+    {
+        yield 'native buffered' => [false, true];
+        yield 'native unbuffered' => [false, false];
+        yield 'emulated buffered' => [true, true];
+        yield 'emulated unbuffered' => [true, false];
+    }
+
+    #[DataProvider('cursorModes')]
+    public function testRowBoundFailureClosesTheResultAndPreservesTheHostTransaction(bool $emulated, bool $buffered): void
+    {
+        $observer = $this->connect();
+        $table = $this->createTable($observer);
+        $pdo = $this->delegatedConnection();
+        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulated);
+        $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, $buffered);
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([
+            'write' => new ProtectedTransactionCommandPlan("INSERT INTO `$table` (id, v) VALUES (1, 10)", []),
+            'overflow' => new ProtectedTransactionCommandPlan('SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3', [], 1),
+            'read' => new ProtectedTransactionCommandPlan("SELECT v FROM `$table` WHERE id = 1", [], 1),
+        ]));
+        unset($pdo);
+        $checkout->begin();
+        self::assertSame(1, $checkout->runRegisteredCommand('write'));
+        try {
+            $checkout->runRegisteredCommand('overflow');
+            self::fail('Expected the row bound to reject the result.');
+        } catch (ProtectedTransactionException $failure) {
+            self::assertSame('The protected transaction result exceeds its row bound.', $failure->getMessage());
+        }
+        self::assertUnsettled($checkout);
+        self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('read'));
+        self::assertSame([], $this->values($observer, $table));
+        $checkout->commit();
+        self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+        self::assertSame([10], $this->values($observer, $table));
         $checkout->returnForHost();
     }
 

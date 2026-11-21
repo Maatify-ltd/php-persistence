@@ -66,5 +66,5 @@ Type mapping is in [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md). Baseline strategy
 
 ## 5. Open items
 
-- The deadlock-retry replay relies on `pdo_mysql` deriving `PDO::inTransaction()` from the last server reply. WU-6 tested this with real deadlocks on PHP 8.4 and 8.5 against both MySQL and MariaDB cells of the matrix ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)); this is behavioral test evidence for B-12 on those cells, not a MariaDB support claim, which still waits on the MariaDB `1020` contract ([DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md)).
+- The deadlock-retry replay relies on `pdo_mysql` deriving `PDO::inTransaction()` from the last server reply. WU-6 tested this with real deadlocks on PHP 8.4 and 8.5 against named MySQL and MariaDB cells ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)). That evidence covers B-12 on those cells. [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) separately governs the optional protected checkout for MariaDB `1020`.
 - B-02 and B-03 under MariaDB `innodb_snapshot_isolation=ON` are discussed in [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md), not by this table.

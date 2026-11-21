@@ -41,37 +41,50 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
     {
         $table = $this->scopedTable;
         $id = $this->fixture->insertScoped('target', 1);
+        $hostId = $this->fixture->insertScoped('host', 1, 'original');
         $pdo = $this->delegatedConnection(self::setting('PORT'), $emulated);
         $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        if (self::engine() === 'mariadb') {
+        $mariaDb = self::engine() === 'mariadb';
+        if ($mariaDb) {
             $pdo->exec('SET SESSION innodb_snapshot_isolation = ' . ($snapshot ? 'ON' : 'OFF'));
         }
         $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([
             'snapshot' => new ProtectedTransactionCommandPlan("SELECT COUNT(*) AS n FROM `$table`", [], 1),
             'write' => new ProtectedTransactionCommandPlan(
-                "INSERT INTO `$table` (scope_key, display_order, label) VALUES ('host', 1, 'host')",
-                [],
+                "UPDATE `$table` SET label = 'pending' WHERE id = :id",
+                ['id'],
             ),
         ]));
         unset($pdo);
         $manager = new ProtectedScopedOrderingManager();
         $checkout->begin();
         $checkout->runRegisteredCommand('snapshot');
-        $checkout->runRegisteredCommand('write');
+        self::assertSame(1, $checkout->runRegisteredCommand('write', ['id' => $hostId]));
         $this->fixture->insertScoped('target', 2);
+        $hostLabelSql = "SELECT label FROM `$table` WHERE id = $hostId";
+        self::assertSame('original', $this->scalar($this->pdo, $hostLabelSql));
         $operation = $move
             ? fn() => $manager->moveWithinScope($checkout, $this->scopedConfig(), 'target', $id, 2)
             : fn() => $manager->getNextPositionForUpdate($checkout, $this->scopedConfig(), 'target');
-        if (!($snapshot && self::engine() === 'mariadb')) {
+        if (!($snapshot && $mariaDb)) {
             self::assertSame($move ? true : 3, $operation());
-            self::assertSame('0', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
+            self::assertSame('original', $this->scalar($this->pdo, $hostLabelSql));
             $checkout->commit();
-            self::assertSame('1', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
+            self::assertSame('pending', $this->scalar($this->pdo, $hostLabelSql));
             $checkout->returnForHost();
 
             return;
         }
 
+        // Visibility alone cannot distinguish rollback from a pending update.
+        // The independent observer establishes that the write lock exists.
+        $hostLockSql = $hostLabelSql . ' FOR UPDATE NOWAIT';
+        $this->pdo->beginTransaction();
+        try {
+            self::assertSame(1205, self::driverCode(self::failureOf(fn() => $this->scalar($this->pdo, $hostLockSql))));
+        } finally {
+            $this->pdo->rollBack();
+        }
         $previous = ini_set('zend.exception_ignore_args', '0');
         try {
             $failure = self::failureOf($operation);
@@ -90,10 +103,17 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         $settlement = $checkout->settlement();
         self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
         self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $settlement->reason);
-        $this->reject(static fn() => $checkout->runRegisteredCommand('write'));
+        $this->reject(static fn() => $checkout->runRegisteredCommand('write', ['id' => $hostId]));
         $this->reject(static fn() => $checkout->rollBack());
         $this->reject(static fn() => $checkout->returnForHost());
-        self::assertSame('0', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
+        // Confirm that the pending update and its lock are gone before discard
+        // can trigger a rollback in the driver.
+        $this->pdo->beginTransaction();
+        try {
+            self::assertSame('original', $this->scalar($this->pdo, $hostLockSql));
+        } finally {
+            $this->pdo->rollBack();
+        }
         $checkout->discardForHost();
         self::assertSame($settlement, $checkout->settlement());
     }
