@@ -360,14 +360,13 @@ final class PdoHostSnapshotSource
                 $page = (new HostSnapshotPageReader($this->connection))->read($grant, $mapping);
             } catch (Throwable $error) {
                 $primary = $error;
-                // These local validation, name-resolution and cardinality failures
-                // cannot finish a Host transaction in an eligible registered read.
+                // In an eligible side-effect-free read, cardinality, data, and
+                // syntax/access-rule failures affect the statement. Other classes
+                // include transaction or driver ambiguity; the status bit alone
+                // cannot establish transaction continuity for those failures.
+                $sqlState = $error instanceof PDOException ? ($error->errorInfo[0] ?? null) : null;
                 $knownReadError = $error instanceof PaginationExecutionException
-                    || ($error instanceof PDOException && in_array(
-                        [$error->errorInfo[0] ?? null, $error->errorInfo[1] ?? null],
-                        [['42S22', 1054], ['42S02', 1146], ['21000', 1242]],
-                        true,
-                    ));
+                    || (is_string($sqlState) && preg_match('/\A(?:21|22|42)[A-Z0-9]{3}\z/', $sqlState) === 1);
                 if (! $this->connection->resourcesReleased() || (! $mapping && ! $knownReadError)) {
                     throw $error;
                 }

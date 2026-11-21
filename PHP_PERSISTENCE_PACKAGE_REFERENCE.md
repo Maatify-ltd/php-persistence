@@ -647,7 +647,7 @@ Pass an eligible `pdo_mysql` connection, in `ERRMODE_EXCEPTION` and `CASE_NATURA
 
 **Registration and transaction proof.** Register non-locking, side-effect-free InnoDB page plans and trusted Host commands. Each SQL statement declares its own unique names. The values are an exact named map of string, int, bool, or null. The Host is responsible for SQL semantics and template placeholder positions. A bounded command must set a positive maxRows. A command declared PRESERVES_TRANSACTION must be incapable of changing the session or current transaction. The default effect invalidates the generation before the command is sent. Ambiguity quarantines the source. The Host requests beginRepeatableRead() on an idle checkout. Under the reservation, B sends SET TRANSACTION ISOLATION LEVEL REPEATABLE READ followed immediately by START TRANSACTION in the requested access mode. The confirmed same session and active transaction establish a new generation. An idle session with a pending next-transaction setting that B has not confirmed consumed is eligible for reconciliation, and becomes eligible for ordinary release after a qualified begin and confirmed end. The Host's explicit commit() and rollBack() use AND NO CHAIN NO RELEASE and confirm the same session without an active transaction. There is no retry or automatic completion on a page path.
 
-**Page and settlement.** The Host authorizes a page on the proven generation, then creates an attempt before calling the paginator. A single reservation covers Host commands and page reads. Authorizations are consumed only on admission. A busy but otherwise eligible grant can be used in a fresh attempt. B completes and closes the count and data statements before calling the mapper. It checks the transaction again before publishing the terminal settlement and opening the reservation. Driver and mapper throwables propagate as the original objects. Ordinary exception arguments from B carry no PDO or statement, including through recoverable wrappers.
+**Page and settlement.** The Host authorizes a page on the proven generation, then creates an attempt before calling the paginator. A single reservation covers Host commands and page reads. Authorizations are consumed only on admission. A busy but otherwise eligible grant can be used in a fresh attempt. B completes and closes the count and data statements before calling the mapper. It checks the transaction again before publishing the terminal settlement and opening the reservation. Driver and mapper throwables propagate as the original objects. After a statement-level cardinality, data, or syntax/access-rule error in an eligible registered read, B still checks resource and transaction continuity. A driver failure that leaves the transaction effect uncertain quarantines the source. Ordinary exception arguments from B carry no PDO or statement, including through recoverable wrappers.
 
 An attempt is NEW, RUNNING, or TERMINAL. settlement() returns null before it is terminal and returns the same immutable, resource-free value afterward, including after a subsequent read, release, retirement, or discard. A repeat invocation of the same attempt rejects without changing its settlement.
 
@@ -670,7 +670,8 @@ try {
     $settlement = $attempt->settlement();
 }
 // The Host uses $settlement on either path and explicitly ends its transaction.
-// If resources are unresolved, the Host chooses between reconciliation and discard.
+// The Host can reconcile after a classified handoff. Unresolved resources prevent handoff;
+// the Host may explicitly discard that connection.
 ```
 
 See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md).

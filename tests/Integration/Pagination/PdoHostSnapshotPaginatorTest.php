@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
 use Closure;
+use Fiber;
 use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
@@ -250,6 +251,68 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
+    }
+
+    #[DataProvider('prepareModes')]
+    public function testDataExceptionDoesNotEndAConfirmedHostTransaction(bool $emulated): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection($emulated), new HostSnapshotCatalog([
+            'invalid' => new HostSnapshotPagePlan(
+                'SELECT CAST(:bound AS SIGNED) + 1',
+                'SELECT 0',
+                'SELECT 1 AS id',
+                ['bound'],
+                [],
+                [],
+                $this->config(),
+                static fn(array $row): array => $row,
+            ),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $attempt = $lease->newAttempt($lease->authorizePage('invalid', ['bound' => PHP_INT_MAX], new PageRequest()));
+        $failure = self::failureOf(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
+        self::assertSame(1690, self::driverCode($failure));
+        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        $lease->rollBack();
+        $lease->release();
+    }
+
+    public function testLostSessionDuringMappingSettlesBeforeTheHostCanDisposeIt(): void
+    {
+        $observer = $this->connect();
+        $raw = $this->borrowableConnection();
+        $id = (int) $this->scalar($raw, 'SELECT CONNECTION_ID()');
+        $source = PdoHostSnapshotSource::attachExclusive($raw, new HostSnapshotCatalog([
+            'one' => new HostSnapshotPagePlan(
+                'SELECT 1',
+                'SELECT 1',
+                'SELECT 1 AS created_at, 1 AS id',
+                [],
+                [],
+                [],
+                $this->config(),
+                static function (array $row): array {
+                    Fiber::suspend();
+
+                    return $row;
+                },
+            ),
+        ]));
+        unset($raw);
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $attempt = $lease->newAttempt($lease->authorizePage('one', [], new PageRequest()));
+        $reader = new Fiber(static fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
+        $reader->start();
+        self::reject($source->discardForHost(...));
+        $observer->exec('KILL CONNECTION ' . $id);
+        self::failureOf($reader->resume(...));
+        self::assertSame(Stage::TERMINAL, $attempt->state());
+        self::assertSame(Disposition::HOST_ACTION_REQUIRED, $attempt->settlement()?->disposition);
+        self::assertSame(Reason::SCOPE_UNCONFIRMED, $attempt->settlement()->reason);
+        $source->discardForHost();
+        self::assertSame(Reason::SCOPE_UNCONFIRMED, $attempt->settlement()->reason);
     }
 
     /** @param (Closure(array<string, mixed>): array<string, mixed>)|null $mapper */
