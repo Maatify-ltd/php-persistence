@@ -6,13 +6,21 @@ namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCommandPlan;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPagePlan;
+use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum as State;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum as Effect;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum as Mode;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCase
 {
@@ -68,6 +76,41 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $replacement->release();
     }
 
+    public function testBoundedRowsPreserveNumericDriverColumnKeys(): void
+    {
+        $plan = new HostSnapshotCommandPlan('SELECT 1', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION);
+        foreach ([false, true] as $emulated) {
+            $source = PdoHostSnapshotSource::attachExclusive(
+                $this->borrowableConnection($emulated),
+                new HostSnapshotCatalog([], ['probe' => $plan]),
+            );
+            $lease = $source->checkout();
+            $lease->beginRepeatableRead();
+
+            self::assertEquals([[1 => 1]], $lease->runRegisteredCommand('probe'));
+            self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
+            $lease->rollBack();
+            $lease->release();
+        }
+    }
+
+    public function testCatalogAcceptsStringIdentifiersThatPhpNormalizesToArrayIntegers(): void
+    {
+        $catalog = new HostSnapshotCatalog(
+            ['12' => $this->emptyPagePlan()],
+            ['34' => new HostSnapshotCommandPlan('SELECT 1 AS v', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION)],
+        );
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), $catalog);
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+
+        self::assertEquals([['v' => 1]], $lease->runRegisteredCommand('34'));
+        $page = $lease->newAttempt($lease->authorizePage('12', [], new PageRequest()));
+        self::assertSame([], new PdoHostSnapshotPaginator()->paginate($page)->data);
+        $lease->rollBack();
+        $lease->release();
+    }
+
     public function testBoundedRowsOverflowClosesTheResourceWithoutEndingTheHostTransaction(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
@@ -84,6 +127,115 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
         $lease->rollBack();
         $lease->release();
+    }
+
+    public function testRegisteredChainInvalidatesAQueuedPageOnTheSameSession(): void
+    {
+        $pdo = $this->borrowableConnection();
+        $id = $this->scalar($pdo, 'SELECT CONNECTION_ID()');
+        $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog(
+            ['page' => $this->emptyPagePlan()],
+            ['chain' => new HostSnapshotCommandPlan('ROLLBACK AND CHAIN NO RELEASE', [], Mode::AFFECTED_ROWS)],
+        ));
+        unset($pdo);
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $queued = $lease->newAttempt($lease->authorizePage('page', [], new PageRequest()));
+        $lease->runRegisteredCommand('chain');
+
+        self::assertSame(State::TRANSACTION_UNQUALIFIED, $lease->state());
+        self::reject(fn() => new PdoHostSnapshotPaginator()->paginate($queued));
+        self::assertSame(Reason::STALE_CONTEXT, $queued->settlement()?->reason);
+        self::reject(fn() => $lease->authorizePage('page', [], new PageRequest()));
+        $lease->rollBack();
+        $returned = $source->retireForHost();
+        self::assertSame(HostSnapshotRetirementDispositionEnum::RETURNED_FOR_RECONCILIATION, $returned->disposition);
+        self::assertSame($id, $this->scalar($returned->pdo, 'SELECT CONNECTION_ID()'));
+        self::assertFalse($returned->pdo->inTransaction());
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testHostCommandFencesAQueuedPageBeforeItsCursorIsReleased(): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog(
+            ['page' => $this->emptyPagePlan()],
+            ['many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION)],
+        ));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $grant = $lease->authorizePage('page', [], new PageRequest());
+        $queued = $lease->newAttempt($grant);
+        $paginator = new PdoHostSnapshotPaginator();
+        $loader = static function (string $class) use ($lease, $paginator, $queued): void {
+            if ($class === HostSnapshotRowLimitExceeded::class) {
+                self::assertSame(State::BUSY, $lease->state());
+                self::reject(fn() => $paginator->paginate($queued));
+                self::assertSame(Reason::BUSY, $queued->settlement()?->reason);
+            }
+        };
+
+        // The first-use marker loads while the Host command still owns its cursor.
+        self::assertFalse(class_exists(HostSnapshotRowLimitExceeded::class, false));
+        spl_autoload_register($loader, prepend: true);
+        try {
+            self::reject(fn() => $lease->runRegisteredCommand('many'));
+        } finally {
+            spl_autoload_unregister($loader);
+        }
+
+        $retry = $lease->newAttempt($grant);
+        self::assertSame([], $paginator->paginate($retry)->data);
+        self::assertSame(Reason::PAGE_COMPLETED, $retry->settlement()?->reason);
+        $lease->rollBack();
+        $lease->release();
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testOverflowRemainsThePrimaryFailureIfTheSessionIsLostDuringCleanup(): void
+    {
+        $observer = $this->connect();
+        $pdo = $this->borrowableConnection();
+        $id = (int) $this->scalar($pdo, 'SELECT CONNECTION_ID()');
+        $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([], [
+            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+        ]));
+        unset($pdo);
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $loader = static function (string $class) use ($observer, $id): void {
+            if ($class === HostSnapshotRowLimitExceeded::class) {
+                $observer->exec('KILL CONNECTION ' . $id);
+            }
+        };
+
+        self::assertFalse(class_exists(HostSnapshotRowLimitExceeded::class, false));
+        spl_autoload_register($loader, prepend: true);
+        try {
+            $lease->runRegisteredCommand('many');
+            self::fail('Expected the command to report its first failure.');
+        } catch (HostSnapshotPaginationException $error) {
+            self::assertSame('The Host snapshot result exceeds its row limit.', $error->getMessage());
+        } finally {
+            spl_autoload_unregister($loader);
+        }
+        self::assertSame(State::QUARANTINED, $lease->state());
+        $source->discardForHost();
+    }
+
+    private function emptyPagePlan(): HostSnapshotPagePlan
+    {
+        return new HostSnapshotPagePlan(
+            'SELECT 0',
+            'SELECT 0',
+            'SELECT 1 AS id',
+            [],
+            [],
+            [],
+            $this->config(),
+            static fn(array $row): array => $row,
+        );
     }
 
     public function testInitialPendingSettingCannotBeReturnedToThePoolUnresolved(): void
@@ -109,8 +261,18 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
-        $error = self::failureOf(fn() => $lease->runRegisteredCommand('broken'));
-        self::assertSame(1054, self::driverCode($error));
+        $ignoreArgs = ini_get('zend.exception_ignore_args');
+        ini_set('zend.exception_ignore_args', '0');
+        try {
+            $error = self::failureOf(fn() => $lease->runRegisteredCommand('broken'));
+            self::assertSame(1054, self::driverCode($error));
+            self::assertContains('executeCheckoutCommand', array_column($error->getTrace(), 'function'));
+            self::assertTraceDoesNotExposeDriver($error);
+        } finally {
+            if ($ignoreArgs !== false) {
+                ini_set('zend.exception_ignore_args', $ignoreArgs);
+            }
+        }
         self::assertSame(State::QUARANTINED, $lease->state());
         $this->expectException(HostSnapshotPaginationException::class);
         $lease->release();

@@ -33,7 +33,7 @@ final readonly class PdoHostSnapshotCheckout
 
     /**
      * @param array<array-key, mixed> $bindings
-     * @return int|list<array<string, mixed>>
+     * @return int|list<array<array-key, mixed>>
      */
     public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
     {

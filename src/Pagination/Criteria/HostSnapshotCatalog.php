@@ -9,10 +9,10 @@ use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 /** Trusted Host registration of page and command plans. */
 final readonly class HostSnapshotCatalog
 {
-    /** @var array<string, HostSnapshotPagePlan> */
+    /** @var array<array-key, HostSnapshotPagePlan> */
     private array $pagePlans;
 
-    /** @var array<string, HostSnapshotCommandPlan> */
+    /** @var array<array-key, HostSnapshotCommandPlan> */
     private array $hostCommands;
 
     /**
@@ -25,7 +25,7 @@ final readonly class HostSnapshotCatalog
     ) {
         $pages = [];
         foreach ($pagePlans as $id => $page) {
-            if (! is_string($id) || $id === '' || ! $page instanceof HostSnapshotPagePlan) {
+            if ($id === '' || ! $page instanceof HostSnapshotPagePlan) {
                 throw new HostSnapshotPaginationException('Invalid Host snapshot page registration.');
             }
             $pages[$id] = $page;
@@ -33,7 +33,7 @@ final readonly class HostSnapshotCatalog
         $this->pagePlans = $pages;
         $validated = [];
         foreach ($hostCommands as $id => $command) {
-            if (! is_string($id) || $id === '' || ! $command instanceof HostSnapshotCommandPlan) {
+            if ($id === '' || ! $command instanceof HostSnapshotCommandPlan) {
                 throw new HostSnapshotPaginationException('Invalid Host snapshot command registration.');
             }
             $validated[$id] = $command;

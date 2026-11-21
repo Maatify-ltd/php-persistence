@@ -6,6 +6,9 @@ namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use PDO;
+use Throwable;
+use SensitiveParameterValue;
+use PDOStatement;
 use Pdo\Mysql;
 
 abstract class HostSnapshotIntegrationTestCase extends PaginationIntegrationTestCase
@@ -38,5 +41,25 @@ abstract class HostSnapshotIntegrationTestCase extends PaginationIntegrationTest
             return;
         }
         self::fail('Expected a Host snapshot contract rejection.');
+    }
+
+    protected static function assertTraceDoesNotExposeDriver(Throwable $error): void
+    {
+        foreach ($error->getTrace() as $frame) {
+            self::assertNoDriver($frame['args'] ?? []);
+        }
+    }
+
+    private static function assertNoDriver(mixed $value): void
+    {
+        self::assertNotInstanceOf(PDO::class, $value);
+        self::assertNotInstanceOf(PDOStatement::class, $value);
+        if ($value instanceof SensitiveParameterValue) {
+            self::assertNoDriver($value->getValue());
+        } elseif (is_array($value)) {
+            foreach ($value as $item) {
+                self::assertNoDriver($item);
+            }
+        }
     }
 }

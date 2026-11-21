@@ -208,7 +208,7 @@ final class PdoHostSnapshotSource
     /**
      * @internal
      * @param array<array-key, mixed> $bindings
-     * @return int|list<array<string, mixed>>
+     * @return int|list<array<array-key, mixed>>
      */
     public function executeCheckoutCommand(PdoHostSnapshotCheckout $checkout, string $id, array $bindings): int|array
     {
@@ -228,7 +228,7 @@ final class PdoHostSnapshotSource
                 try {
                     $result = $this->connection->execute($command->sql, $params, $maxRows);
                 } catch (HostSnapshotRowLimitExceeded) {
-                    $result = null;
+                    $result = new HostSnapshotPaginationException('The Host snapshot result exceeds its row limit.');
                 }
                 $this->confirmSession($preserves ? $active : null);
                 if (! $preserves) {
@@ -237,10 +237,10 @@ final class PdoHostSnapshotSource
 
             } catch (Throwable $error) {
                 $this->quarantine();
-                throw $error;
+                throw isset($result) && $result instanceof HostSnapshotPaginationException ? $result : $error;
             }
-            if ($result === null) {
-                throw new HostSnapshotPaginationException('The Host snapshot result exceeds its row limit.');
+            if ($result instanceof HostSnapshotPaginationException) {
+                throw $result;
             }
 
             return $result;

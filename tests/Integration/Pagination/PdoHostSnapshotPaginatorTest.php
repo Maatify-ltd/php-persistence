@@ -20,14 +20,10 @@ use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
-use PDO;
-use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use RuntimeException;
-use SensitiveParameterValue;
-use Throwable;
 
 final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
 {
@@ -331,25 +327,4 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
             $mapper ?? static fn(array $row): array => $row,
         );
     }
-
-    private static function assertTraceDoesNotExposeDriver(Throwable $error): void
-    {
-        foreach ($error->getTrace() as $frame) {
-            self::assertNoDriver($frame['args'] ?? []);
-        }
-    }
-
-    private static function assertNoDriver(mixed $value): void
-    {
-        self::assertNotInstanceOf(PDO::class, $value);
-        self::assertNotInstanceOf(PDOStatement::class, $value);
-        if ($value instanceof SensitiveParameterValue) {
-            self::assertNoDriver($value->getValue());
-        } elseif (is_array($value)) {
-            foreach ($value as $item) {
-                self::assertNoDriver($item);
-            }
-        }
-    }
-
 }

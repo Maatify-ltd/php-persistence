@@ -37,7 +37,7 @@ final class HostSnapshotConnection
     }
 
     /** @param array<string, int|string|bool|null> $bindings
-     *  @return list<array<string, mixed>>
+     *  @return list<array<array-key, mixed>>
      */
     public function rows(string $sql, array $bindings, int $maxRows, bool $positional = false): array
     {
@@ -53,7 +53,7 @@ final class HostSnapshotConnection
 
     /**
      * @param array<string, int|string|bool|null> $bindings
-     * @return int|list<array<string, mixed>>
+     * @return int|list<array<array-key, mixed>>
      */
     public function execute(string $sql, array $bindings, ?int $maxRows, bool $positional = false): int|array
     {
@@ -92,7 +92,7 @@ final class HostSnapshotConnection
                 if (count($rows) === $maxRows) {
                     throw new HostSnapshotRowLimitExceeded();
                 }
-                $rows[] = $this->normalizeRow($row, $positional);
+                $rows[] = $row;
             }
             if ($statement->errorCode() !== '00000') {
                 throw new HostSnapshotPaginationException('Unable to fetch the Host snapshot result.');
@@ -114,25 +114,6 @@ final class HostSnapshotConnection
                 }
             }
         }
-    }
-
-    /**
-     * @param array<array-key, mixed> $row
-     * @return array<string, mixed>
-     */
-    private function normalizeRow(array $row, bool $positional): array
-    {
-        $normalized = [];
-        foreach ($row as $name => $value) {
-            if ($positional) {
-                $name = 'column_' . $name;
-            } elseif (! is_string($name)) {
-                throw new PaginationExecutionException('Host snapshot row keys must be strings.');
-            }
-            $normalized[$name] = $value;
-        }
-
-        return $normalized;
     }
 
     public function control(string $sql): void

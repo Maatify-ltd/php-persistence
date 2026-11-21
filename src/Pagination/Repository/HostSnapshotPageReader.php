@@ -51,8 +51,15 @@ final readonly class HostSnapshotPageReader
             if ($row === []) {
                 throw new PaginationExecutionException('Pagination data row must contain at least one column.');
             }
+            $associativeRow = [];
+            foreach ($row as $name => $value) {
+                if (! is_string($name)) {
+                    throw new PaginationExecutionException('Pagination row keys must be strings.');
+                }
+                $associativeRow[$name] = $value;
+            }
             /** @var mixed $item The supplied closure is still checked at runtime. */
-            $item = ($registered->plan->mapper)($row);
+            $item = ($registered->plan->mapper)($associativeRow);
             if (! is_array($item) && ! is_object($item)) {
                 throw new PaginationExecutionException('Pagination mapper must return array or object.');
             }
