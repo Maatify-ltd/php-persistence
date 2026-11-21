@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1 and Keyset describe repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, and B describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -23,11 +23,12 @@ The package offers three independent capabilities over a **caller-supplied `PDO`
 ### 1.1 What the package does not do (non-goals)
 
 - It does not open, pool, or configure PDO connections. The host creates and owns the `PDO` instance and its attributes (error mode, charset, etc.).
-- It does not change PDO attributes, the session isolation level, `autocommit`, or any server/session setting (including `innodb_snapshot_isolation`; see §7.3).
+- The Host controls PDO attributes and server or session defaults, including isolation, `autocommit` and `innodb_snapshot_isolation` (see §7.3). B issues `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` for the next transaction when the Host explicitly requests a start. See [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
 - It is not an ORM, query builder, schema manager, or migration tool. `Pagination\Repository\PdoPaginator` executes SQL text supplied by the caller through `PdoPaginationQueryDescriptor`; it does not generate SQL from a model.
 - It owns no table, schema, or domain-owned persisted state of its own. It operates entirely on tables the host application owns and names.
 - It contains no HTTP controllers, routes, middleware, permission checks, UI, or export logic.
-- Public operations are self-contained. The one-shot C1 operation retains its grant and terminal outcome on its own object, as decided in [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md). It keeps no shared state across operations.
+- Outside the optional B source, operation state is scoped to each call or operation object. The one-shot C1 operation retains its grant and terminal outcome on its own object, as specified by [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md).
+- B is a stateful, opt-in exception. The source maintains a shared reservation, checkout and transaction generation across calls. A process-local `WeakMap` prevents rebinding the same PDO while that object still exists. Each page attempt retains its own terminal settlement. See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md) and [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
 - It is not a connection factory and does not perform dependency injection wiring; a host wires it directly or through its own container.
 
 ### 1.2 Operational Read / Reporting classification
@@ -71,23 +72,49 @@ src/
 │   ├── Config/ScopedOrderingConfig.php
 │   ├── Exception/InvalidOrderingConfigurationException.php
 │   ├── Exception/InvalidOrderingOperationException.php
+│   ├── Exception/OrderingExecutionException.php
 │   └── Repository/ScopedOrderingManager.php
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
+│   ├── Criteria/HostSnapshotAttemptRecord.php   (@internal)
+│   ├── Criteria/HostSnapshotBindings.php   (@internal)
+│   ├── Criteria/HostSnapshotCatalog.php
+│   ├── Criteria/HostSnapshotCommandPlan.php
+│   ├── Criteria/HostSnapshotGrantRegistration.php   (@internal)
+│   ├── Criteria/HostSnapshotPageAttempt.php
+│   ├── Criteria/HostSnapshotPageGrant.php
+│   ├── Criteria/HostSnapshotPagePlan.php
 │   ├── Criteria/KeysetQueryDescriptor.php
 │   ├── Criteria/PageRequest.php
 │   ├── Criteria/PdoPaginationQueryDescriptor.php
+│   ├── DTO/HostSnapshotPageSettlementDTO.php
+│   ├── DTO/HostSnapshotRetirementDTO.php
 │   ├── DTO/KeysetPageResultDTO.php
 │   ├── DTO/PageResultDTO.php
 │   ├── DTO/SnapshotConnectionOutcomeDTO.php
+│   ├── Enum/HostSnapshotAccessModeEnum.php
+│   ├── Enum/HostSnapshotCheckoutStateEnum.php
+│   ├── Enum/HostSnapshotCommandEffectEnum.php
+│   ├── Enum/HostSnapshotCommandResultModeEnum.php
+│   ├── Enum/HostSnapshotPageAttemptStateEnum.php
+│   ├── Enum/HostSnapshotPageDispositionEnum.php
+│   ├── Enum/HostSnapshotPageSettlementReasonEnum.php
+│   ├── Enum/HostSnapshotRetirementDispositionEnum.php
 │   ├── Enum/SnapshotConnectionDispositionEnum.php
 │   ├── Enum/SortDirectionEnum.php
+│   ├── Exception/HostSnapshotPaginationException.php
+│   ├── Exception/HostSnapshotRowLimitExceeded.php   (@internal)
 │   ├── Exception/InvalidKeysetCursorException.php
 │   ├── Exception/InvalidPaginationConfigurationException.php
 │   ├── Exception/InvalidPaginationQueryException.php
 │   ├── Exception/PaginationExecutionException.php
 │   ├── Exception/SnapshotPaginationException.php
+│   ├── Repository/HostSnapshotConnection.php   (@internal)
+│   ├── Repository/HostSnapshotPageReader.php   (@internal)
 │   ├── Repository/KeysetCursor.php             (@internal)
+│   ├── Repository/PdoHostSnapshotCheckout.php
+│   ├── Repository/PdoHostSnapshotPaginator.php
+│   ├── Repository/PdoHostSnapshotSource.php
 │   ├── Repository/PdoKeysetPaginator.php
 │   ├── Repository/PdoPaginationExecution.php   (@internal)
 │   ├── Repository/PdoPaginator.php
@@ -117,7 +144,7 @@ Conventions used below: every listed class is `final`; `readonly` is noted when 
 
 **`Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface`** — `interface … extends \Throwable {}`
 
-Marker interface implemented by every exception this package defines. A consumer catches every package-defined failure with one type:
+Catch `PhpPersistenceExceptionInterface` to handle any public package exception listed in §6.
 
 ```php
 catch (PhpPersistenceExceptionInterface $e) { ... }
@@ -541,11 +568,17 @@ public function rowExistsInScope(
 
 ### 3.5 `@internal` types (excluded from the public contract)
 
-These classes are reachable because PHP does not restrict class visibility, but they carry **no SemVer guarantee** and may change or disappear in any release without notice. A consumer must not construct, type-hint, or depend on them.
+PHP can load these classes and reach public members marked `@internal`. These implementation details carry **no SemVer guarantee** and may change in any release. Consumers use the public inventory in §§3.1–3.4.
 
 - **`Pagination\Repository\KeysetCursor`** and **`Pagination\Criteria\KeysetQueryDescriptor::registration()`** — internal cursor protocol and the repository’s registration accessor.
-- **`Pagination\Repository\PdoPaginationExecution`** — the shared count and data execution for the caller-controlled and C1 paginators.
+- **`Pagination\Repository\PdoPaginationExecution`** — executes counts and data for ordinary pagination and C1. B reuses its pagination normalization and SQL construction.
 - **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
+- **`Pagination\Repository\HostSnapshotConnection`** — tracks B's PDO and statement lifetimes, executes SQL, and verifies session state.
+- **`Pagination\Repository\HostSnapshotPageReader`** — reads the registered page and releases statement resources before mapping.
+- **`Pagination\Criteria\HostSnapshotAttemptRecord`** — holds one attempt's state and published settlement.
+- **`Pagination\Criteria\HostSnapshotBindings`** — validates registered parameter names and freezes typed binding values.
+- **`Pagination\Criteria\HostSnapshotGrantRegistration`** — binds a registered read and request to the source's checkout identity and transaction generation.
+- **`Pagination\Exception\HostSnapshotRowLimitExceeded`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper consumed by `PdoSavepointTransactionRunner` and by `ScopedOrderingManager::moveWithinScope()` (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
@@ -553,9 +586,8 @@ These classes are reachable because PHP does not restrict class visibility, but 
 
 ## 4. Ownership vocabulary
 
-These two terms are used precisely and consistently throughout this document and the source code:
-
-- **Caller-owned transaction** — a transaction already active on the `PDO` connection (`$pdo->inTransaction() === true`) when a package method is called. The package never begins, commits, or performs a final rollback of it. Where it needs to limit the blast radius of a failure, it uses a savepoint scoped to its own operation.
+- **Caller-owned transaction** — a transaction under the caller's control. When a Transaction runner or Ordering operation joins an active caller transaction, the caller retains all final transaction control. A savepoint, where used, limits the effects of that individual operation. Ordinary and Keyset pagination read in the context supplied by the caller.
+- **Host-owned transaction through B** — the Host keeps transaction and connection ownership while delegating exclusive use of its PDO to a source. The source issues transaction control under the shared reservation in response to explicit Host commands, including `beginRepeatableRead()`, `commit()`, and `rollBack()`. Page reads participate in that transaction. The Host decides how to resolve failures and when to end the transaction, request handoff, or discard the source. See [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
 - **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called, or when C1 accepted a qualified exclusive grant and confirmed the start of its read-only transaction. The package commits it on success. Transaction runners and Ordering attempt a best-effort rollback when their transaction is still active after a failure. C1 only attempts rollback after a read failure once cursor release and ownership of the active transaction on the same session are confirmed. See [§5.3.1](#531-optional-c1-snapshot-pagination).
 
 ---
@@ -748,9 +780,10 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; invalid Keyset limit policy or signing keyring (see §3.3). |
 | `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
-| `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (see §3.3/§5.3.2). |
+| `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (see §3.3/§5.3.2); rejected B page results such as invalid counts, data rows, or mapper return values (see §5.3.3). |
 | `SnapshotPaginationException` | `SystemMaatifyException` | C1 rejects the delegated connection or operation state, cannot confirm resources or owned transaction control, or is given an invalid discard outcome. Driver and mapper throwables retain their identities. |
 | `InvalidKeysetCursorException` | `ValidationMaatifyException` | A supplied Keyset cursor is malformed, out of range, unauthentic, uses an unavailable key, or does not match the authorized query context. |
+| `HostSnapshotPaginationException` | `SystemMaatifyException` | B reports invalid registration or bindings, an ineligible connection, an unavailable checkout or attempt, a rejected retirement, blocked serialization or restoration, a registered command exceeding its row bound, or a driver return value or observation that prevents confirmation of resources, session, or transaction state. External driver or mapper throwables retain their identities under the failure rules in [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction). |
 
 ### 6.3 Ordering
 
@@ -768,14 +801,14 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 
 | Situation | Package behavior |
 |---|---|
-| No transaction active | Begin, run the callback, commit. On failure, roll back (best effort) and rethrow the original `Throwable`. A `false` from `beginTransaction()`/`commit()` fails closed with `TransactionExecutionException`. |
-| Caller's transaction active | Participate. Never begin, commit, or finally roll back it. A savepoint, when used, only limits the blast radius of this operation's own failure. |
+| Transaction runner or Ordering operation that owns transaction control, with no active transaction | Begin, run the operation, commit. On failure, roll back (best effort) and rethrow the original `Throwable`. A `false` from `beginTransaction()`/`commit()` fails closed with `TransactionExecutionException`. |
+| Transaction runner or Ordering operation joins an active caller transaction | The caller retains final transaction control. A savepoint, when used, limits only the effects of this operation. |
 | Callback/operation throws | The original `Throwable` is rethrown unchanged. A cleanup (rollback/savepoint-undo) failure never replaces it. |
 | Deadlock (`40001`/`1213`) in a package-owned transaction | Replayed only under the exact conditions of §5.1, default off (`$maxDeadlockRetries = 0`). |
 | Deadlock or any error in a caller-owned transaction | Never replayed by this package; it propagates to the caller, which decides. |
 | Engine ends the transaction on the server (e.g. MariaDB `1020`, §7.3) | A thrown error propagates unchanged. Ordering reports a return-value failure as described in §5.4. The package never retries the caller's work and never changes a setting to work around it. |
 
-Ordinary pagination leaves the transaction entirely with the Host (§5.3). C1 manages only the confirmed, delegated read transaction and uses a terminal outcome for the Host (§5.3.1).
+Ordinary and Keyset pagination use the transaction context supplied by the Host ([§5.3](#53-pdopaginatorpaginate) and [§5.3.2](#532-optional-forward-only-keyset-pagination)). C1 manages the read transaction it starts on an eligible delegated connection and reports a terminal outcome to the Host ([§5.3.1](#531-optional-c1-snapshot-pagination)). In B, the Host directs transaction control through explicit commands and keeps ownership throughout the checkout. The source serializes those commands with page attempts, and the Host decides remediation, handoff, or discard ([§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction)).
 
 ### 7.2 Savepoint ownership
 
