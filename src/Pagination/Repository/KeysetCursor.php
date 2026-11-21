@@ -57,7 +57,7 @@ final readonly class KeysetCursor
         return $keyring;
     }
 
-    public function issue(int $lastId, string $contextFrame): string
+    public function issue(int $lastId, #[SensitiveParameter] string $contextFrame): string
     {
         $keys = $this->keyring[':' . $this->activeKeyId];
         $contextHex = hash_hmac('sha256', $contextFrame, $keys['context']);
@@ -66,7 +66,7 @@ final readonly class KeysetCursor
         return $envelope . '.' . self::encode(hash_hmac('sha256', $envelope, $keys['sign'], true));
     }
 
-    public function verify(string $cursor, string $contextFrame): int
+    public function verify(#[SensitiveParameter] string $cursor, #[SensitiveParameter] string $contextFrame): int
     {
         if (strlen($cursor) > 256
             || preg_match('/\Av1\.([A-Za-z0-9_-]{1,32})\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{43})\z/', $cursor, $parts) !== 1) {

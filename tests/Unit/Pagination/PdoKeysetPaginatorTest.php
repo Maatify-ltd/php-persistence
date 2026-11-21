@@ -362,6 +362,51 @@ final class PdoKeysetPaginatorTest extends TestCase
         }
     }
 
+    #[DataProvider('diagnosticFailures')]
+    public function testLibraryFailuresRedactRequestDataInBacktrace(bool $cursorFailure): void
+    {
+        $previous = ini_get('zend.exception_ignore_args');
+        if ($previous === false) {
+            self::fail('Exception argument capture setting is unavailable.');
+        }
+        ini_set('zend.exception_ignore_args', '0');
+        $cursor = $cursorFailure ? 'artificial.invalid.cursor' : null;
+        $scope = 'artificial-host-scope-72';
+        $boundValue = 'artificial-binding-value-29';
+        $pdo = $this->pdo();
+        if ($cursorFailure) {
+            $pdo->expects(self::never())->method('prepare');
+        } else {
+            $statement = $this->statement([false]);
+            $statement->method('bindValue')->willReturn(true);
+            $statement->method('errorCode')->willReturn('HY000');
+            $statement->expects(self::once())->method('closeCursor')->willReturn(true);
+            $pdo->expects(self::once())->method('prepare')->willReturn($statement);
+        }
+
+        try {
+            self::pager()->paginate($pdo, self::query(), $scope, [...self::BINDINGS, 'pinned' => $boundValue], self::mapper(), $cursor);
+            self::fail('Expected a library-generated pagination failure.');
+        } catch (PhpPersistenceExceptionInterface $failure) {
+            self::assertInstanceOf($cursorFailure ? InvalidKeysetCursorException::class : PaginationExecutionException::class, $failure);
+            $diagnostic = $failure->getMessage() . json_encode($failure->getTrace(), JSON_THROW_ON_ERROR);
+            foreach ([$scope, $boundValue, $cursor] as $sensitive) {
+                if ($sensitive !== null) {
+                    self::assertStringNotContainsString($sensitive, $diagnostic);
+                }
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function diagnosticFailures(): iterable
+    {
+        yield 'cursor rejection before SQL' => [true];
+        yield 'fetch failure after SQL' => [false];
+    }
+
     private function pdo(): PDO&MockObject
     {
         $pdo = $this->createMock(PDO::class);

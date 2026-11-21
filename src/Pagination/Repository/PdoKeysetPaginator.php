@@ -55,9 +55,12 @@ final readonly class PdoKeysetPaginator
     public function paginate(
         PDO $pdo,
         KeysetQueryDescriptor $query,
+        #[SensitiveParameter]
         string $scope,
+        #[SensitiveParameter]
         array $bindings,
         callable $mapper,
+        #[SensitiveParameter]
         ?string $cursor = null,
         ?int $limit = null,
     ): KeysetPageResultDTO {
@@ -136,7 +139,7 @@ final readonly class PdoKeysetPaginator
      *  @param array<array-key, mixed> $values
      *  @return array<string, string|int|bool|null>
      */
-    private static function freezeBindings(array $required, array $values): array
+    private static function freezeBindings(array $required, #[SensitiveParameter] array $values): array
     {
         if (count($required) !== count($values)) {
             throw new InvalidPaginationQueryException('Keyset bindings do not match the registration.');
@@ -159,8 +162,17 @@ final readonly class PdoKeysetPaginator
     }
 
     /** @param array<string, string|int|bool|null> $bindings */
-    private static function contextFrame(string $id, string $revision, string $scope, string $firstSql, string $nextSql, int $limit, array $bindings): string
-    {
+    private static function contextFrame(
+        string $id,
+        string $revision,
+        #[SensitiveParameter]
+        string $scope,
+        string $firstSql,
+        string $nextSql,
+        int $limit,
+        #[SensitiveParameter]
+        array $bindings,
+    ): string {
         $fields = [$id, $revision, $scope, $firstSql, $nextSql, (string) $limit, (string) count($bindings)];
         foreach ($bindings as $name => $value) {
             [$type, $bytes] = match (true) {
@@ -185,8 +197,15 @@ final readonly class PdoKeysetPaginator
      * @param list<string> $columns
      * @return list<array{int, array<string, mixed>}>
      */
-    private static function readRows(PDO $pdo, string $sql, array $bindings, array $columns, int $rowLimit, int $after): array
-    {
+    private static function readRows(
+        PDO $pdo,
+        string $sql,
+        #[SensitiveParameter]
+        array $bindings,
+        array $columns,
+        int $rowLimit,
+        int $after,
+    ): array {
         $statement = $pdo->prepare($sql);
         if ($statement === false) {
             throw new PaginationExecutionException('Failed to prepare keyset query.');
@@ -236,7 +255,7 @@ final readonly class PdoKeysetPaginator
     }
 
     /** @param array<string, string|int|bool|null> $bindings */
-    private static function execute(PDOStatement $statement, array $bindings): void
+    private static function execute(PDOStatement $statement, #[SensitiveParameter] array $bindings): void
     {
         foreach ($bindings as $name => $value) {
             $type = match (true) {
@@ -254,7 +273,7 @@ final readonly class PdoKeysetPaginator
         }
     }
 
-    private static function assertMappedItem(mixed $item): void
+    private static function assertMappedItem(#[SensitiveParameter] mixed $item): void
     {
         if (! is_array($item) && ! is_object($item)) {
             throw new PaginationExecutionException('Keyset mapper must return an array or object.');
