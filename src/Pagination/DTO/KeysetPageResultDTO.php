@@ -6,6 +6,7 @@ namespace Maatify\PhpPersistence\Pagination\DTO;
 
 use JsonSerializable;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
+use SensitiveParameter;
 
 /**
  * Ordered mapped rows and the opaque continuation for this read.
@@ -21,6 +22,7 @@ final readonly class KeysetPageResultDTO implements JsonSerializable
     public function __construct(
         public array $data,
         public bool $hasNext,
+        #[SensitiveParameter]
         public ?string $nextCursor,
     ) {
         self::validateData($data);

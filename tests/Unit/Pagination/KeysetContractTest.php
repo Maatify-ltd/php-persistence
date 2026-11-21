@@ -10,6 +10,7 @@ use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SensitiveParameterValue;
 use stdClass;
 
 final class KeysetContractTest extends TestCase
@@ -97,6 +98,39 @@ final class KeysetContractTest extends TestCase
 
         // @phpstan-ignore argument.type
         new KeysetPageResultDTO($data, $hasNext, $cursor);
+    }
+
+    /** @param list<mixed> $data */
+    #[DataProvider('invalidResultWithCursor')]
+    public function testDirectConstructionRedactsCursorInExceptionTrace(array $data, bool $hasNext): void
+    {
+        $previous = ini_get('zend.exception_ignore_args');
+        self::assertIsString($previous);
+        ini_set('zend.exception_ignore_args', '0');
+
+        try {
+            // @phpstan-ignore argument.type (Exercise validation before a malformed result can be returned.)
+            new KeysetPageResultDTO($data, $hasNext, 'synthetic-keyset-cursor');
+            self::fail('Expected invalid construction to throw.');
+        } catch (PaginationExecutionException $failure) {
+            foreach ($failure->getTrace() as $frame) {
+                if (($frame['class'] ?? null) === KeysetPageResultDTO::class && $frame['function'] === '__construct') {
+                    self::assertInstanceOf(SensitiveParameterValue::class, $frame['args'][2] ?? null);
+
+                    return;
+                }
+            }
+            self::fail('The constructor frame was not captured.');
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
+    }
+
+    /** @return iterable<string, array{list<mixed>, bool}> */
+    public static function invalidResultWithCursor(): iterable
+    {
+        yield 'invalid data' => [[10], true];
+        yield 'inconsistent navigation' => [[['id' => 10]], false];
     }
 
     /** @return iterable<string, array{array<array-key, mixed>, bool, ?string}> */
