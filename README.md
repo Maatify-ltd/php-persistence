@@ -99,6 +99,7 @@ The public surface is three independent capability namespaces under `Maatify\Php
 
 - `Transaction\Repository\{TransactionRunnerInterface, SavepointTransactionRunnerInterface, PdoTransactionRunner, PdoSavepointTransactionRunner}` and `Transaction\Exception\{InvalidTransactionConfigurationException, TransactionExecutionException}`.
 - `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`. The optional C1 surface adds `Pagination\{Repository\PdoSnapshotPaginator, DTO\SnapshotConnectionOutcomeDTO, Enum\SnapshotConnectionDispositionEnum, Exception\SnapshotPaginationException}` to the current source.
+- The current source also offers optional forward-only Keyset pagination on the Host’s PDO through `Pagination\{Repository\PdoKeysetPaginator, Criteria\KeysetQueryDescriptor, DTO\KeysetPageResultDTO, Exception\InvalidKeysetCursorException}`. [Keyset contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#532-optional-forward-only-keyset-pagination) · [Runnable example](examples/pagination_keyset_usage.php)
 - `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
