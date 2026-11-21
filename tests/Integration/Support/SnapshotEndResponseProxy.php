@@ -46,7 +46,8 @@ if ($host === false || $port === false || !in_array($target, [
     'START TRANSACTION READ WRITE',
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
-], true) || ! in_array($stage, ['after', 'before', 'after-ack'], true)) {
+    'RELEASE SAVEPOINT',
+], true) || ! in_array($stage, ['after', 'before', 'after-ack', 'ordering-release-error'], true)) {
     throw new InvalidArgumentException('Missing relay target.');
 }
 $listener = stream_socket_server('tcp://127.0.0.1:0');
@@ -82,6 +83,18 @@ try {
                 $length = ord($header[0]) | (ord($header[1]) << 8) | (ord($header[2]) << 16);
                 $sequence = ord($header[3]);
                 $payload = readPacketBytes($peer, $length);
+                if ($stage === 'ordering-release-error' && $peer === $client && $sequence === 0) {
+                    if (preg_match('/\A\x03UPDATE .*?WHERE `id` = /s', $payload) === 1) {
+                        $payload .= ' AND 1 = 0';
+                        echo "TARGET UPDATE MADE EMPTY\n";
+                        fflush(STDOUT);
+                    } elseif (preg_match('/\A\x03RELEASE SAVEPOINT maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1) {
+                        $payload = "\x03RELEASE SAVEPOINT fixture_savepoint_that_does_not_exist";
+                        echo "RELEASE REPLACED AFTER UNDO\n";
+                        fflush(STDOUT);
+                    }
+                    $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
+                }
                 if ($peer === $client && $sequence === 0 && $payload === "\x03" . $target) {
                     if ($stage === 'before') {
                         echo "COMMAND NOT FORWARDED\n";

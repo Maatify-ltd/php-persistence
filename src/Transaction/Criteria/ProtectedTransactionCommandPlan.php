@@ -20,7 +20,8 @@ final readonly class ProtectedTransactionCommandPlan
         /** @internal Null requests affected-row count rather than a bounded row list. */
         public ?int $maxRows = null,
     ) {
-        if (trim($sql) === '' || str_contains($sql, ';') || !array_is_list($parameterNames)
+        if (preg_match('/\A(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|WITH)\b/i', ltrim($sql)) !== 1
+            || str_contains($sql, ';') || !array_is_list($parameterNames)
             || ($maxRows !== null && $maxRows < 1)
         ) {
             throw new ProtectedTransactionException('Invalid protected transaction command plan.');

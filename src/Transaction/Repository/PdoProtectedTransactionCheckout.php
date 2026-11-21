@@ -104,6 +104,17 @@ final class PdoProtectedTransactionCheckout
     }
 
     /**
+     * @internal Runs a package-owned Ordering operation with an expiring driver receiver.
+     * @template T of int|bool
+     * @param Closure(ProtectedTransactionConnection): T $operation
+     * @return T
+     */
+    public function runOrdering(Closure $operation): int|bool
+    {
+        return $this->run($operation);
+    }
+
+    /**
      * @template T
      * @param Closure(ProtectedTransactionConnection): T $operation
      * @return T
