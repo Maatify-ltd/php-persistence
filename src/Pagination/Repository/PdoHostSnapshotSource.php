@@ -4,16 +4,28 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotAttemptRecord;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotBindings;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotGrantRegistration;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageAttempt;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
+use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
+use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
+use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum as State;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as Stage;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Disposition;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
 use PDO;
+use PDOException;
 use PDOStatement;
+use stdClass;
 use Pdo\Mysql;
 use Throwable;
 use WeakMap;
@@ -26,6 +38,11 @@ final class PdoHostSnapshotSource
 
     /** @var WeakReference<PdoHostSnapshotCheckout>|null */
     private ?WeakReference $checkout = null;
+    private ?object $checkoutIdentity = null;
+    /** @var WeakMap<HostSnapshotPageGrant, HostSnapshotGrantRegistration> */
+    private WeakMap $grants;
+    /** @var WeakMap<HostSnapshotPageAttempt, HostSnapshotAttemptRecord> */
+    private WeakMap $attempts;
     private State $state = State::IDLE;
     private bool $busy = false;
     private ?string $sessionId = null;
@@ -36,7 +53,10 @@ final class PdoHostSnapshotSource
     private function __construct(
         private HostSnapshotConnection $connection,
         private readonly HostSnapshotCatalog $catalog,
-    ) {}
+    ) {
+        $this->grants = new WeakMap();
+        $this->attempts = new WeakMap();
+    }
 
     public static function attachExclusive(PDO $pdo, HostSnapshotCatalog $catalog): self
     {
@@ -68,6 +88,7 @@ final class PdoHostSnapshotSource
             $this->sessionId = $this->confirmSession(false);
             $checkout = PdoHostSnapshotCheckout::issue($this);
             $this->checkout = WeakReference::create($checkout);
+            $this->checkoutIdentity = new stdClass();
 
             return $checkout;
         } catch (Throwable $error) {
@@ -98,6 +119,7 @@ final class PdoHostSnapshotSource
             }
             $this->confirmSession(false);
             $this->checkout = null;
+            $this->checkoutIdentity = null;
         } catch (Throwable $error) {
             $this->state = State::QUARANTINED;
             throw $error;
@@ -116,7 +138,7 @@ final class PdoHostSnapshotSource
             $this->connection->control('START TRANSACTION ' . $mode->value);
             $this->confirmSession(true);
             $this->nextTransactionUnconfirmed = false;
-            $this->generation = new \stdClass();
+            $this->generation = new stdClass();
             $this->state = State::TRANSACTION_ACTIVE;
         } catch (Throwable $error) {
             $this->quarantine();
@@ -184,6 +206,123 @@ final class PdoHostSnapshotSource
             $this->quarantine();
             throw $error;
         } finally {
+            $this->busy = false;
+        }
+    }
+
+    /**
+     * @internal
+     * @param array<array-key, mixed> $bindings
+     */
+    public function authorizeCheckoutPage(
+        PdoHostSnapshotCheckout $checkout,
+        string $queryId,
+        array $bindings,
+        PageRequest $request,
+    ): HostSnapshotPageGrant {
+        if ($this->busy || $this->checkout?->get() !== $checkout || $this->checkoutIdentity === null
+            || $this->state !== State::TRANSACTION_ACTIVE || $this->generation === null
+        ) {
+            throw new HostSnapshotPaginationException('The Host snapshot transaction cannot authorize a page.');
+        }
+        $plan = $this->catalog->page($queryId);
+        $grant = HostSnapshotPageGrant::issue();
+        $this->grants[$grant] = new HostSnapshotGrantRegistration(
+            $this->checkoutIdentity,
+            $this->generation,
+            $plan,
+            $plan->descriptor($bindings),
+            $request,
+        );
+
+        return $grant;
+    }
+
+    /** @internal */
+    public function newCheckoutAttempt(PdoHostSnapshotCheckout $checkout, HostSnapshotPageGrant $grant): HostSnapshotPageAttempt
+    {
+        $registered = $this->grants[$grant] ?? null;
+        if ($registered === null || $this->checkout?->get() !== $checkout
+            || $registered->checkoutIdentity !== $this->checkoutIdentity
+        ) {
+            throw new HostSnapshotPaginationException('The Host snapshot grant does not belong to this checkout.');
+        }
+        $record = new HostSnapshotAttemptRecord($grant);
+        $attempt = HostSnapshotPageAttempt::issue(WeakReference::create($this), $record);
+        $this->attempts[$attempt] = $record;
+
+        return $attempt;
+    }
+
+    /**
+     * @internal
+     * @return PageResultDTO<array<array-key, mixed>|object>
+     */
+    public function readAttempt(HostSnapshotPageAttempt $attempt): PageResultDTO
+    {
+        $record = $this->attempts[$attempt] ?? null;
+        if ($record === null || $record->state !== Stage::NEW || $record->grant === null) {
+            throw new HostSnapshotPaginationException('The Host snapshot attempt is unavailable.');
+        }
+        $grant = $this->grants[$record->grant];
+        $rejected = match (true) {
+            $this->checkout?->get() === null || $grant->checkoutIdentity !== $this->checkoutIdentity
+                || $this->state === State::QUARANTINED || $this->state === State::RETIRED => Reason::SOURCE_UNAVAILABLE,
+            $this->generation !== $grant->generation => Reason::STALE_CONTEXT,
+            $grant->consumed => Reason::GRANT_CONSUMED,
+            $this->busy => Reason::BUSY,
+            default => null,
+        };
+        if ($rejected !== null) {
+            $record->finish(new HostSnapshotPageSettlementDTO(Disposition::NOT_ACCEPTED, $rejected));
+            throw new HostSnapshotPaginationException('The Host snapshot attempt was not accepted.');
+        }
+
+        $fallback = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SETTLEMENT_UNCONFIRMED);
+        $scopeUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SCOPE_UNCONFIRMED);
+        $resourcesUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::RESOURCE_RELEASE_UNCONFIRMED);
+
+        $this->busy = true;
+        $grant->consumed = true;
+        $record->state = Stage::RUNNING;
+        $settlement = $scopeUnconfirmed;
+        $primary = null;
+        $mapping = false;
+        try {
+            $this->confirmSession(true);
+            try {
+                $page = (new HostSnapshotPageReader($this->connection))->read($grant, $mapping);
+            } catch (Throwable $error) {
+                $primary = $error;
+                $knownReadError = $error instanceof PDOException
+                    && ($error->errorInfo[0] ?? null) === '42S22'
+                    && ($error->errorInfo[1] ?? null) === 1054;
+                if (! $this->connection->resourcesReleased() || (! $mapping && ! $knownReadError)) {
+                    throw $error;
+                }
+            }
+            $this->confirmSession(true);
+            $settlement = $fallback;
+            $settlement = new HostSnapshotPageSettlementDTO(
+                Disposition::RETURNED_TO_HOST,
+                $primary === null ? Reason::PAGE_COMPLETED : Reason::READ_FAILED,
+            );
+            if ($primary !== null) {
+                throw $primary;
+            }
+            assert(isset($page));
+
+            return $page;
+        } catch (Throwable $error) {
+            throw $primary ?? $error;
+        } finally {
+            if (! $this->connection->resourcesReleased()) {
+                $settlement = $resourcesUnconfirmed;
+            }
+            if ($settlement->disposition === Disposition::HOST_ACTION_REQUIRED) {
+                $this->quarantine();
+            }
+            $record->finish($settlement);
             $this->busy = false;
         }
     }

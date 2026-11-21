@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageAttempt;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
+use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
@@ -45,6 +48,17 @@ final readonly class PdoHostSnapshotCheckout
     public function rollBack(): void
     {
         $this->source->finishCheckout($this, false);
+    }
+
+    /** @param array<array-key, mixed> $bindings */
+    public function authorizePage(string $queryId, array $bindings, PageRequest $request): HostSnapshotPageGrant
+    {
+        return $this->source->authorizeCheckoutPage($this, $queryId, $bindings, $request);
+    }
+
+    public function newAttempt(HostSnapshotPageGrant $grant): HostSnapshotPageAttempt
+    {
+        return $this->source->newCheckoutAttempt($this, $grant);
     }
 
     public function release(): void
