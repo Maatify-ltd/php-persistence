@@ -15,7 +15,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum as 
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
-use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceededException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -168,7 +168,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $queued = $lease->newAttempt($grant);
         $paginator = new PdoHostSnapshotPaginator();
         $loader = static function (string $class) use ($lease, $paginator, $queued): void {
-            if ($class === HostSnapshotRowLimitExceeded::class) {
+            if ($class === HostSnapshotRowLimitExceededException::class) {
                 self::assertSame(State::BUSY, $lease->state());
                 self::reject(fn() => $paginator->paginate($queued));
                 self::assertSame(Reason::BUSY, $queued->settlement()?->reason);
@@ -176,7 +176,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         };
 
         // The first-use marker loads while the Host command still owns its cursor.
-        self::assertFalse(class_exists(HostSnapshotRowLimitExceeded::class, false));
+        self::assertFalse(class_exists(HostSnapshotRowLimitExceededException::class, false));
         spl_autoload_register($loader, prepend: true);
         try {
             self::reject(fn() => $lease->runRegisteredCommand('many'));
@@ -205,12 +205,12 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
         $loader = static function (string $class) use ($observer, $id): void {
-            if ($class === HostSnapshotRowLimitExceeded::class) {
+            if ($class === HostSnapshotRowLimitExceededException::class) {
                 $observer->exec('KILL CONNECTION ' . $id);
             }
         };
 
-        self::assertFalse(class_exists(HostSnapshotRowLimitExceeded::class, false));
+        self::assertFalse(class_exists(HostSnapshotRowLimitExceededException::class, false));
         spl_autoload_register($loader, prepend: true);
         try {
             $lease->runRegisteredCommand('many');

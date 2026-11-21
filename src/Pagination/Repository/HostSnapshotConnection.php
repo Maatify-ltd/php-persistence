@@ -7,7 +7,7 @@ namespace Maatify\PhpPersistence\Pagination\Repository;
 use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotRetirementDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
-use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceededException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOStatement;
@@ -43,7 +43,7 @@ final class HostSnapshotConnection
     {
         try {
             $result = $this->execute($sql, $bindings, $maxRows, $positional);
-        } catch (HostSnapshotRowLimitExceeded) {
+        } catch (HostSnapshotRowLimitExceededException) {
             throw new PaginationExecutionException('The Host snapshot result exceeds its row limit.');
         }
         assert(is_array($result));
@@ -90,7 +90,7 @@ final class HostSnapshotConnection
             $fetchMode = $positional ? PDO::FETCH_NUM : PDO::FETCH_ASSOC;
             while (($row = $statement->fetch($fetchMode)) !== false) {
                 if (count($rows) === $maxRows) {
-                    throw new HostSnapshotRowLimitExceeded();
+                    throw new HostSnapshotRowLimitExceededException();
                 }
                 $rows[] = $row;
             }

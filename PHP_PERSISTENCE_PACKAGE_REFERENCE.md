@@ -103,7 +103,7 @@ src/
 │   ├── Enum/SnapshotConnectionDispositionEnum.php
 │   ├── Enum/SortDirectionEnum.php
 │   ├── Exception/HostSnapshotPaginationException.php
-│   ├── Exception/HostSnapshotRowLimitExceeded.php   (@internal)
+│   ├── Exception/HostSnapshotRowLimitExceededException.php   (@internal)
 │   ├── Exception/InvalidKeysetCursorException.php
 │   ├── Exception/InvalidPaginationConfigurationException.php
 │   ├── Exception/InvalidPaginationQueryException.php
@@ -144,7 +144,7 @@ Conventions used below: every listed class is `final`; `readonly` is noted when 
 
 **`Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface`** — `interface … extends \Throwable {}`
 
-Catch `PhpPersistenceExceptionInterface` to handle any public package exception listed in §6.
+Package-defined exceptions implement this interface, including the internal types in §3.5. Catch `PhpPersistenceExceptionInterface` to handle any public package exception listed in §6.
 
 ```php
 catch (PhpPersistenceExceptionInterface $e) { ... }
@@ -578,7 +578,7 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Pagination\Criteria\HostSnapshotAttemptRecord`** — holds one attempt's state and published settlement.
 - **`Pagination\Criteria\HostSnapshotBindings`** — validates registered parameter names and freezes typed binding values.
 - **`Pagination\Criteria\HostSnapshotGrantRegistration`** — binds a registered read and request to the source's checkout identity and transaction generation.
-- **`Pagination\Exception\HostSnapshotRowLimitExceeded`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
+- **`Pagination\Exception\HostSnapshotRowLimitExceededException`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper consumed by `PdoSavepointTransactionRunner` and by `ScopedOrderingManager::moveWithinScope()` (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 

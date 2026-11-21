@@ -23,7 +23,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Di
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
-use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceededException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOException;
@@ -227,7 +227,7 @@ final class PdoHostSnapshotSource
                 $maxRows = $command->resultMode === HostSnapshotCommandResultModeEnum::BOUNDED_ROWS ? $command->maxRows : null;
                 try {
                     $result = $this->connection->execute($command->sql, $params, $maxRows);
-                } catch (HostSnapshotRowLimitExceeded) {
+                } catch (HostSnapshotRowLimitExceededException) {
                     $result = new HostSnapshotPaginationException('The Host snapshot result exceeds its row limit.');
                 }
                 $this->confirmSession($preserves ? $active : null);

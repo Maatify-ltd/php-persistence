@@ -205,10 +205,18 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         }
     }
 
-    public function testInvalidCountAfterCleanCursorAllowsHostToEndItsTransaction(): void
+    /** @return iterable<string, array{string, string}> */
+    public static function invalidCountQueries(): iterable
+    {
+        yield 'non-numeric count' => ["SELECT 'not a count'", 'Invalid pagination count value.'];
+        yield 'count exceeds row bound' => ['SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3', 'The Host snapshot result exceeds its row limit.'];
+    }
+
+    #[DataProvider('invalidCountQueries')]
+    public function testInvalidCountAfterCleanCursorAllowsHostToEndItsTransaction(string $countSql, string $message): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
-            'invalid' => new HostSnapshotPagePlan("SELECT 'not a count'", 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn(array $row): array => $row),
+            'invalid' => new HostSnapshotPagePlan($countSql, 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn(array $row): array => $row),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -217,7 +225,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
             new PdoHostSnapshotPaginator()->paginate($attempt);
             self::fail('Expected an invalid count.');
         } catch (PaginationExecutionException $error) {
-            self::assertSame('Invalid pagination count value.', $error->getMessage());
+            self::assertSame($message, $error->getMessage());
         }
         self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
         $lease->rollBack();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Regression\Exception;
 
 use Maatify\Exceptions\Enum\ErrorCodeEnum;
+use Maatify\Exceptions\Exception\MaatifyException;
 use Maatify\Exceptions\Exception\System\SystemMaatifyException;
 use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
@@ -39,6 +40,30 @@ final class PaginationExceptionContractTest extends TestCase
         yield 'configuration' => [InvalidPaginationConfigurationException::class];
         yield 'query' => [InvalidPaginationQueryException::class];
         yield 'execution' => [PaginationExecutionException::class];
+    }
+
+    #[DataProvider('packageDefinedPaginationExceptions')]
+    public function testPackageDefinedPaginationExceptionsFollowDecision004(string $className): void
+    {
+        self::assertTrue(class_exists($className));
+        $actual = [
+            'suffix' => str_ends_with($className, 'Exception'),
+            'hierarchy' => is_subclass_of($className, MaatifyException::class),
+            'marker' => is_subclass_of($className, PhpPersistenceExceptionInterface::class),
+        ];
+
+        self::assertSame(['suffix' => true, 'hierarchy' => true, 'marker' => true], $actual);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function packageDefinedPaginationExceptions(): iterable
+    {
+        $files = glob(__DIR__ . '/../../../src/Pagination/Exception/*.php');
+        foreach ($files ?: [] as $file) {
+            $name = basename($file, '.php');
+
+            yield $name => ['Maatify\\PhpPersistence\\Pagination\\Exception\\' . $name];
+        }
     }
 
     public function testNoPaginationSpecificMarkerOrLegacyPageResultIsCarried(): void
