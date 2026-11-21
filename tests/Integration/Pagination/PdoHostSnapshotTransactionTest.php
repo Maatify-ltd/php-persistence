@@ -56,8 +56,9 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         self::assertSame(State::IDLE, $lease->state());
         $settings = $lease->runRegisteredCommand('settings');
         self::assertIsArray($settings);
+        self::assertIsScalar($settings[0]['id']);
         self::assertSame($session, (string) $settings[0]['id']);
-        self::assertSame($completion === 1 ? 'CHAIN' : 'RELEASE', (string) $settings[0]['completion']);
+        self::assertSame($completion === 1 ? 'CHAIN' : 'RELEASE', $settings[0]['completion']);
         self::assertSame($completion === 1 ? '1' : '0', $this->scalar($writer, "SELECT COUNT(*) FROM $table WHERE id=3"));
         $lease->release();
         $replacement = $source->checkout();
@@ -108,7 +109,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
-        $error = self::failureOf(fn () => $lease->runRegisteredCommand('broken'));
+        $error = self::failureOf(fn() => $lease->runRegisteredCommand('broken'));
         self::assertSame(1054, self::driverCode($error));
         self::assertSame(State::QUARANTINED, $lease->state());
         $this->expectException(HostSnapshotPaginationException::class);

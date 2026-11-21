@@ -12,6 +12,7 @@ use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageAttempt;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
+use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotRetirementDTO;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum as State;
@@ -20,6 +21,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as Stage;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
@@ -39,6 +41,8 @@ final class PdoHostSnapshotSource
 
     /** @var WeakReference<PdoHostSnapshotCheckout>|null */
     private ?WeakReference $checkout = null;
+    /** @var WeakReference<PdoHostSnapshotCheckout>|null */
+    private ?WeakReference $retiredCheckout = null;
     private ?object $checkoutIdentity = null;
     /** @var WeakMap<HostSnapshotPageGrant, HostSnapshotGrantRegistration> */
     private WeakMap $grants;
@@ -100,9 +104,61 @@ final class PdoHostSnapshotSource
         }
     }
 
+    public function retireForHost(): HostSnapshotRetirementDTO
+    {
+        $this->reserveRetirement();
+        try {
+            if (! $this->connection->resourcesReleased()) {
+                $this->quarantine();
+                throw new HostSnapshotPaginationException('Host snapshot resources still prevent a handoff.');
+            }
+            $disposition = $this->state === State::IDLE && $this->sessionId !== null && ! $this->nextTransactionUnconfirmed
+                ? HostSnapshotRetirementDispositionEnum::RETURNED_IDLE
+                : HostSnapshotRetirementDispositionEnum::RETURNED_FOR_RECONCILIATION;
+            $handoff = $this->connection->handoff($disposition);
+            $this->markRetired();
+            $this->connection->detach();
+
+            return $handoff;
+        } finally {
+            $this->busy = false;
+        }
+    }
+
+    public function discardForHost(): void
+    {
+        $this->reserveRetirement();
+        try {
+            $this->markRetired();
+            $this->connection->detach();
+        } finally {
+            $this->busy = false;
+        }
+    }
+
+    private function reserveRetirement(): void
+    {
+        if ($this->busy || $this->state === State::RETIRED) {
+            throw new HostSnapshotPaginationException('The Host snapshot source cannot be retired.');
+        }
+        $this->busy = true;
+    }
+
+    private function markRetired(): void
+    {
+        $this->retiredCheckout = $this->checkout;
+        $this->checkout = null;
+        $this->checkoutIdentity = null;
+        $this->generation = null;
+        $this->state = State::RETIRED;
+    }
+
     /** @internal */
     public function checkoutState(PdoHostSnapshotCheckout $checkout): State
     {
+        if ($this->retiredCheckout?->get() === $checkout) {
+            return State::RETIRED;
+        }
         if ($this->checkout?->get() !== $checkout) {
             return State::RELEASED;
         }

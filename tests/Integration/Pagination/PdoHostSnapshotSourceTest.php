@@ -6,7 +6,6 @@ namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum;
-use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PDO;
 use PDOStatement;
@@ -20,8 +19,8 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $first = $source->checkout();
         self::assertSame(HostSnapshotCheckoutStateEnum::IDLE, $first->state());
         self::reject($source->checkout(...));
-        self::reject(fn () => serialize($source));
-        self::reject(fn () => serialize($first));
+        self::reject(fn() => serialize($source));
+        self::reject(fn() => serialize($first));
         $first->beginRepeatableRead();
         $first->rollBack();
         $first->release();
@@ -39,12 +38,12 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $pdo = $this->borrowableConnection();
         $catalog = new HostSnapshotCatalog([]);
         $source = PdoHostSnapshotSource::attachExclusive($pdo, $catalog);
-        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
+        self::reject(fn() => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
         $checkout = $source->checkout();
         $checkout->beginRepeatableRead();
         $checkout->rollBack();
         $checkout->release();
-        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
+        self::reject(fn() => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
     }
 
     public function testRegistryDoesNotKeepThePdoAlive(): void
@@ -58,12 +57,12 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
 
     public function testCustomDriverAndPersistentConnectionAreRejected(): void
     {
-        $custom = new class () extends PDO {
+        $custom = new class extends PDO {
             public function __construct() {}
         };
         $catalog = new HostSnapshotCatalog([]);
-        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($custom, $catalog));
-        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(persistent: true), $catalog));
+        self::reject(fn() => PdoHostSnapshotSource::attachExclusive($custom, $catalog));
+        self::reject(fn() => PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(persistent: true), $catalog));
         $native = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(mysqlClass: true), $catalog);
         $checkout = $native->checkout();
         $checkout->beginRepeatableRead();
@@ -87,7 +86,7 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
     {
         $pdo = $this->borrowableConnection();
         $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [HostSnapshotTestStatement::class]);
-        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([])));
+        self::reject(fn() => PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([])));
     }
 
     public function testActiveTransactionCannotBeReleasedAsAnIdleCheckout(): void
@@ -108,17 +107,6 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         }
     }
 
-    private static function reject(callable $action): void
-    {
-        try {
-            $action();
-        } catch (HostSnapshotPaginationException) {
-            self::assertTrue(true);
-
-            return;
-        }
-        self::fail('Expected a Host snapshot contract rejection.');
-    }
 }
 
 final class HostSnapshotTestStatement extends PDOStatement {}

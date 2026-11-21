@@ -14,7 +14,6 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as S
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
-use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
@@ -65,7 +64,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $ignoreArgs = ini_get('zend.exception_ignore_args');
         ini_set('zend.exception_ignore_args', '0');
         try {
-            $pdoFailure = self::failureOf(fn () => $paginator->paginate($broken));
+            $pdoFailure = self::failureOf(fn() => $paginator->paginate($broken));
             self::assertSame(1054, self::driverCode($pdoFailure));
             self::assertTraceDoesNotExposeDriver($pdoFailure);
             try {
@@ -90,7 +89,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
 
         self::assertSame(Stage::TERMINAL, $broken->state());
         self::assertSame(Disposition::RETURNED_TO_HOST, $broken->settlement()?->disposition);
-        self::assertSame(Reason::READ_FAILED, $broken->settlement()?->reason);
+        self::assertSame(Reason::READ_FAILED, $broken->settlement()->reason);
         self::assertSame(Reason::READ_FAILED, $mapper->settlement()?->reason);
         self::assertSame(Reason::PAGE_COMPLETED, $success->settlement()?->reason);
     }
@@ -121,12 +120,12 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $competingOtherGrant = $lease->newAttempt($inner);
         $checkReentry = static function () use ($paginator, $lease, $first, $competingSameGrant, $competingOtherGrant): void {
             self::assertSame(Stage::RUNNING, $first->state());
-            self::reject(fn () => $paginator->paginate($first));
+            self::reject(fn() => $paginator->paginate($first));
             self::assertNull($first->settlement());
             self::reject($lease->rollBack(...));
-            self::reject(fn () => $paginator->paginate($competingSameGrant));
+            self::reject(fn() => $paginator->paginate($competingSameGrant));
             self::assertSame(Reason::GRANT_CONSUMED, $competingSameGrant->settlement()?->reason);
-            self::reject(fn () => $paginator->paginate($competingOtherGrant));
+            self::reject(fn() => $paginator->paginate($competingOtherGrant));
             self::assertSame(Reason::BUSY, $competingOtherGrant->settlement()?->reason);
         };
         try {
@@ -136,13 +135,13 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         }
         $result = $first->settlement();
         self::assertSame(Reason::PAGE_COMPLETED, $result?->reason);
-        self::reject(fn () => $paginator->paginate($first));
+        self::reject(fn() => $paginator->paginate($first));
         self::assertSame($result, $first->settlement());
         $paginator->paginate($lease->newAttempt($inner));
         $stale = $lease->newAttempt($lease->authorizePage('inner', ['min' => 1], new PageRequest()));
         $lease->rollBack();
         $lease->beginRepeatableRead();
-        self::reject(fn () => $paginator->paginate($stale));
+        self::reject(fn() => $paginator->paginate($stale));
         self::assertSame(Reason::STALE_CONTEXT, $stale->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
@@ -153,7 +152,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
     public function testFirstUseAutoloadCannotAdmitAnOldGrantToANewGeneration(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
-            'empty' => new HostSnapshotPagePlan('SELECT 0', 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn (array $row): array => $row),
+            'empty' => new HostSnapshotPagePlan('SELECT 0 AS `0`', 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn(array $row): array => $row),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -169,7 +168,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         self::assertFalse(class_exists(HostSnapshotPageSettlementDTO::class, false));
         spl_autoload_register($loader, prepend: true);
         try {
-            self::reject(fn () => new PdoHostSnapshotPaginator()->paginate($attempt));
+            self::reject(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
             self::assertTrue($changed);
             self::assertSame(Reason::STALE_CONTEXT, $attempt->settlement()?->reason);
         } finally {
@@ -182,7 +181,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
     public function testInvalidCountAfterCleanCursorAllowsHostToEndItsTransaction(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
-            'invalid' => new HostSnapshotPagePlan("SELECT 'not a count'", 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn (array $row): array => $row),
+            'invalid' => new HostSnapshotPagePlan("SELECT 'not a count'", 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn(array $row): array => $row),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -202,14 +201,14 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
     private function plan(string $table, ?Closure $mapper = null, bool $bad = false): HostSnapshotPagePlan
     {
         return new HostSnapshotPagePlan(
-            $bad ? 'SELECT non_existing_field' : "SELECT COUNT(*) FROM $table",
+            $bad ? 'SELECT non_existing_field' : "SELECT COUNT(*) AS `0` FROM $table",
             "SELECT COUNT(*) FROM $table WHERE v >= :min",
             "SELECT id, v FROM $table WHERE v >= :min",
             [],
             ['min'],
             ['min'],
             new PaginationConfig(new SortWhitelist(['id' => 'id']), 'id', SortDirectionEnum::ASC, 'id', SortDirectionEnum::ASC, 2, 1, 50),
-            $mapper ?? static fn (array $row): array => $row,
+            $mapper ?? static fn(array $row): array => $row,
         );
     }
 
@@ -233,15 +232,4 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         }
     }
 
-    private static function reject(callable $action): void
-    {
-        try {
-            $action();
-        } catch (HostSnapshotPaginationException $error) {
-            self::assertNotSame('', $error->getMessage());
-
-            return;
-        }
-        self::fail('Expected a Host snapshot contract rejection.');
-    }
 }

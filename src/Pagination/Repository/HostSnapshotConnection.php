@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
+use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotRetirementDTO;
+use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
@@ -90,9 +92,6 @@ final class HostSnapshotConnection
                 if (count($rows) === $maxRows) {
                     throw new HostSnapshotRowLimitExceeded();
                 }
-                if (! is_array($row)) {
-                    throw new PaginationExecutionException('Host snapshot fetch must return a row.');
-                }
                 $rows[] = $this->normalizeRow($row, $positional);
             }
             if ($statement->errorCode() !== '00000') {
@@ -146,6 +145,21 @@ final class HostSnapshotConnection
     public function transactionActive(): bool
     {
         return $this->pdo->inTransaction();
+    }
+
+    public function handoff(HostSnapshotRetirementDispositionEnum $disposition): HostSnapshotRetirementDTO
+    {
+        return new HostSnapshotRetirementDTO($disposition, $this->pdo);
+    }
+
+    public function detach(): void
+    {
+        try {
+            $this->statement = null;
+        } finally {
+            // A native PDO destructor may issue an implicit rollback here.
+            unset($this->pdo);
+        }
     }
 
     public function resourcesReleased(): bool

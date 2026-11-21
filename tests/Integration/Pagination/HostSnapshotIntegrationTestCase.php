@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
+use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use PDO;
 use Pdo\Mysql;
 
@@ -26,5 +27,16 @@ abstract class HostSnapshotIntegrationTestCase extends PaginationIntegrationTest
         return $mysqlClass
             ? new Mysql($dsn, self::setting('USER'), self::setting('PASSWORD'), $options)
             : new PDO($dsn, self::setting('USER'), self::setting('PASSWORD'), $options);
+    }
+    protected static function reject(callable $action): void
+    {
+        try {
+            $action();
+        } catch (HostSnapshotPaginationException $error) {
+            self::assertNotSame('', $error->getMessage());
+
+            return;
+        }
+        self::fail('Expected a Host snapshot contract rejection.');
     }
 }
