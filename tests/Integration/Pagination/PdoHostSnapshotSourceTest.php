@@ -22,6 +22,8 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         self::reject($source->checkout(...));
         self::reject(fn () => serialize($source));
         self::reject(fn () => serialize($first));
+        $first->beginRepeatableRead();
+        $first->rollBack();
         $first->release();
         self::assertSame(HostSnapshotCheckoutStateEnum::RELEASED, $first->state());
         $second = $source->checkout();
@@ -38,7 +40,10 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $catalog = new HostSnapshotCatalog([]);
         $source = PdoHostSnapshotSource::attachExclusive($pdo, $catalog);
         self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
-        $source->checkout()->release();
+        $checkout = $source->checkout();
+        $checkout->beginRepeatableRead();
+        $checkout->rollBack();
+        $checkout->release();
         self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, $catalog));
     }
 
@@ -47,7 +52,6 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $pdo = $this->borrowableConnection();
         $weak = WeakReference::create($pdo);
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([]));
-        $source->checkout()->release();
         unset($pdo, $source);
         self::assertNull($weak->get());
     }
@@ -61,7 +65,10 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         self::reject(fn () => PdoHostSnapshotSource::attachExclusive($custom, $catalog));
         self::reject(fn () => PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(persistent: true), $catalog));
         $native = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(mysqlClass: true), $catalog);
-        $native->checkout()->release();
+        $checkout = $native->checkout();
+        $checkout->beginRepeatableRead();
+        $checkout->rollBack();
+        $checkout->release();
     }
 
     public function testDriverMetadataDoesNotDependOnCallerColumnCase(): void
@@ -69,7 +76,10 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $pdo = $this->borrowableConnection();
         $pdo->setAttribute(PDO::ATTR_CASE, PDO::CASE_UPPER);
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([]));
-        $source->checkout()->release();
+        $checkout = $source->checkout();
+        $checkout->beginRepeatableRead();
+        $checkout->rollBack();
+        $checkout->release();
         self::assertSame(PDO::CASE_UPPER, $pdo->getAttribute(PDO::ATTR_CASE));
     }
 
@@ -86,6 +96,8 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $pdo = $this->borrowableConnection();
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([]));
         $checkout = $source->checkout();
+        $checkout->beginRepeatableRead();
+        $checkout->rollBack();
         $pdo->exec('START TRANSACTION');
         try {
             self::reject($checkout->release(...));

@@ -30,7 +30,8 @@ final class PdoHostSnapshotSource
     private bool $busy = false;
     private ?string $sessionId = null;
     private ?object $generation = null;
-    private bool $nextTransactionUnconfirmed = false;
+    // Session variables do not reveal a pending one-transaction override.
+    private bool $nextTransactionUnconfirmed = true;
 
     private function __construct(
         private HostSnapshotConnection $connection,
@@ -92,6 +93,9 @@ final class PdoHostSnapshotSource
     {
         $this->reserve($checkout, State::IDLE);
         try {
+            if ($this->nextTransactionUnconfirmed) {
+                throw new HostSnapshotPaginationException('The next Host snapshot transaction setting is unresolved.');
+            }
             $this->confirmSession(false);
             $this->checkout = null;
         } catch (Throwable $error) {
@@ -111,6 +115,7 @@ final class PdoHostSnapshotSource
             $this->connection->control('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             $this->connection->control('START TRANSACTION ' . $mode->value);
             $this->confirmSession(true);
+            $this->nextTransactionUnconfirmed = false;
             $this->generation = new \stdClass();
             $this->state = State::TRANSACTION_ACTIVE;
         } catch (Throwable $error) {

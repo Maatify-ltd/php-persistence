@@ -85,6 +85,22 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $lease->release();
     }
 
+    public function testInitialPendingSettingCannotBeReturnedToThePoolUnresolved(): void
+    {
+        $pdo = $this->borrowableConnection();
+        $pdo->exec('SET TRANSACTION READ ONLY');
+        $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([]));
+        unset($pdo);
+        $lease = $source->checkout();
+
+        try {
+            $lease->release();
+            self::fail('An unresolved next-transaction setting escaped into the pool.');
+        } catch (HostSnapshotPaginationException) {
+            self::assertSame(State::QUARANTINED, $lease->state());
+        }
+    }
+
     public function testCommandFailureRetainsOriginalDriverErrorAndQuarantinesSource(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
