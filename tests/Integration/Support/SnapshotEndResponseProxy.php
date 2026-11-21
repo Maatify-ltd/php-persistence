@@ -43,9 +43,10 @@ $target = $argv[1] ?? '';
 $stage = $argv[2] ?? '';
 if ($host === false || $port === false || !in_array($target, [
     'START TRANSACTION READ ONLY',
+    'START TRANSACTION READ WRITE',
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
-], true) || ! in_array($stage, ['after', 'before'], true)) {
+], true) || ! in_array($stage, ['after', 'before', 'after-ack'], true)) {
     throw new InvalidArgumentException('Missing relay target.');
 }
 $listener = stream_socket_server('tcp://127.0.0.1:0');
@@ -93,7 +94,10 @@ try {
                     if ($sequence !== 1 || !str_starts_with($payload, "\x00")) {
                         throw new RuntimeException('The real server did not acknowledge the target command.');
                     }
-                    echo "SERVER OK WITHHELD\n";
+                    if ($stage === 'after-ack') {
+                        writePacketBytes($client, $header . $payload);
+                    }
+                    echo $stage === 'after-ack' ? "SERVER OK FORWARDED\n" : "SERVER OK WITHHELD\n";
                     fflush(STDOUT);
                     break;
                 }
