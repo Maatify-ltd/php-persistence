@@ -77,11 +77,17 @@ src/
 │   ├── Criteria/PageRequest.php
 │   ├── Criteria/PdoPaginationQueryDescriptor.php
 │   ├── DTO/PageResultDTO.php
+│   ├── DTO/SnapshotConnectionOutcomeDTO.php
+│   ├── Enum/SnapshotConnectionDispositionEnum.php
 │   ├── Enum/SortDirectionEnum.php
 │   ├── Exception/InvalidPaginationConfigurationException.php
 │   ├── Exception/InvalidPaginationQueryException.php
 │   ├── Exception/PaginationExecutionException.php
+│   ├── Exception/SnapshotPaginationException.php
+│   ├── Repository/PdoPaginationExecution.php   (@internal)
 │   ├── Repository/PdoPaginator.php
+│   ├── Repository/PdoSnapshotPaginator.php
+│   ├── Repository/SnapshotReadResources.php    (@internal)
 │   └── ValueObject/SortWhitelist.php
 └── Transaction/
     ├── Exception/InvalidTransactionConfigurationException.php
@@ -426,6 +432,8 @@ public function rowExistsInScope(
 
 These classes are reachable because PHP does not restrict class visibility, but they carry **no SemVer guarantee** and may change or disappear in any release without notice. A consumer must not construct, type-hint, or depend on them.
 
+- **`Pagination\Repository\PdoPaginationExecution`** — the shared count and data execution for the caller-controlled and C1 paginators.
+- **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper consumed by `PdoSavepointTransactionRunner` and by `ScopedOrderingManager::moveWithinScope()` (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
@@ -436,7 +444,7 @@ These classes are reachable because PHP does not restrict class visibility, but 
 These two terms are used precisely and consistently throughout this document and the source code:
 
 - **Caller-owned transaction** — a transaction already active on the `PDO` connection (`$pdo->inTransaction() === true`) when a package method is called. The package never begins, commits, or performs a final rollback of it. Where it needs to limit the blast radius of a failure, it uses a savepoint scoped to its own operation.
-- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called, or when C1 accepted a qualified exclusive grant and confirmed the start of its read-only transaction. The package commits it on success and attempts a best-effort rollback on failure if the transaction is still active.
+- **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called, or when C1 accepted a qualified exclusive grant and confirmed the start of its read-only transaction. The package commits it on success. Transaction runners and Ordering attempt a best-effort rollback when their transaction is still active after a failure. C1 only attempts rollback after a read failure once cursor release and ownership of the active transaction on the same session are confirmed. See [§5.3.1](#531-optional-c1-snapshot-pagination).
 
 ---
 

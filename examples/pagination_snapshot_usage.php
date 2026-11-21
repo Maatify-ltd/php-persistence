@@ -21,6 +21,7 @@ $writer = php_persistence_example_connect();
 $table = php_persistence_example_table_name('snapshot');
 $writer->exec("CREATE TABLE `{$table}` (id INT PRIMARY KEY, visible TINYINT NOT NULL) ENGINE=InnoDB");
 
+$exampleFailure = null;
 try {
     $writer->exec("INSERT INTO `{$table}` VALUES (1, 1), (2, 0)");
     $query = new PdoPaginationQueryDescriptor(
@@ -84,8 +85,18 @@ try {
         php_persistence_example_assert(php_persistence_example_to_int($probe->fetchColumn()) === 1, 'unexpected reuse check');
         php_persistence_example_assert($probe->closeCursor(), 'failed to release the reuse check');
     }
+} catch (Throwable $caught) {
+    $exampleFailure = $caught;
+
+    throw $caught;
 } finally {
-    $writer->exec("DROP TABLE IF EXISTS `{$table}`");
+    try {
+        $writer->exec("DROP TABLE IF EXISTS `{$table}`");
+    } catch (Throwable $cleanupFailure) {
+        if ($exampleFailure === null) {
+            throw $cleanupFailure;
+        }
+    }
 }
 
 echo "C1 SNAPSHOT PAGINATION OK\n";
