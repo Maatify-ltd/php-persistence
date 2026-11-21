@@ -64,13 +64,14 @@ final class PdoSnapshotPaginator
             }
 
             [$session, $autocommit] = $this->sessionSettings($pdo, $resources);
-            if (! $autocommit || ! $this->hasRepeatableRead($pdo, $resources)) {
+            $eligibleSettings = $autocommit && $this->hasRepeatableRead($pdo, $resources);
+            $this->assertSession($pdo, $resources, $session, false);
+            if (! $eligibleSettings) {
                 $disposition = SnapshotConnectionDispositionEnum::UNCHANGED;
                 throw new SnapshotPaginationException('Snapshot pagination requires an idle REPEATABLE READ session with autocommit enabled.');
             }
 
             $stage = 'start';
-            $this->assertSession($pdo, $resources, $session, false);
             $this->control($pdo, 'START TRANSACTION READ ONLY');
             $this->assertSession($pdo, $resources, $session, true);
 

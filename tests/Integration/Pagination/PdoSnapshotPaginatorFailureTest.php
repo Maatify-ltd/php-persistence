@@ -134,6 +134,60 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $source->settle($next, null);
     }
 
+    public function testChangedSessionDuringEligibilityCannotReturnUnchanged(): void
+    {
+        [, $table] = $this->connectWithPaginationTable();
+        $replacement = $this->connect();
+        $replacement->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        $reader = new class (
+            'mysql:host=' . self::setting('HOST') . ';port=' . self::setting('PORT') . ';dbname=' . self::setting('DATABASE'),
+            self::setting('USER'),
+            self::setting('PASSWORD'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+        ) extends PDO {
+            public PDO $replacement;
+            public bool $sessionChanged = false;
+            /** @var list<string> */
+            public array $controls = [];
+
+            public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+            {
+                if (str_starts_with($query, 'SHOW SESSION VARIABLES')) {
+                    $this->sessionChanged = true;
+                }
+                if ($this->sessionChanged) {
+                    return $this->replacement->query($query, $fetchMode, ...$fetchModeArgs);
+                }
+
+                return parent::query($query, $fetchMode, ...$fetchModeArgs);
+            }
+
+            public function exec(string $statement): int|false
+            {
+                $this->controls[] = $statement;
+
+                return parent::exec($statement);
+            }
+        };
+        $reader->replacement = $replacement;
+        $source = new SnapshotHostCheckout($reader);
+        [$checkout, , $operation] = $source->checkout();
+
+        self::assertInstanceOf(SnapshotPaginationException::class, self::failure(fn() => $operation->paginate(
+            $this->descriptor($table),
+            new PageRequest(),
+            $this->config(),
+            static fn(): never => self::fail('The replacement session must not read a page.'),
+        )));
+        self::assertTrue($reader->sessionChanged);
+        self::assertSame([], $reader->controls);
+        $outcome = $operation->connectionOutcome();
+        $source->settle($checkout, $outcome);
+        self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $outcome?->disposition);
+        self::assertNull($source->takeReturnedConnection());
+        self::assertFalse($source->canCheckout());
+    }
+
     public function testChangedSessionIdentityBeforeCommitForbidsTransactionControl(): void
     {
         [$seed, $table] = $this->connectWithPaginationTable();
