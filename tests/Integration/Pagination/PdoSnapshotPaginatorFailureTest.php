@@ -8,6 +8,7 @@ use Closure;
 use LogicException;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
+use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\SnapshotConnectionDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\SnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
@@ -25,17 +26,107 @@ use Throwable;
 
 final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCase
 {
+    public function testUnchangedReturnsToTheHostWithoutPublishingAnActiveTransaction(): void
+    {
+        [$writer, $table] = $this->connectWithPaginationTable();
+        $this->insertMultiTenantDataset($writer, $table);
+        $reader = $this->connect();
+        $reader->beginTransaction();
+        try {
+            $reader->exec('DELETE FROM ' . $table);
+            $source = new SnapshotHostCheckout($reader);
+            [$checkout, , $operation] = $source->checkout();
+            self::assertInstanceOf(SnapshotPaginationException::class, self::failure(fn() => $operation->paginate(
+                $this->descriptor($table),
+                new PageRequest(),
+                $this->config(),
+                static fn(array $row): array => $row,
+            )));
+            self::assertSame(SnapshotConnectionDispositionEnum::UNCHANGED, $operation->connectionOutcome()?->disposition);
+            $source->settle($checkout, $operation->connectionOutcome());
+            self::assertFalse($source->canCheckout());
+            self::assertSame($reader, $source->takeReturnedConnection());
+            self::assertTrue($reader->inTransaction());
+            self::assertSame('0', $this->scalar($reader, 'SELECT COUNT(*) FROM ' . $table));
+            self::assertSame('6', $this->scalar($writer, 'SELECT COUNT(*) FROM ' . $table));
+        } finally {
+            $reader->rollBack();
+        }
+    }
+
+    public function testExecutionOfACompletedReadDoesNotPublishPageOnHostSettlementFailure(): void
+    {
+        [$pdo, $table] = $this->connectWithPaginationTable();
+        $this->insertMultiTenantDataset($pdo, $table);
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $source = new SnapshotHostCheckout($pdo);
+        [$checkout, , $operation] = $source->checkout();
+        $fault = new RuntimeException('Host rejected settlement');
+        $escaped = self::failure(function () use ($operation, $table, $fault, $source, $checkout): PageResultDTO {
+            $page = $operation->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+            self::assertSame(3, $page->filtered);
+            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+            $source->settle($checkout, $operation->connectionOutcome(), $fault);
+
+            return $page;
+        });
+        self::assertSame($fault, $escaped);
+        self::assertFalse($source->canCheckout());
+    }
+
+    public function testUnbufferedFetchFailureWithUnreadRowsStillAllowsConfirmedRollback(): void
+    {
+        [$seed, $table] = $this->connectWithPaginationTable();
+        $this->insertMultiTenantDataset($seed, $table);
+        $reader = $this->unbufferedReader();
+        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
+        $source = new SnapshotHostCheckout($reader);
+        [$checkout, , $operation] = $source->checkout();
+        $primary = new RuntimeException('fetch failed with unread wire rows');
+        $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SnapshotCursorStatement::class, [
+            static fn(): bool => true,
+            static function (string $sql) use ($primary): void {
+                if (str_contains($sql, 'SELECT id, tenant_id')) {
+                    throw $primary;
+                }
+            },
+        ]]);
+        try {
+            self::assertSame($primary, self::failure(fn() => $operation->paginate(
+                $this->descriptor($table),
+                new PageRequest(),
+                $this->config(),
+                static fn(array $row): array => $row,
+            )));
+            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+            $source->settle($checkout, $operation->connectionOutcome());
+            [$next, $available] = $source->checkout();
+            self::assertSame($reader, $available);
+            self::assertSame('6', $this->scalar($available, 'SELECT COUNT(*) FROM ' . $table));
+            $source->settle($next, null);
+        } finally {
+            $this->killFixtureTransaction($seed, $reader, $session);
+        }
+    }
+
     public function testSuccessfulPageDoesNotRequeueUntilHostSettles(): void
     {
         [$reader, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($reader, $table);
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $source = new SnapshotHostCheckout($reader);
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         $page = $operation->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
         self::assertSame(3, $page->filtered);
         self::assertFalse($source->canCheckout());
+
+        $other = $this->connect();
+        $other->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $foreign = PdoSnapshotPaginator::forExclusiveRead($other);
+        $foreign->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+        self::assertInstanceOf(LogicException::class, self::failure(static fn() => $source->settle($checkout, $foreign->connectionOutcome())));
+        self::assertFalse($source->canCheckout(), 'an outcome from a different session cannot release this checkout');
+
         $source->settle($checkout, $operation->connectionOutcome());
         [$next, $sameConnection] = $source->checkout();
         self::assertSame($pdo, $sameConnection);
@@ -79,8 +170,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         try {
             self::assertInstanceOf(SnapshotPaginationException::class, self::failure(fn() => $operation->paginate(
                 $this->descriptor($table),
@@ -111,8 +201,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         try {
             $reader->exec('SET SESSION completion_type = 1');
             $source = new SnapshotHostCheckout($reader);
-            [$checkout, $pdo] = $source->checkout();
-            $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+            [$checkout, $pdo, $operation] = $source->checkout();
             $primary = new RuntimeException('mapper stopped the read');
             $failure = self::failure(fn() => $operation->paginate(
                 $this->descriptor($table),
@@ -133,7 +222,11 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame($session, $this->scalar($available, 'SELECT CONNECTION_ID()'));
             self::assertSame('6', $this->scalar($available, 'SELECT COUNT(*) FROM ' . $table));
             self::assertInstanceOf(LogicException::class, self::failure(static fn() => $source->settle($checkout, $outcome)));
-            self::assertFalse($source->canCheckout(), 'a stale result cannot release the next checkout');
+            self::assertInstanceOf(
+                LogicException::class,
+                self::failure(static fn() => $source->settle($next, $outcome)),
+            );
+            self::assertFalse($source->canCheckout(), 'a stale result cannot release the next checkout even with its current sequence');
             $source->settle($next, null);
         } finally {
             $this->killFixtureTransaction($seed, $reader, $session);
@@ -172,8 +265,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             },
         ]]);
         $source = new SnapshotHostCheckout($reader);
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('mapper stopped with unread rows');
         try {
             $failure = self::failure(fn() => $operation->paginate(
@@ -200,13 +292,22 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         }
     }
 
-    public function testSqlPrepareFailureRollsBackWithoutChangingTheThrownPdoError(): void
+    /** @return iterable<string, array{bool}> */
+    public static function prepareModes(): iterable
+    {
+        yield 'native prepare fails' => [false];
+        yield 'emulated execution fails' => [true];
+    }
+
+    #[DataProvider('prepareModes')]
+    public function testSqlFailureRollsBackWithoutChangingTheThrownPdoError(bool $emulate): void
     {
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
         $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $query = $this->descriptor($table);
+        $reader->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulate);
         $invalid = new PdoPaginationQueryDescriptor(
             $query->totalSql,
             $query->totalParams,
@@ -234,8 +335,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $reader = $this->unbufferedReader();
         $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('page failure');
         $handoff = new RuntimeException('Host handoff failure');
         try {
@@ -280,8 +380,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('original mapper error');
         try {
             self::assertSame($primary, self::failure(fn() => $operation->paginate(
@@ -304,8 +403,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
     public function testHostDoesNotReleaseTheConnectionWhenATypeErrorPreventsAnOutcome(): void
     {
         $source = new SnapshotHostCheckout($this->connect());
-        [$checkout, $pdo] = $source->checkout();
-        $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        [$checkout, $pdo, $operation] = $source->checkout();
         $invoke = new \ReflectionMethod(PdoSnapshotPaginator::class, 'paginate');
         $failure = self::failure(fn() => $invoke->invoke($operation, null, new PageRequest(), $this->config(), static fn(array $row): array => $row));
 
@@ -378,8 +476,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             );
             $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             $source = new SnapshotHostCheckout($reader);
-            [$checkout, $pdo] = $source->checkout();
-            $operation = PdoSnapshotPaginator::forExclusiveRead($pdo);
+            [$checkout, $pdo, $operation] = $source->checkout();
             $mapperFailure = new RuntimeException('mapper failure before owned rollback');
             $mapper = $phase === 'rollback'
                 ? static fn(): never => throw $mapperFailure
