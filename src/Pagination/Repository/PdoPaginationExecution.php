@@ -19,8 +19,8 @@ final readonly class PdoPaginationExecution
 {
     private const PUBLIC_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
     private const INTEGER_INPUT_PATTERN = '/^[+-]?[0-9]+$/';
-    private const LIMIT_PARAMETER = '__pagination_limit';
-    private const OFFSET_PARAMETER = '__pagination_offset';
+    public const LIMIT_PARAMETER = '__pagination_limit';
+    public const OFFSET_PARAMETER = '__pagination_offset';
 
     /**
      * Normalizes the request against the configuration, reads both counts, and
@@ -106,14 +106,14 @@ final readonly class PdoPaginationExecution
         return new PageResultDTO($data, $page, $perPage, $total, $filtered, $totalPages, $page < $totalPages, $page > 1 && $totalPages > 0, $sortBy, $sortDirection);
     }
 
-    private function normalizePage(int|string|null $value): int
+    public function normalizePage(int|string|null $value): int
     {
         $parsed = $this->parseIntegerInput($value);
 
         return $parsed === null || $parsed < 1 ? 1 : $parsed;
     }
 
-    private function normalizePerPage(int|string|null $value, PaginationConfig $config): int
+    public function normalizePerPage(int|string|null $value, PaginationConfig $config): int
     {
         $parsed = $this->parseIntegerInput($value);
         if ($parsed === null) {
@@ -156,7 +156,7 @@ final readonly class PdoPaginationExecution
         return (int) (($negative ? '-' : '') . $digits);
     }
 
-    private function resolveSortBy(?string $sortBy, PaginationConfig $config): string
+    public function resolveSortBy(?string $sortBy, PaginationConfig $config): string
     {
         if ($sortBy === null) {
             return $config->defaultSortBy;
@@ -169,7 +169,7 @@ final readonly class PdoPaginationExecution
         return $sortBy;
     }
 
-    private function resolveSortDirection(?string $sortDirection, PaginationConfig $config): SortDirectionEnum
+    public function resolveSortDirection(?string $sortDirection, PaginationConfig $config): SortDirectionEnum
     {
         if ($sortDirection === null) {
             return $config->defaultSortDirection;
@@ -302,7 +302,7 @@ final readonly class PdoPaginationExecution
      *
      * @throws PaginationExecutionException When the count is invalid or out of range.
      */
-    private function normalizeCountValue(mixed $value): int
+    public function normalizeCountValue(mixed $value): int
     {
         if (is_int($value)) {
             if ($value < 0) {
@@ -326,7 +326,7 @@ final readonly class PdoPaginationExecution
         return (int) $digits;
     }
 
-    private function buildDataSql(string $dataSql, string $quotedPrimary, SortDirectionEnum $direction, string $quotedTieBreaker, SortDirectionEnum $tieBreakerDirection): string
+    public function buildDataSql(string $dataSql, string $quotedPrimary, SortDirectionEnum $direction, string $quotedTieBreaker, SortDirectionEnum $tieBreakerDirection): string
     {
         $sql = rtrim($dataSql) . "\nORDER BY " . $quotedPrimary . ' ' . $direction->value;
         if ($quotedPrimary !== $quotedTieBreaker) {
