@@ -294,12 +294,17 @@ final class PdoHostSnapshotSource
             $request,
         );
         // Class loading during registration can reenter a Host command.
-        if ($this->busy || $this->checkoutIdentity !== $checkoutIdentity || $this->generation !== $generation) {
+        if (! $this->canRegisterOn($checkoutIdentity, $generation)) {
             throw new HostSnapshotPaginationException('The Host snapshot transaction changed during authorization.');
         }
         $this->grants[$grant] = $registration;
 
         return $grant;
+    }
+
+    private function canRegisterOn(object $checkoutIdentity, object $generation): bool
+    {
+        return ! $this->busy && $this->checkoutIdentity === $checkoutIdentity && $this->generation === $generation;
     }
 
     /** @internal */

@@ -54,24 +54,23 @@ try {
         50,
     );
 
-    $source = PdoHostSnapshotSource::attachExclusive($connect(), new HostSnapshotCatalog(
-        ['items' => new HostSnapshotPagePlan(
-            "SELECT COUNT(*) FROM $table",
-            "SELECT COUNT(*) FROM $table",
-            "SELECT id FROM $table",
-            [],
-            [],
-            [],
-            $config,
-            static fn(array $row): array => $row,
-        )],
-        ['insert' => new HostSnapshotCommandPlan(
-            "INSERT INTO $table VALUES (:id)",
-            ['id'],
-            HostSnapshotCommandResultModeEnum::AFFECTED_ROWS,
-            effect: HostSnapshotCommandEffectEnum::PRESERVES_TRANSACTION,
-        )],
-    ));
+    $pagePlan = new HostSnapshotPagePlan(
+        "SELECT COUNT(*) FROM $table",
+        "SELECT COUNT(*) FROM $table",
+        "SELECT id FROM $table",
+        [],
+        [],
+        [],
+        $config,
+        static fn(array $row): array => $row,
+    );
+    $insert = new HostSnapshotCommandPlan(
+        "INSERT INTO $table VALUES (:id)",
+        ['id'],
+        HostSnapshotCommandResultModeEnum::AFFECTED_ROWS,
+        effect: HostSnapshotCommandEffectEnum::PRESERVES_TRANSACTION,
+    );
+    $source = PdoHostSnapshotSource::attachExclusive($connect(), new HostSnapshotCatalog(['items' => $pagePlan], ['insert' => $insert]));
     $lease = $source->checkout();
     $lease->beginRepeatableRead();
     $lease->runRegisteredCommand('insert', ['id' => 2]);

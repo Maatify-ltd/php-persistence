@@ -309,10 +309,12 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $observer->exec('KILL CONNECTION ' . $id);
         self::failureOf($reader->resume(...));
         self::assertSame(Stage::TERMINAL, $attempt->state());
-        self::assertSame(Disposition::HOST_ACTION_REQUIRED, $attempt->settlement()?->disposition);
-        self::assertSame(Reason::SCOPE_UNCONFIRMED, $attempt->settlement()->reason);
+        $settlement = $attempt->settlement();
+        self::assertNotNull($settlement);
+        self::assertSame(Disposition::HOST_ACTION_REQUIRED, $settlement->disposition);
+        self::assertSame(Reason::SCOPE_UNCONFIRMED, $settlement->reason);
         $source->discardForHost();
-        self::assertSame(Reason::SCOPE_UNCONFIRMED, $attempt->settlement()->reason);
+        self::assertSame($settlement, $attempt->settlement());
     }
 
     /** @param (Closure(array<string, mixed>): array<string, mixed>)|null $mapper */
