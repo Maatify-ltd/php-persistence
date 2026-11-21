@@ -20,7 +20,7 @@ final class HostSnapshotConnection
     public function inspect(): array
     {
         $rows = $this->rows('SELECT CONNECTION_ID() AS session_id, @@autocommit AS autocommit', [], 1);
-        $row = $rows[0] ?? null;
+        $row = array_change_key_case($rows[0] ?? []);
         $id = $row['session_id'] ?? null;
         $autocommit = $row['autocommit'] ?? null;
         if ((! is_int($id) && ! is_string($id)) || ! ctype_digit((string) $id)

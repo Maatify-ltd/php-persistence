@@ -9,6 +9,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PDO;
+use PDOStatement;
 use WeakReference;
 
 final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
@@ -63,6 +64,22 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $native->checkout()->release();
     }
 
+    public function testDriverMetadataDoesNotDependOnCallerColumnCase(): void
+    {
+        $pdo = $this->borrowableConnection();
+        $pdo->setAttribute(PDO::ATTR_CASE, PDO::CASE_UPPER);
+        $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([]));
+        $source->checkout()->release();
+        self::assertSame(PDO::CASE_UPPER, $pdo->getAttribute(PDO::ATTR_CASE));
+    }
+
+    public function testCustomStatementClassIsRejected(): void
+    {
+        $pdo = $this->borrowableConnection();
+        $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [HostSnapshotTestStatement::class]);
+        self::reject(fn () => PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([])));
+    }
+
     public function testActiveTransactionCannotBeReleasedAsAnIdleCheckout(): void
     {
         // Simulate a Host violating the initial idle handoff. The source must refuse reuse.
@@ -91,3 +108,5 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         self::fail('Expected a Host snapshot contract rejection.');
     }
 }
+
+final class HostSnapshotTestStatement extends PDOStatement {}
