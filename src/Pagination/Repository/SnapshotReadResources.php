@@ -12,8 +12,14 @@ final class SnapshotReadResources
 {
     private ?PDOStatement $statement = null;
 
+    private bool $closeAttempted = false;
+
     public function track(PDOStatement $statement): void
     {
+        if ($this->statement !== null) {
+            throw new SnapshotPaginationException('A snapshot read cursor is still outstanding.');
+        }
+
         $this->statement = $statement;
     }
 
@@ -23,10 +29,15 @@ final class SnapshotReadResources
             return;
         }
 
+        if ($this->closeAttempted) {
+            throw new SnapshotPaginationException('The previous snapshot cursor release was not confirmed.');
+        }
+        $this->closeAttempted = true;
         if (! $this->statement->closeCursor()) {
             throw new SnapshotPaginationException('Could not release snapshot read resources.');
         }
 
         $this->statement = null;
+        $this->closeAttempted = false;
     }
 }

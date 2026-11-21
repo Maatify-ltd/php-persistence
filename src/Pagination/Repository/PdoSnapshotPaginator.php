@@ -12,6 +12,7 @@ use Maatify\PhpPersistence\Pagination\DTO\SnapshotConnectionOutcomeDTO;
 use Maatify\PhpPersistence\Pagination\Enum\SnapshotConnectionDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\SnapshotPaginationException;
 use PDO;
+use Throwable;
 
 /**
  * Executes one page in a read-only snapshot on a Host-delegated connection.
@@ -73,13 +74,24 @@ final class PdoSnapshotPaginator
             $this->control($pdo, 'START TRANSACTION READ ONLY');
             $this->assertSession($pdo, $resources, $session, true);
 
-            $stage = 'read';
-            $page = (new PdoPaginationExecution())->paginate($pdo, $query, $request, $config, $mapper, $resources);
+            try {
+                $page = (new PdoPaginationExecution())->paginate($pdo, $query, $request, $config, $mapper, $resources);
+            } catch (Throwable $failure) {
+                $stage = 'cursor-release';
+                try {
+                    $resources->release();
+                    $stage = 'rollback';
+                    $this->finishTransaction($pdo, $resources, $session, 'ROLLBACK AND NO CHAIN NO RELEASE');
+                    $disposition = SnapshotConnectionDispositionEnum::REUSABLE;
+                } catch (Throwable) {
+                    // The checkout remains DISCARD. Preserve the original read failure.
+                }
+
+                throw $failure;
+            }
 
             $stage = 'commit';
-            $this->assertSession($pdo, $resources, $session, true);
-            $this->control($pdo, 'COMMIT AND NO CHAIN NO RELEASE');
-            $this->assertSession($pdo, $resources, $session, false);
+            $this->finishTransaction($pdo, $resources, $session, 'COMMIT AND NO CHAIN NO RELEASE');
 
             $disposition = SnapshotConnectionDispositionEnum::REUSABLE;
 
@@ -201,6 +213,13 @@ final class PdoSnapshotPaginator
         }
 
         return $rows;
+    }
+
+    private function finishTransaction(PDO $pdo, SnapshotReadResources $resources, string $session, string $sql): void
+    {
+        $this->assertSession($pdo, $resources, $session, true);
+        $this->control($pdo, $sql);
+        $this->assertSession($pdo, $resources, $session, false);
     }
 
     private function control(PDO $pdo, string $sql): void
