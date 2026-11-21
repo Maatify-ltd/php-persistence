@@ -159,7 +159,7 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         }
     }
 
-    foreach (['keyset-api.php', 'host-snapshot-api.php'] as $publicApiScenario) {
+    foreach (['keyset-api.php', 'host-snapshot-api.php', 'protected-transaction-api.php'] as $publicApiScenario) {
         $status = passthrough([PHP_BINARY, $directory . '/' . $publicApiScenario], $environment, $directory, boxed(120));
         if ($status !== 0) {
             return $status;

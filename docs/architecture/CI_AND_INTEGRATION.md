@@ -116,11 +116,11 @@ PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (
 | `mariadb-11.8.9` | `11.8.9-MariaDB-ubu2404` | `ON` | raised | sees the latest committed row |
 | `mariadb-12.3.3` | `12.3.3-MariaDB-ubu2404` | `ON` | raised | sees the latest committed row |
 
-"Raised" means a locking read and an `UPDATE` after an older `REPEATABLE READ` snapshot failed with driver error `1020` when the test set the session variable to `ON`. The tests set the variable only on their own connections of the disposable service. What the server does after `1020` (whether it already ended the transaction) is deliberately not asserted because it differs between versions; this remains an open point of DEC-009 and of the WU-8 contract.
+"Raised" means a locking read and an `UPDATE` after an older `REPEATABLE READ` snapshot failed with driver error `1020` when the test set the session variable to `ON`. The tests set the variable only on their own connections of the disposable service. Ordering tests separately observe whole-transaction rollback and the next-statement hazard. Protected-checkout tests assert that a fenced checkout rejects later work.
 
 ## 4. Decision record
 
-The Project Owner approved the test-only version boundary on 2026-10-27 exactly as recommended, and it is recorded in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) through the partial-ratification path of [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md): MySQL `8.0.16`, `8.4.13`, `9.7.4`; MariaDB `10.11.19`, `11.4.13`, `11.8.9`, `12.3.3`; MySQL Innovation `26.10.0` exploratory only; the upper edge capped at the highest verified endpoint. The MariaDB `1020` contract stays `PROPOSED`/`DEFERRED` in DEC-009. This is a decision about the test matrix, not a support claim.
+The Project Owner approved the test-only version boundary on 2026-10-27 exactly as recommended, and it is recorded in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) through the partial-ratification path of [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md): MySQL `8.0.16`, `8.4.13`, `9.7.4`; MariaDB `10.11.19`, `11.4.13`, `11.8.9`, `12.3.3`; MySQL Innovation `26.10.0` exploratory only; the upper edge capped at the highest verified endpoint. The MariaDB `1020` policy for the optional protected path is owned by DEC-009. This is a decision about the test matrix, not a support claim.
 
 ## 5. Evidence
 

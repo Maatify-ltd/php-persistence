@@ -21,7 +21,7 @@
 3. **MySQL Innovation:** `26.10.0` is an exploratory cell only. It is outside any support claim, is never required, and is not a substitute for the LTS endpoint.
 4. **Upper bound:** a published upper edge is capped at the highest endpoint that actually passed. No promise covers later major versions or the Innovation track.
 5. **Scope of this decision:** it fixes the test matrix. It is not a support claim for the library and does not declare a supported range. A range may be advertised only under [DEC-008](./DEC-008-database-engine-targets-and-verification-policy.md) (endpoint rule) after the capabilities themselves are tested on these cells, and MariaDB additionally waits for the `1020` contract of DEC-009.
-6. **Not decided here:** the MariaDB `1020` contract (and whether a safe contract exists for caller-owned transactions) stays `PROPOSED` in DEC-009.
+6. **Not decided here:** the MariaDB `1020` contract remains outside the test version boundary. DEC-009 owns the optional protected path.
 
 ## Consequences
 
