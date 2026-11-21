@@ -628,7 +628,7 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Pagination\Exception\HostSnapshotRowLimitExceededException`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Ordering\Repository\OrderingOperations`** — shared Ordering SQL and validation behind both managers.
-- **`Transaction\Repository\ProtectedTransactionConnection`**, **`ProtectedTransactionStatement`**, and **`PdoProtectedTransactionCheckout::runOrdering()`** — scoped driver receivers and the package bridge. The receivers expire at the end of the reservation and provide no raw-resource accessor.
+- **`Transaction\Repository\ProtectedTransactionConnection`** and **`ProtectedTransactionStatement`** — scoped driver receivers. Ordering reaches the private checkout reservation inside the package. The checkout exposes no callback entry point. Receivers expire at the end of the reservation and provide no raw-resource accessor.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper consumed by `PdoSavepointTransactionRunner` and by `ScopedOrderingManager::moveWithinScope()` (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
 ---

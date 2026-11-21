@@ -208,7 +208,7 @@ final readonly class OrderingOperations
             if ($newOrder < $currentOrder) {
                 $this->shiftOrdersUp($pdo, $config, $scopeValue, $newOrder, $currentOrder);
             } else {
-                $this->shiftOrdersDown($pdo, $config, $scopeValue, $currentOrder, $newOrder);
+                $this->shiftOrdersDown($pdo, $config, $scopeValue, $newOrder, $currentOrder);
             }
             $updated = $this->updateTargetOrder($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue);
         } catch (Throwable $failure) {

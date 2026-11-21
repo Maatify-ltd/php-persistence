@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Ordering\Repository;
 
+use Closure;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
@@ -17,7 +18,8 @@ final readonly class ProtectedScopedOrderingManager
         int|string|null $scopeValue = null,
         int $maxTailReads = 64,
     ): int {
-        return $checkout->runOrdering(
+        return $this->inCheckout(
+            $checkout,
             static fn(ProtectedTransactionConnection $connection): int => (new OrderingOperations())->readStableTail(
                 $connection,
                 $config,
@@ -27,6 +29,7 @@ final readonly class ProtectedScopedOrderingManager
         );
     }
 
+
     public function moveWithinScope(
         PdoProtectedTransactionCheckout $checkout,
         ScopedOrderingConfig $config,
@@ -35,7 +38,8 @@ final readonly class ProtectedScopedOrderingManager
         int $newOrder,
         ?string $updatedAtValue = null,
     ): bool {
-        return $checkout->runOrdering(
+        return $this->inCheckout(
+            $checkout,
             static fn(ProtectedTransactionConnection $connection): bool => (new OrderingOperations())->moveProtected(
                 $connection,
                 $config,
@@ -45,5 +49,22 @@ final readonly class ProtectedScopedOrderingManager
                 $updatedAtValue,
             ),
         );
+    }
+    /**
+     * The Checkout has no public callback entry point. Only the Ordering
+     * repository binds this narrowly scoped access to its private reservation.
+     *
+     * @template T of int|bool
+     * @param Closure(ProtectedTransactionConnection): T $operation
+     * @return T
+     */
+    private function inCheckout(PdoProtectedTransactionCheckout $checkout, Closure $operation): int|bool
+    {
+        $reserve = Closure::bind(
+            static fn(): int|bool => $checkout->run($operation),
+            null,
+            PdoProtectedTransactionCheckout::class,
+        );
+        return $reserve();
     }
 }

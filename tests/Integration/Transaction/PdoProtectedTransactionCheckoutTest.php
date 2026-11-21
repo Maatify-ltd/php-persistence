@@ -13,6 +13,7 @@ use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionReasonEnum;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
+use Closure;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -97,20 +98,28 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $checkout->returnForHost();
     }
 
-    /** @return iterable<string, array{string, string, ProtectedTransactionReasonEnum}> */
-    public static function commitLossModes(): iterable
+    /** @return iterable<string, array{bool, string, string, ProtectedTransactionReasonEnum}> */
+    public static function completionLossModes(): iterable
     {
-        yield 'acknowledgement lost' => ['after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::COMMIT_OUTCOME_UNKNOWN];
-        yield 'lost after acknowledgement' => ['after-ack', 'SERVER OK FORWARDED', ProtectedTransactionReasonEnum::COMMIT_CONFIRMED_CONNECTION_UNSAFE];
+        yield 'commit acknowledgement lost' => [true, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::COMMIT_OUTCOME_UNKNOWN];
+        yield 'lost after commit acknowledgement' => [true, 'after-ack', 'SERVER OK FORWARDED', ProtectedTransactionReasonEnum::COMMIT_CONFIRMED_CONNECTION_UNSAFE];
+        yield 'rollback acknowledgement lost' => [false, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::ROLLBACK_UNCONFIRMED];
     }
 
-    #[DataProvider('commitLossModes')]
-    public function testCommitOutcomeAfterConnectionLoss(string $phase, string $report, ProtectedTransactionReasonEnum $reason): void
-    {
+    #[DataProvider('completionLossModes')]
+    public function testCompletionOutcomeAfterConnectionLoss(
+        bool $commit,
+        string $phase,
+        string $report,
+        ProtectedTransactionReasonEnum $reason,
+    ): void {
         $observer = $this->connect();
         $table = $this->createTable($observer);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'COMMIT AND NO CHAIN NO RELEASE', $phase,
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            $commit ? 'COMMIT AND NO CHAIN NO RELEASE' : 'ROLLBACK AND NO CHAIN NO RELEASE',
+            $phase,
         ]);
         try {
             $ready = $relay->readLine(12.0);
@@ -129,9 +138,9 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             unset($pdo);
             $checkout->begin();
             $checkout->runRegisteredCommand('insert');
-            self::failureOf(static fn() => $checkout->commit());
+            self::failureOf(static fn() => $commit ? $checkout->commit() : $checkout->rollBack());
             self::assertSame($report, $relay->readLine(12.0));
-            self::assertSame([10], $this->values($observer, $table));
+            self::assertSame($commit ? [10] : [], $this->values($observer, $table));
             $settlement = $checkout->settlement();
             self::assertSame($reason, $settlement?->reason);
             $this->reject(static fn() => $checkout->runRegisteredCommand('insert'));
@@ -171,6 +180,96 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $checkout->discardForHost();
     }
 
+    public function testHostCannotCallThePackageDriverBridge(): void
+    {
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive(
+            $this->connect(),
+            new ProtectedTransactionCommandCatalog([]),
+        );
+        self::assertNotContains('runOrdering', get_class_methods($checkout));
+        self::assertNotContains('run', get_class_methods($checkout));
+        $checkout->returnForHost();
+    }
+
+    public function testRejectedAttachmentHidesPdoFromTheExceptionArguments(): void
+    {
+        $pdo = $this->connect();
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+        $previousIni = ini_set('zend.exception_ignore_args', '0');
+        try {
+            PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([]));
+            self::fail('Expected the unqualified PDO to be rejected.');
+        } catch (ProtectedTransactionException $failure) {
+            foreach ($failure->getTrace() as $frame) {
+                if ($frame['function'] === 'attachExclusive') {
+                    self::assertInstanceOf(\SensitiveParameterValue::class, $frame['args'][0] ?? null);
+
+                    return;
+                }
+            }
+            self::fail('The attachment failure did not include its public API frame.');
+        } finally {
+            if ($previousIni !== false) {
+                ini_set('zend.exception_ignore_args', $previousIni);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{int, bool, ProtectedTransactionReasonEnum}> */
+    public static function completionSettings(): iterable
+    {
+        yield 'CHAIN with commit' => [1, true, ProtectedTransactionReasonEnum::COMMITTED];
+        yield 'CHAIN with rollback' => [1, false, ProtectedTransactionReasonEnum::ROLLED_BACK];
+        yield 'RELEASE with commit' => [2, true, ProtectedTransactionReasonEnum::COMMITTED];
+        yield 'RELEASE with rollback' => [2, false, ProtectedTransactionReasonEnum::ROLLED_BACK];
+    }
+
+    #[DataProvider('completionSettings')]
+    public function testExplicitCompletionPreservesHostCompletionSetting(
+        int $completion,
+        bool $commit,
+        ProtectedTransactionReasonEnum $reason,
+    ): void {
+        $pdo = $this->delegatedConnection();
+        $pdo->exec('SET SESSION completion_type = ' . $completion);
+        $id = $this->scalar($pdo, 'SELECT CONNECTION_ID()');
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([]));
+        unset($pdo);
+        $checkout->begin();
+        $commit ? $checkout->commit() : $checkout->rollBack();
+        self::assertSame($reason, $checkout->settlement()?->reason);
+        $returned = $checkout->returnForHost();
+        self::assertFalse($returned->inTransaction());
+        self::assertSame($id, $this->scalar($returned, 'SELECT CONNECTION_ID()'));
+        $setting = strtoupper($this->scalar($returned, 'SELECT @@completion_type'));
+        self::assertContains($setting, [$completion === 1 ? 'CHAIN' : 'RELEASE', (string) $completion]);
+    }
+
+    public function testLockTimeoutFencesWithoutReplayingTheRegisteredCommand(): void
+    {
+        $owner = $this->connect();
+        $table = $this->createTable($owner);
+        $owner->exec("INSERT INTO `$table` (id, v) VALUES (1, 10)");
+        $owner->beginTransaction();
+        try {
+            $owner->exec("UPDATE `$table` SET v = 20 WHERE id = 1");
+            $pdo = $this->delegatedConnection();
+            $pdo->exec('SET SESSION innodb_lock_wait_timeout = 1');
+            $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([
+                'write' => new ProtectedTransactionCommandPlan("UPDATE `$table` SET v = 30 WHERE id = 1", []),
+            ]));
+            unset($pdo);
+            $checkout->begin();
+            self::assertSame(1205, self::driverCode(self::failureOf(static fn() => $checkout->runRegisteredCommand('write'))));
+            self::assertSame(ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED, $checkout->settlement()?->reason);
+            $this->reject(static fn() => $checkout->runRegisteredCommand('write'));
+            $checkout->discardForHost();
+        } finally {
+            $owner->rollBack();
+        }
+        self::assertSame([10], $this->values($owner, $table));
+    }
+
     public function testOnceReservedTheHostCannotRunAnotherOperationOrRetainTheDriver(): void
     {
         $checkout = PdoProtectedTransactionCheckout::attachExclusive($this->connect(), new ProtectedTransactionCommandCatalog([
@@ -178,7 +277,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         ]));
         $checkout->begin();
         $held = null;
-        $result = $checkout->runOrdering(function (ProtectedTransactionConnection $scope) use ($checkout, &$held): bool {
+        $operation = function (ProtectedTransactionConnection $scope) use ($checkout, &$held): bool {
             $held = $scope;
             $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
             $this->reject(static fn() => $checkout->commit());
@@ -188,8 +287,9 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             $statement->execute();
 
             return $statement->fetchColumn() === 1;
-        });
-        self::assertTrue($result);
+        };
+        $reserve = Closure::bind(static fn(): bool => $checkout->run($operation), null, PdoProtectedTransactionCheckout::class);
+        self::assertTrue($reserve());
         self::assertInstanceOf(ProtectedTransactionConnection::class, $held);
         $this->reject(static fn() => $held->prepare('SELECT 1'));
         self::assertSame([['n' => 1]], $checkout->runRegisteredCommand('read'));

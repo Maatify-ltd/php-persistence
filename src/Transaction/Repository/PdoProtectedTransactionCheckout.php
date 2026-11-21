@@ -14,6 +14,7 @@ use PDO;
 use Pdo\Mysql;
 use PDOStatement;
 use PDOException;
+use SensitiveParameter;
 use Throwable;
 use WeakMap;
 
@@ -32,7 +33,7 @@ final class PdoProtectedTransactionCheckout
         private readonly ProtectedTransactionCommandCatalog $catalog,
     ) {}
 
-    public static function attachExclusive(PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
+    public static function attachExclusive(#[SensitiveParameter] PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
     {
         self::$attached ??= new WeakMap();
         if (isset(self::$attached[$pdo])
@@ -101,17 +102,6 @@ final class PdoProtectedTransactionCheckout
 
             return $rows;
         });
-    }
-
-    /**
-     * @internal Runs a package-owned Ordering operation with an expiring driver receiver.
-     * @template T of int|bool
-     * @param Closure(ProtectedTransactionConnection): T $operation
-     * @return T
-     */
-    public function runOrdering(Closure $operation): int|bool
-    {
-        return $this->run($operation);
     }
 
     /**
