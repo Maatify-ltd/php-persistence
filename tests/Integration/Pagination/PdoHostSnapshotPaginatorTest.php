@@ -7,6 +7,7 @@ namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 use Closure;
 use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPagePlan;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
@@ -145,6 +146,35 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         self::assertSame(Reason::STALE_CONTEXT, $stale->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testFirstUseAutoloadCannotMoveAuthorizationToAnotherGeneration(): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
+            'empty' => new HostSnapshotPagePlan('SELECT 0', 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn(array $row): array => $row),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $changed = false;
+        $loader = static function (string $class) use ($lease, &$changed): void {
+            if ($class === HostSnapshotPageGrant::class) {
+                $lease->rollBack();
+                $lease->beginRepeatableRead();
+                $changed = true;
+            }
+        };
+        self::assertFalse(class_exists(HostSnapshotPageGrant::class, false));
+        spl_autoload_register($loader, prepend: true);
+        try {
+            self::reject(fn() => $lease->authorizePage('empty', [], new PageRequest()));
+            self::assertTrue($changed);
+        } finally {
+            spl_autoload_unregister($loader);
+            $lease->rollBack();
+            $lease->release();
+        }
     }
 
     #[RunInSeparateProcess]

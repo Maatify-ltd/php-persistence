@@ -282,15 +282,22 @@ final class PdoHostSnapshotSource
         ) {
             throw new HostSnapshotPaginationException('The Host snapshot transaction cannot authorize a page.');
         }
+        $checkoutIdentity = $this->checkoutIdentity;
+        $generation = $this->generation;
         $plan = $this->catalog->page($queryId);
         $grant = HostSnapshotPageGrant::issue();
-        $this->grants[$grant] = new HostSnapshotGrantRegistration(
-            $this->checkoutIdentity,
-            $this->generation,
+        $registration = new HostSnapshotGrantRegistration(
+            $checkoutIdentity,
+            $generation,
             $plan,
             $plan->descriptor($bindings),
             $request,
         );
+        // Class loading during registration can reenter a Host command.
+        if ($this->busy || $this->checkoutIdentity !== $checkoutIdentity || $this->generation !== $generation) {
+            throw new HostSnapshotPaginationException('The Host snapshot transaction changed during authorization.');
+        }
+        $this->grants[$grant] = $registration;
 
         return $grant;
     }
