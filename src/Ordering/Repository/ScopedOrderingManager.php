@@ -19,12 +19,15 @@ use Throwable;
  * - nullable scoped ordering: one sequence for NULL and one sequence per non-null scope value
  *
  * Transaction model:
- * - moveWithinScope() uses the Gen2 {@see PdoTransactionRunner} (DEC-007, DEC-011).
+ * - moveWithinScope() uses the
+ *   {@see \Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner}
+ *   (DEC-007, DEC-011).
  * - It owns the transaction when called outside an active PDO transaction.
  * - It participates in an active caller-owned PDO transaction without
  *   committing or fully rolling it back. After the scope lock and the
  *   read-only checks, it creates an operation-local savepoint through
- *   {@see SavepointScope} (DEC-011 item 2) before the first mutating statement.
+ *   {@see \Maatify\PhpPersistence\Transaction\Repository\SavepointScope}
+ *   (DEC-011 item 2) before the first mutating statement.
  *   The savepoint allows best-effort rollback of a failed mutation.
  * - Locking and rollback require a transactional storage engine with row locks
  *   and savepoints, such as InnoDB. The host owns the table schema.
@@ -46,7 +49,8 @@ use Throwable;
  * Tests with MariaDB innodb_snapshot_isolation=ON observed driver code 1020
  * when a locking read visited a row changed after an older caller snapshot.
  * The PDOException propagated unchanged and the server rolled back the
- * caller transaction. See DEC-009 for the deferred recovery contract.
+ * caller transaction. DEC-009 defines the optional protected checkout used
+ * by {@see ProtectedScopedOrderingManager}.
  */
 final readonly class ScopedOrderingManager
 {
@@ -184,10 +188,10 @@ final readonly class ScopedOrderingManager
      *
      * Caller-owned transaction: a Throwable in the range shift or target write
      * triggers best-effort rollback to and release of the operation-local
-     * savepoint ({@see SavepointScope}). The original Throwable is rethrown
-     * unchanged. If the target update affects zero rows, rollback to the
-     * savepoint must succeed before returning false. A no-op move and a
-     * missing row issue no savepoint statement. A mutating move adds SAVEPOINT
+     * savepoint ({@see \Maatify\PhpPersistence\Transaction\Repository\SavepointScope}).
+     * The original Throwable propagates unchanged. A zero-row target update
+     * requires a successful rollback to the savepoint before returning false.
+     * A no-op move and a missing row issue no savepoint statement. A mutating move adds SAVEPOINT
      * and RELEASE. While the transaction remains active, the scope lock is
      * kept, earlier work and the caller's own savepoints are
      * untouched, and the caller still owns commit and rollback. A deadlock (1213),
