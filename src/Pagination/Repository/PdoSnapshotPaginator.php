@@ -57,9 +57,7 @@ final class PdoSnapshotPaginator
         $stage = 'eligibility';
 
         try {
-            if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql'
-                || $pdo->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION
-                || $pdo->inTransaction()) {
+            if (! $this->hasEligibleDriver($pdo) || $pdo->inTransaction()) {
                 $disposition = SnapshotConnectionDispositionEnum::UNCHANGED;
                 throw new SnapshotPaginationException('The Host connection does not qualify for snapshot pagination.');
             }
@@ -112,6 +110,23 @@ final class PdoSnapshotPaginator
     public function __unserialize(array $data): void
     {
         throw new SnapshotPaginationException('A snapshot operation cannot be restored from serialized data.');
+    }
+
+    private function hasEligibleDriver(PDO $pdo): bool
+    {
+        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if (! is_string($driver) || $driver === '') {
+            throw new SnapshotPaginationException('Could not determine the PDO driver.');
+        }
+        if ($driver !== 'mysql') {
+            return false;
+        }
+        $mode = $pdo->getAttribute(PDO::ATTR_ERRMODE);
+        if (! in_array($mode, [PDO::ERRMODE_EXCEPTION, PDO::ERRMODE_SILENT, PDO::ERRMODE_WARNING], true)) {
+            throw new SnapshotPaginationException('Could not determine the PDO error mode.');
+        }
+
+        return $mode === PDO::ERRMODE_EXCEPTION;
     }
 
     /** @return array{string, bool} */

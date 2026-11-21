@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Pagination;
 
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
+use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
 use Maatify\PhpPersistence\Pagination\Enum\SnapshotConnectionDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\SnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoSnapshotPaginator;
 use Maatify\PhpPersistence\Tests\Support\Pagination\PaginationFixture;
+use Error;
 use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Throwable;
 
 final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
 {
@@ -148,18 +149,6 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         $request = new PageRequest(999, 1, 'id', 'ASC');
         $config = $this->config();
 
-        foreach ([
-            static fn(): object => clone $snapshot,
-            static fn(): string => serialize($snapshot),
-        ] as $copy) {
-            try {
-                $copy();
-            } catch (Throwable) {
-                continue;
-            }
-            self::fail('A copy must not acquire a second use of the same PDO.');
-        }
-
         $page = $snapshot->paginate($query, $request, $config, static function (array $row) use ($snapshot, $query, $request, $config): array {
             self::assertNull($snapshot->connectionOutcome());
             try {
@@ -181,6 +170,79 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         } catch (SnapshotPaginationException) {
             self::assertSame($outcome, $snapshot->connectionOutcome());
         }
+
+        $this->expectException(SnapshotPaginationException::class);
+        serialize($snapshot);
+    }
+
+    public function testSnapshotHandleCannotBeRestoredFromSerializedData(): void
+    {
+        $class = PdoSnapshotPaginator::class;
+
+        $this->expectException(SnapshotPaginationException::class);
+        unserialize(sprintf('O:%d:"%s":0:{}', strlen($class), $class), ['allowed_classes' => [$class]]);
+    }
+
+    public function testRegisteringSnapshotDoesNotInspectTheHandle(): void
+    {
+        // An uninitialised PDO would reject a driver or SQL call.
+        $pdo = new class extends PDO {
+            public function __construct() {}
+        };
+        $snapshot = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        self::assertNull($snapshot->connectionOutcome());
+        $this->expectException(Error::class);
+        $this->expectExceptionMessage('__clone');
+        $copy = clone $snapshot;
+    }
+
+    public function testEligibilityUncertaintyDoesNotCertifyAnUnchangedConnection(): void
+    {
+        $pdo = new class extends PDO {
+            public function __construct() {}
+
+            public function getAttribute(int $attribute): mixed
+            {
+                unset($attribute);
+
+                return false;
+            }
+        };
+        $snapshot = PdoSnapshotPaginator::forExclusiveRead($pdo);
+        try {
+            $snapshot->paginate($this->descriptor('unused'), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+            self::fail('Unavailable eligibility information must not be accepted.');
+        } catch (SnapshotPaginationException) {
+            // The reader never ran. The Host must discard the uncertain checkout.
+        }
+        self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $snapshot->connectionOutcome()?->disposition);
+    }
+
+    public function testServerAutocommitWinsOverTheCachedPdoAttributeInBothDirections(): void
+    {
+        [$seed, $table] = $this->connectWithPaginationTable();
+        $this->insertMultiTenantDataset($seed, $table);
+        foreach ([false, true] as $serverAutocommit) {
+            $reader = $this->connect();
+            $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            $reader->setAttribute(PDO::ATTR_AUTOCOMMIT, ! $serverAutocommit);
+            $reader->exec('SET SESSION autocommit = ' . ($serverAutocommit ? '1' : '0'));
+            self::assertSame(! $serverAutocommit, (bool) $reader->getAttribute(PDO::ATTR_AUTOCOMMIT));
+            $snapshot = PdoSnapshotPaginator::forExclusiveRead($reader);
+            try {
+                $page = $snapshot->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
+                self::assertTrue($serverAutocommit);
+                self::assertSame(3, $page->filtered);
+                self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $snapshot->connectionOutcome()?->disposition);
+            } catch (SnapshotPaginationException $failure) {
+                self::assertFalse($serverAutocommit, $failure->getMessage());
+                self::assertSame(SnapshotConnectionDispositionEnum::UNCHANGED, $snapshot->connectionOutcome()?->disposition);
+            } finally {
+                self::assertFalse($reader->inTransaction());
+                self::assertSame(! $serverAutocommit, (bool) $reader->getAttribute(PDO::ATTR_AUTOCOMMIT));
+                $reader->exec('SET SESSION autocommit = 1');
+            }
+        }
     }
 
     public function testEmptyResultSkipsDataQuery(): void
@@ -188,7 +250,15 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         [$reader, $table] = $this->connectWithPaginationTable();
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $snapshot = PdoSnapshotPaginator::forExclusiveRead($reader);
-        $query = $this->descriptor($table);
+        $counts = $this->descriptor($table);
+        $query = new PdoPaginationQueryDescriptor(
+            $counts->totalSql,
+            $counts->totalParams,
+            $counts->filteredCountSql,
+            $counts->filteredCountParams,
+            'SELECT id FROM deliberately_missing_c1_table',
+            [],
+        );
         $page = $snapshot->paginate($query, new PageRequest(99), $this->config(), static fn(): never => self::fail('Empty pages skip mapping.'));
         self::assertSame(1, $page->page);
         self::assertSame(0, $page->filtered);
