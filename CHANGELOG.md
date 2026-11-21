@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Optional consistent pagination for one page on a qualified Host-delegated read connection. The Host receives a terminal connection disposition independently of the page or exception.
+
 ## [1.0.0-rc.2] - 2026-11-18
 
 Second release candidate, published on [Packagist](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2).

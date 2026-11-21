@@ -41,7 +41,7 @@ The package offers three capabilities over a caller-supplied `PDO` connection:
 - **Pagination:** parameterized, whitelist-sorted, bounded pagination returning a result DTO.
 - **Ordering:** next-position and move operations for ordered rows inside a scope (for example a column value), with locking reads and savepoint protection.
 
-Not in scope: owning tables or migrations, opening connections, changing PDO attributes or server settings, operational reporting read models, factories or facades, any consumer-specific logic. The package keeps no state between calls.
+Not in scope: owning tables or migrations, opening connections, changing PDO attributes or server settings, operational reporting read models, factories or facades, any consumer-specific logic. The optional C1 paginator holds one grant and its terminal outcome on a single-use object. See [DEC-018](../decisions/DEC-018-optional-delegated-snapshot-pagination.md).
 
 ## 4. Source topology
 

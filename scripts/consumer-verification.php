@@ -143,7 +143,22 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     }
     echo "CONSUMER-INSTALL scenario={$scenario} candidate={$candidateRef} tree={$candidateTree} legacy={$legacyRef}\n";
 
-    return passthrough([PHP_BINARY, $directory . '/consumer.php', $scenario], $environment, $directory, boxed(120));
+    $status = passthrough([PHP_BINARY, $directory . '/consumer.php', $scenario], $environment, $directory, boxed(120));
+    if ($status !== 0) {
+        return $status;
+    }
+
+    $exampleDirectory = $directory . '/examples';
+    if (! mkdir($exampleDirectory, 0700)) {
+        throw new RuntimeException('Cannot create consumer example directory');
+    }
+    foreach (['_bootstrap.php', 'pagination_snapshot_usage.php'] as $example) {
+        if (! copy($installedPath . '/examples/' . $example, $exampleDirectory . '/' . $example)) {
+            throw new RuntimeException('Cannot copy the installed snapshot example: ' . $example);
+        }
+    }
+
+    return passthrough([PHP_BINARY, $exampleDirectory . '/pagination_snapshot_usage.php'], $environment, $directory, boxed(120));
 }
 
 function cleanupConsumerWorkspace(string $workspace): bool

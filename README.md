@@ -98,18 +98,18 @@ See [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) for a capability ma
 The public surface is three independent capability namespaces under `Maatify\PhpPersistence\`:
 
 - `Transaction\Repository\{TransactionRunnerInterface, SavepointTransactionRunnerInterface, PdoTransactionRunner, PdoSavepointTransactionRunner}` and `Transaction\Exception\{InvalidTransactionConfigurationException, TransactionExecutionException}`.
-- `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`.
+- `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`. The optional C1 surface adds `Pagination\{Repository\PdoSnapshotPaginator, DTO\SnapshotConnectionOutcomeDTO, Enum\SnapshotConnectionDispositionEnum, Exception\SnapshotPaginationException}` to the current source.
 - `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
-Two internal helper classes (`Transaction\Repository\{OwnedTransactionExecutor, SavepointScope}`) are reachable but are explicitly **not** part of the public contract or SemVer.
+The package uses internal helpers in `Transaction\Repository` and `Pagination\Repository`. The [Package Reference](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#35-internal-types-excluded-from-the-public-contract) identifies them and their contract status.
 
 The complete, verified inventory — every constructor, named parameter, default, return type, thrown exception, and behavioral guarantee — is the canonical [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](PHP_PERSISTENCE_PACKAGE_REFERENCE.md). This section is an overview only and is not repeated there in full.
 
 ## Critical Runtime Behavior
 
 - **Caller-owned vs. package-owned transactions:** every runner and `moveWithinScope()` participates in an already-active transaction without ever beginning, committing, or finally rolling it back; it owns a transaction only when none was already active. The two transaction runners can opt into replay on that path. Ordering does not enable replay. See [Package Reference §4 and §7](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#4-ownership-vocabulary).
-- **Pagination runs the counts and optional data query separately.** The caller controls snapshot consistency through its transaction, isolation level, and SQL read semantics. A `READ COMMITTED` transaction can still observe concurrent commits between statements. See [Package Reference §5.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#53-pdopaginatorpaginate).
+- **Pagination runs the counts and optional data query separately.** With `PdoPaginator`, the caller controls snapshot consistency through its transaction, isolation, and SQL read semantics. A `READ COMMITTED` transaction can observe concurrent commits between statements. In the optional C1 path, the Host delegates one eligible read connection for a single snapshot page and receives its terminal disposition. See [Package Reference §5.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#53-pdopaginatorpaginate) and [§5.3.1](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination).
 - **MariaDB `innodb_snapshot_isolation=ON`** can make a locking Ordering read fail with driver error `1020` after the server has already rolled back the caller's whole transaction. This is a documented hazard, not a handled case: no retry, no savepoint recovery, and no setting change is attempted. See [Package Reference §7.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard).
 - Deadlock replay is opt-in, bounded to 3 retries after the initial attempt, and applies only to a package-owned transaction under the exact SQLSTATE `40001`/driver-code `1213` signature.
 
@@ -123,7 +123,7 @@ Table and column identifiers passed to `ScopedOrderingConfig` and sort-key ident
 
 ## Examples
 
-Runnable, Public-API-only examples live in [examples/](examples/): one each for Transaction, Pagination, and Ordering. Every example requires a real MySQL/MariaDB connection and is validated in CI using this repository's existing Integration infrastructure (no example invents a second database stack).
+Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The current source includes an [opt-in Snapshot example](examples/pagination_snapshot_usage.php) for a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage.
 
 ## Documentation
 
