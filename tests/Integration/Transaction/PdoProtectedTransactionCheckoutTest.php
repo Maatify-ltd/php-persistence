@@ -14,6 +14,7 @@ use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
 use Closure;
+use Error;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -35,6 +36,39 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $this->reject(static fn() => $checkout->returnForHost());
         $new = PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog);
         self::assertSame($pdo, $new->returnForHost());
+    }
+
+    public function testAttachmentFailedWorkAndEarlyCancellationSendNoSql(): void
+    {
+        $relay = PartnerProcess::start([
+            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'START TRANSACTION READ WRITE', 'prequalification-no-sql',
+        ]);
+        try {
+            $ready = $relay->readLine(12.0);
+            if (preg_match('/\AREADY 127\.0\.0\.1:([0-9]+)\z/', $ready, $endpoint) !== 1) {
+                self::fail('The protected transaction test relay did not start.');
+            }
+            $pdo = new PDO(
+                'mysql:host=127.0.0.1;port=' . $endpoint[1] . ';dbname=' . self::setting('DATABASE'),
+                self::setting('USER'),
+                self::setting('PASSWORD'),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT, PDO::ATTR_TIMEOUT => 8],
+            );
+            $catalog = new ProtectedTransactionCommandCatalog(['read' => new ProtectedTransactionCommandPlan('SELECT 1', [], 1)]);
+            $this->reject(static fn() => PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog));
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog);
+            unset($pdo);
+            $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
+            $this->reject(static fn() => $checkout->rollBack());
+            $returned = $checkout->returnForHost();
+            self::assertSame(ProtectedTransactionReasonEnum::CANCELLED_BEFORE_QUALIFICATION, $checkout->settlement()?->reason);
+            unset($returned);
+            self::assertSame('NO SQL BEFORE HANDOFF', $relay->readLine(12.0));
+        } finally {
+            $relay->stop();
+        }
     }
 
     public function testHostChoosesTransactionEndAndReceivesSameConnection(): void
@@ -62,10 +96,29 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $this->reject(static fn() => $checkout->begin());
         $settlement = $checkout->settlement();
         self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::SERVER_QUALIFICATION_FAILED, $settlement->reason);
         $this->reject(static fn() => $checkout->returnForHost());
         $this->reject(static fn() => $checkout->rollBack());
         $checkout->discardForHost();
         self::assertSame($settlement, $checkout->settlement());
+        $this->reject(static fn() => PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([])));
+    }
+
+    public function testCheckoutCannotBeClonedSerializedOrRestored(): void
+    {
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive($this->connect(), new ProtectedTransactionCommandCatalog([]));
+        $copy = static fn(object $value): object => clone $value;
+        try {
+            self::fail(sprintf('Expected PHP to reject cloning %s.', $copy($checkout)::class));
+        } catch (Error $failure) {
+            self::assertStringContainsString('__clone', $failure->getMessage());
+        }
+        $this->reject(static fn() => serialize($checkout));
+        $class = PdoProtectedTransactionCheckout::class;
+        $encoded = sprintf('O:%d:"%s":0:{}', strlen($class), $class);
+        $this->reject(static fn() => unserialize($encoded, ['allowed_classes' => [$class]]));
+        self::assertUnsettled($checkout);
+        $checkout->returnForHost();
     }
 
     public function testTheRegistryDoesNotKeepTheConnectionAliveAfterDiscard(): void

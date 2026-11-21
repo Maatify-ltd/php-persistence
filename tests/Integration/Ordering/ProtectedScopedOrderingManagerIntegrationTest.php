@@ -128,22 +128,47 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
     {
         $first = $this->fixture->insertScoped('target', 1);
         $second = $this->fixture->insertScoped('target', 2);
+        $mariaDb = self::engine() === 'mariadb';
+        $catalog = ['read' => new ProtectedTransactionCommandPlan('SELECT 1', [], 1)];
+        if ($mariaDb) {
+            // The ordering rows stay eligible for their initial locking reads.
+            // A distinct row changes after the Host snapshot and is first locked
+            // by the trigger on the movement UPDATE, inside the savepoint.
+            $auxiliary = $this->createTable($this->pdo);
+            $this->pdo->exec("INSERT INTO `$auxiliary` (id, v) VALUES (1, 10)");
+            $table = $this->scopedTable;
+            $this->pdo->exec(
+                "CREATE TRIGGER `{$table}_snapshot` BEFORE UPDATE ON `$table` FOR EACH ROW "
+                . "SET NEW.label = (SELECT CAST(v AS CHAR) FROM `$auxiliary` WHERE id = 1 FOR UPDATE)",
+            );
+            $catalog['snapshot'] = new ProtectedTransactionCommandPlan("SELECT v FROM `$auxiliary` WHERE id = 1", [], 1);
+        }
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'ordering-1020',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            $mariaDb ? 'observe-ordering-1020' : 'ordering-1020',
         ]);
         try {
-            $checkout = PdoProtectedTransactionCheckout::attachExclusive(
-                $this->delegatedConnection($this->relayPort($relay), true),
-                new ProtectedTransactionCommandCatalog(['read' => new ProtectedTransactionCommandPlan('SELECT 1', [], 1)]),
-            );
+            $pdo = $this->delegatedConnection($this->relayPort($relay), true);
+            if ($mariaDb) {
+                $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+                $pdo->exec('SET SESSION innodb_snapshot_isolation = ON');
+            }
+            $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog($catalog));
+            unset($pdo);
             $checkout->begin();
+            if ($mariaDb) {
+                self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('snapshot'));
+                $this->pdo->exec("UPDATE `$auxiliary` SET v = 20 WHERE id = 1");
+            }
             $manager = new ProtectedScopedOrderingManager();
             $failure = self::failureOf(fn() => $manager->moveWithinScope($checkout, $this->scopedConfig(), 'target', $second, 1));
             self::assertSame(1020, self::driverCode($failure));
             $settlement = $checkout->settlement();
             self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
             self::assertSame(
-                self::engine() === 'mariadb' ? ProtectedTransactionReasonEnum::TRANSACTION_LOST : ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED,
+                $mariaDb ? ProtectedTransactionReasonEnum::TRANSACTION_LOST : ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED,
                 $settlement->reason,
             );
             $this->reject(static fn() => $checkout->runRegisteredCommand('read'));

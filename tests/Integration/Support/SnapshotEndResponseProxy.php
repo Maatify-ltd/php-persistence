@@ -48,7 +48,10 @@ if ($host === false || $port === false || !in_array($target, [
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
     'RELEASE SAVEPOINT',
-], true) || !in_array($stage, ['after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020', 'protected-tail-churn'], true)
+], true) || !in_array($stage, [
+    'after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020',
+    'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql',
+], true)
     || ($stage === 'protected-tail-churn' && preg_match('/\Ait_ordering_scoped_[0-9a-f]{12}\z/', $fixtureTable) !== 1)
 ) {
     throw new InvalidArgumentException('Missing relay target.');
@@ -89,27 +92,38 @@ try {
                 $length = ord($header[0]) | (ord($header[1]) << 8) | (ord($header[2]) << 16);
                 $sequence = ord($header[3]);
                 $payload = readPacketBytes($peer, $length);
-                if ($stage === 'ordering-1020' && $peer === $client && $sequence === 0) {
+                if ($stage === 'prequalification-no-sql' && $peer === $client && $sequence === 0) {
+                    if ($payload !== "\x01") {
+                        throw new RuntimeException('The unqualified checkout sent a driver command.');
+                    }
+                    echo "NO SQL BEFORE HANDOFF\n";
+                    fflush(STDOUT);
+                    break;
+                }
+                if (($stage === 'ordering-1020' || $stage === 'observe-ordering-1020') && $peer === $client && $sequence === 0) {
                     if (preg_match('/\A\x03SAVEPOINT maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1) {
                         $savepointSent = true;
-                    } elseif ($savepointSent && preg_match('/\A\x03UPDATE .*?WHERE `id` = /s', $payload) === 1) {
+                    } elseif ($stage === 'ordering-1020' && $savepointSent && preg_match('/\A\x03UPDATE .*?WHERE `id` = /s', $payload) === 1) {
                         $payload = "\x03SIGNAL SQLSTATE 'HY000' SET MYSQL_ERRNO = 1020, MESSAGE_TEXT = 'fixture movement failure'";
                         $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
                         $orderingErrorSent = true;
                     }
                 }
-                if ($orderingErrorSent && $peer === $server) {
-                    if (ord($payload[0]) !== 0xff || unpack('v', substr($payload, 1, 2)) !== [1 => 1020]) {
+                if ($peer === $server && ($orderingErrorSent || ($savepointSent && $stage === 'observe-ordering-1020'))) {
+                    $isOrderingError = str_starts_with($payload, "\xff") && unpack('v', substr($payload, 1, 2)) === [1 => 1020];
+                    if ($orderingErrorSent && !$isOrderingError) {
                         throw new RuntimeException('The server did not respond with the expected injected error.');
                     }
-                    writePacketBytes($client, $header . $payload);
-                    $afterError = [$client];
-                    if (stream_select($afterError, $write, $except, 0, 500_000) !== 0) {
-                        throw new RuntimeException('A packet followed the fenced driver error.');
+                    if ($isOrderingError) {
+                        writePacketBytes($client, $header . $payload);
+                        $afterError = [$client];
+                        if (stream_select($afterError, $write, $except, 0, 500_000) !== 0) {
+                            throw new RuntimeException('A packet followed the fenced driver error.');
+                        }
+                        echo "NO SQL AFTER DRIVER ERROR\n";
+                        fflush(STDOUT);
+                        break;
                     }
-                    echo "NO SQL AFTER DRIVER ERROR\n";
-                    fflush(STDOUT);
-                    break;
                 }
                 if ($stage === 'protected-tail-churn' && $peer === $client && $sequence === 0
                     && str_starts_with($payload, "\x03SELECT `display_order`")
