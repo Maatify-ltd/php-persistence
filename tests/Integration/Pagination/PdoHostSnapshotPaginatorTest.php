@@ -9,17 +9,21 @@ use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPagePlan;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
+use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as Stage;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
+use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotPaginator;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use RuntimeException;
 use SensitiveParameterValue;
 use Throwable;
@@ -39,10 +43,14 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $writer = $this->connect();
         $table = $this->createTable($writer);
         $writer->exec("INSERT INTO $table VALUES (1, 10), (2, 20), (3, 30)");
-        $mapperFailure = new RuntimeException('Original mapper failure.');
+        $mapperFailure = null;
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection($emulated), new HostSnapshotCatalog([
             'broken' => $this->plan($table, bad: true),
-            'mapper' => $this->plan($table, static fn () => throw $mapperFailure),
+            'mapper' => $this->plan($table, static function () use (&$mapperFailure): never {
+                $mapperFailure = new RuntimeException('Original mapper failure.');
+
+                throw $mapperFailure;
+            }),
             'page' => $this->plan($table),
         ]));
         $lease = $source->checkout();
@@ -52,7 +60,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $mapper = $lease->newAttempt($lease->authorizePage('mapper', ['min' => 10], new PageRequest()));
         $success = $lease->newAttempt($lease->authorizePage('page', ['min' => 10], new PageRequest(2)));
         self::assertSame(Stage::NEW, $broken->state());
-        self::assertNull($broken->settlement());
+        self::assertNull(call_user_func($broken->settlement(...)));
 
         $ignoreArgs = ini_get('zend.exception_ignore_args');
         ini_set('zend.exception_ignore_args', '0');
@@ -65,6 +73,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
                 self::fail('Expected the mapper to throw.');
             } catch (RuntimeException $error) {
                 self::assertSame($mapperFailure, $error);
+                self::assertContains('readAttempt', array_column($error->getTrace(), 'function'));
                 self::assertTraceDoesNotExposeDriver($error);
             }
             $page = $paginator->paginate($success);
@@ -139,6 +148,56 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $lease->release();
     }
 
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testFirstUseAutoloadCannotAdmitAnOldGrantToANewGeneration(): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
+            'empty' => new HostSnapshotPagePlan('SELECT 0', 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn (array $row): array => $row),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $attempt = $lease->newAttempt($lease->authorizePage('empty', [], new PageRequest()));
+        $changed = false;
+        $loader = static function (string $class) use ($lease, &$changed): void {
+            if ($class === HostSnapshotPageSettlementDTO::class) {
+                $lease->rollBack();
+                $lease->beginRepeatableRead();
+                $changed = true;
+            }
+        };
+        self::assertFalse(class_exists(HostSnapshotPageSettlementDTO::class, false));
+        spl_autoload_register($loader, prepend: true);
+        try {
+            self::reject(fn () => new PdoHostSnapshotPaginator()->paginate($attempt));
+            self::assertTrue($changed);
+            self::assertSame(Reason::STALE_CONTEXT, $attempt->settlement()?->reason);
+        } finally {
+            spl_autoload_unregister($loader);
+            $lease->rollBack();
+            $lease->release();
+        }
+    }
+
+    public function testInvalidCountAfterCleanCursorAllowsHostToEndItsTransaction(): void
+    {
+        $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([
+            'invalid' => new HostSnapshotPagePlan("SELECT 'not a count'", 'SELECT 0', 'SELECT 1 AS id', [], [], [], $this->config(), static fn (array $row): array => $row),
+        ]));
+        $lease = $source->checkout();
+        $lease->beginRepeatableRead();
+        $attempt = $lease->newAttempt($lease->authorizePage('invalid', [], new PageRequest()));
+        try {
+            new PdoHostSnapshotPaginator()->paginate($attempt);
+            self::fail('Expected an invalid count.');
+        } catch (PaginationExecutionException $error) {
+            self::assertSame('Invalid pagination count value.', $error->getMessage());
+        }
+        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        $lease->rollBack();
+        $lease->release();
+    }
+
     /** @param (Closure(array<string, mixed>): array<string, mixed>)|null $mapper */
     private function plan(string $table, ?Closure $mapper = null, bool $bad = false): HostSnapshotPagePlan
     {
@@ -178,8 +237,8 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
     {
         try {
             $action();
-        } catch (HostSnapshotPaginationException) {
-            self::assertTrue(true);
+        } catch (HostSnapshotPaginationException $error) {
+            self::assertNotSame('', $error->getMessage());
 
             return;
         }

@@ -22,6 +22,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum as Di
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum as Reason;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOException;
 use PDOStatement;
@@ -260,6 +261,12 @@ final class PdoHostSnapshotSource
      */
     public function readAttempt(HostSnapshotPageAttempt $attempt): PageResultDTO
     {
+        // First-use autoloading may run Host code. Materialize the outcomes before
+        // checking the generation, then admit without anything that invokes a callback.
+        $fallback = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SETTLEMENT_UNCONFIRMED);
+        $scopeUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SCOPE_UNCONFIRMED);
+        $resourcesUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::RESOURCE_RELEASE_UNCONFIRMED);
+
         $record = $this->attempts[$attempt] ?? null;
         if ($record === null || $record->state !== Stage::NEW || $record->grant === null) {
             throw new HostSnapshotPaginationException('The Host snapshot attempt is unavailable.');
@@ -278,10 +285,6 @@ final class PdoHostSnapshotSource
             throw new HostSnapshotPaginationException('The Host snapshot attempt was not accepted.');
         }
 
-        $fallback = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SETTLEMENT_UNCONFIRMED);
-        $scopeUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SCOPE_UNCONFIRMED);
-        $resourcesUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::RESOURCE_RELEASE_UNCONFIRMED);
-
         $this->busy = true;
         $grant->consumed = true;
         $record->state = Stage::RUNNING;
@@ -294,9 +297,14 @@ final class PdoHostSnapshotSource
                 $page = (new HostSnapshotPageReader($this->connection))->read($grant, $mapping);
             } catch (Throwable $error) {
                 $primary = $error;
-                $knownReadError = $error instanceof PDOException
-                    && ($error->errorInfo[0] ?? null) === '42S22'
-                    && ($error->errorInfo[1] ?? null) === 1054;
+                // These validation failures and name-resolution errors cannot
+                // finish a Host transaction in an eligible registered read.
+                $knownReadError = $error instanceof PaginationExecutionException
+                    || ($error instanceof PDOException && in_array(
+                        [$error->errorInfo[0] ?? null, $error->errorInfo[1] ?? null],
+                        [['42S22', 1054], ['42S02', 1146]],
+                        true,
+                    ));
                 if (! $this->connection->resourcesReleased() || (! $mapping && ! $knownReadError)) {
                     throw $error;
                 }
@@ -310,7 +318,6 @@ final class PdoHostSnapshotSource
             if ($primary !== null) {
                 throw $primary;
             }
-            assert(isset($page));
 
             return $page;
         } catch (Throwable $error) {

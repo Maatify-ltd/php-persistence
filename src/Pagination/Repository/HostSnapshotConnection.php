@@ -6,6 +6,7 @@ namespace Maatify\PhpPersistence\Pagination\Repository;
 
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceeded;
+use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOStatement;
 use Throwable;
@@ -36,12 +37,12 @@ final class HostSnapshotConnection
     /** @param array<string, int|string|bool|null> $bindings
      *  @return list<array<string, mixed>>
      */
-    public function rows(string $sql, array $bindings, int $maxRows): array
+    public function rows(string $sql, array $bindings, int $maxRows, bool $positional = false): array
     {
         try {
-            $result = $this->execute($sql, $bindings, $maxRows);
+            $result = $this->execute($sql, $bindings, $maxRows, $positional);
         } catch (HostSnapshotRowLimitExceeded) {
-            throw new HostSnapshotPaginationException('The Host snapshot result exceeds its row limit.');
+            throw new PaginationExecutionException('The Host snapshot result exceeds its row limit.');
         }
         assert(is_array($result));
 
@@ -52,7 +53,7 @@ final class HostSnapshotConnection
      * @param array<string, int|string|bool|null> $bindings
      * @return int|list<array<string, mixed>>
      */
-    public function execute(string $sql, array $bindings, ?int $maxRows): int|array
+    public function execute(string $sql, array $bindings, ?int $maxRows, bool $positional = false): int|array
     {
         if ($this->statement !== null) {
             throw new HostSnapshotPaginationException('Host snapshot resources are unresolved.');
@@ -84,18 +85,15 @@ final class HostSnapshotConnection
             }
 
             $rows = [];
-            while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+            $fetchMode = $positional ? PDO::FETCH_NUM : PDO::FETCH_ASSOC;
+            while (($row = $statement->fetch($fetchMode)) !== false) {
                 if (count($rows) === $maxRows) {
                     throw new HostSnapshotRowLimitExceeded();
                 }
-                $normalized = [];
-                foreach ($row as $name => $value) {
-                    if (! is_string($name)) {
-                        throw new HostSnapshotPaginationException('Host snapshot row keys must be strings.');
-                    }
-                    $normalized[$name] = $value;
+                if (! is_array($row)) {
+                    throw new PaginationExecutionException('Host snapshot fetch must return a row.');
                 }
-                $rows[] = $normalized;
+                $rows[] = $this->normalizeRow($row, $positional);
             }
             if ($statement->errorCode() !== '00000') {
                 throw new HostSnapshotPaginationException('Unable to fetch the Host snapshot result.');
@@ -117,6 +115,25 @@ final class HostSnapshotConnection
                 }
             }
         }
+    }
+
+    /**
+     * @param array<array-key, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function normalizeRow(array $row, bool $positional): array
+    {
+        $normalized = [];
+        foreach ($row as $name => $value) {
+            if ($positional) {
+                $name = 'column_' . $name;
+            } elseif (! is_string($name)) {
+                throw new PaginationExecutionException('Host snapshot row keys must be strings.');
+            }
+            $normalized[$name] = $value;
+        }
+
+        return $normalized;
     }
 
     public function control(string $sql): void

@@ -65,7 +65,7 @@ final readonly class HostSnapshotPageReader
     /** @param array<string, string|int|bool|null> $bindings */
     private function count(string $sql, array $bindings, PdoPaginationExecution $shape): int
     {
-        $rows = $this->connection->rows($sql, $bindings, 2);
+        $rows = $this->connection->rows($sql, $bindings, 2, positional: true);
         if (count($rows) !== 1 || count($rows[0]) !== 1) {
             throw new PaginationExecutionException('Pagination count query must return exactly one row and one column.');
         }
