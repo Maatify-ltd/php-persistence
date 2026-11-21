@@ -31,6 +31,7 @@ $examples = [
     'transaction_basic_usage.php',
     'pagination_basic_usage.php',
     'pagination_snapshot_usage.php',
+    'pagination_keyset_usage.php',
     'ordering_basic_usage.php',
 ];
 

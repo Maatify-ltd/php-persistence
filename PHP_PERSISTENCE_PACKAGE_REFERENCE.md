@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1 describes repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1 and Keyset describe repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -74,16 +74,21 @@ src/
 │   └── Repository/ScopedOrderingManager.php
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
+│   ├── Criteria/KeysetQueryDescriptor.php
 │   ├── Criteria/PageRequest.php
 │   ├── Criteria/PdoPaginationQueryDescriptor.php
+│   ├── DTO/KeysetPageResultDTO.php
 │   ├── DTO/PageResultDTO.php
 │   ├── DTO/SnapshotConnectionOutcomeDTO.php
 │   ├── Enum/SnapshotConnectionDispositionEnum.php
 │   ├── Enum/SortDirectionEnum.php
+│   ├── Exception/InvalidKeysetCursorException.php
 │   ├── Exception/InvalidPaginationConfigurationException.php
 │   ├── Exception/InvalidPaginationQueryException.php
 │   ├── Exception/PaginationExecutionException.php
 │   ├── Exception/SnapshotPaginationException.php
+│   ├── Repository/KeysetCursor.php             (@internal)
+│   ├── Repository/PdoKeysetPaginator.php
 │   ├── Repository/PdoPaginationExecution.php   (@internal)
 │   ├── Repository/PdoPaginator.php
 │   ├── Repository/PdoSnapshotPaginator.php
@@ -364,9 +369,58 @@ public function connectionOutcome(): ?SnapshotConnectionOutcomeDTO;
 
 Behavior: see §5.3.1.
 
+#### Optional Keyset API (forward by stable `id`)
+
+The three types below are `final readonly`. Keyset is an opt-in reader on the Host's existing PDO connection. It has its own result and leaves the injection, counting, ordering, and navigation contracts of `PdoPaginator` and `PdoSnapshotPaginator` in effect. See §5.3.2 for registration and continuation requirements.
+
+```php
+// Criteria\KeysetQueryDescriptor
+public function __construct(
+    string $queryId,
+    string $revision,
+    string $table,
+    array $columns,
+    string $scopePredicate,
+    array $parameterNames,
+    string $filterPredicate = '1 = 1',
+);
+
+// Repository\PdoKeysetPaginator
+public function __construct(
+    string $activeKeyId,
+    #[\SensitiveParameter] array $keys,
+    int $defaultLimit = 20,
+    int $maxLimit = 200,
+);
+
+public function paginate(
+    PDO $pdo,
+    KeysetQueryDescriptor $query,
+    string $scope,
+    array $bindings,
+    callable $mapper,
+    ?string $cursor = null,
+    ?int $limit = null,
+): KeysetPageResultDTO;
+
+// DTO\KeysetPageResultDTO implements JsonSerializable
+public function __construct(
+    public array $data,
+    public bool $hasNext,
+    public ?string $nextCursor,
+);
+
+public function jsonSerialize(): array;
+```
+
+- `$keys` is a list of `array{id: string, secret: string}` records. Each ID matches `[A-Za-z0-9_-]{1,32}`, is unique, and remains a string even when all its characters are digits. The active ID must be present. Supply a cryptographically random secret of at least 32 bytes for each ID. The limit policy is `1 <= defaultLimit <= maxLimit < PHP_INT_MAX`. Invalid configuration raises `InvalidPaginationConfigurationException`.
+- `$bindings` is an exact map from declared names to `string|int|bool|null`. The mapper receives one associative array with the requested columns after release of the read statement and returns an array or object. The reserved projection is removed and the extra row is never mapped.
+- The result constructor accepts a list of arrays or objects in supplied order, enforces `$hasNext === ($nextCursor !== null)`, rejects an empty cursor string, and rejects continuation on an empty page. Invalid construction raises `PaginationExecutionException`. JSON has the keys `data`, `hasNext`, and `nextCursor`. The paginator verifies cursor authenticity and context when consuming it.
+- `serialize()` and restoration through `unserialize()` of the paginator raise `PaginationExecutionException` with the message `Keyset paginator does not support serialization or restoration.`. Its normal `var_dump()` representation excludes key material. Library-generated messages and ordinary backtrace arguments redact signing material and sensitive request inputs. This representation is scoped to PHP's regular diagnostics. Reflection and `var_export()` have their own property-inspection semantics. The Host controls any logging of driver and mapper failures, which keep their original identity.
+
 #### Pagination exceptions
 
-`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException`, `SnapshotPaginationException` — see §6.2.
+`InvalidPaginationConfigurationException`, `InvalidPaginationQueryException`, `PaginationExecutionException`, `SnapshotPaginationException`, `InvalidKeysetCursorException` — see §6.2.
 
 ### 3.4 Ordering capability — `Maatify\PhpPersistence\Ordering\`
 
@@ -432,6 +486,7 @@ public function rowExistsInScope(
 
 These classes are reachable because PHP does not restrict class visibility, but they carry **no SemVer guarantee** and may change or disappear in any release without notice. A consumer must not construct, type-hint, or depend on them.
 
+- **`Pagination\Repository\KeysetCursor`** and **`Pagination\Criteria\KeysetQueryDescriptor::registration()`** — internal cursor protocol and the repository’s registration accessor.
 - **`Pagination\Repository\PdoPaginationExecution`** — the shared count and data execution for the caller-controlled and C1 paginators.
 - **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
@@ -515,6 +570,20 @@ C1 closes its read resources and verifies the delegated transaction and session 
 
 The Host settles the exact checkout after the outer invocation completes, even on exception. An attempt without a terminal outcome keeps the checkout out of circulation. The Host must hold it out of circulation by default and make it available only after successful settlement. It retains ownership of the connection, reset and disposal and rejects a stale or foreign outcome. A failed settlement must leave the checkout unavailable and must preserve any original page failure. See [the standalone example](examples/pagination_snapshot_usage.php) for a fresh non-persistent connection.
 
+#### 5.3.2 Optional forward-only Keyset pagination
+
+**Host integration.** At startup, register one trusted `KeysetQueryDescriptor` per query shape and construct a paginator from the Host's deployment keyring. Use an InnoDB table with a stable, unique integer `id` and values in `1..PHP_INT_MAX`. The table can be a single bare name or a schema-qualified name. Project a nonempty list of unqualified names. Identifiers match `[A-Za-z_][A-Za-z0-9_]*` as supplied. Duplicate projection names and the reserved `__ks_id` are rejected regardless of case. The query ID and revision are nonempty, and both predicates are nonblank.
+
+The Host supplies side-effect-free predicates registered from trusted code. The predicates use the table alias `t` and named PDO placeholders only, each name used once across both predicates. The declaration is a list of distinct names matching the ASCII identifier pattern without a leading colon. Keyset reserves the prefix `__ks_` regardless of case. It rejects the literal text `:__ks_` anywhere in either predicate, including quotes and comments, regardless of case. Registration owns the correspondence between real SQL placeholders and the declarations. The package performs this bounded text check and validates the binding map before `prepare()`. PDO can accept some ineligible shapes under emulation, including a repeated marker.
+
+Pass an eligible `pdo_mysql` connection, in `ERRMODE_EXCEPTION` and `CASE_NATURAL`. Native and emulated prepares are eligible. The Host authorizes every request and supplies a trusted, nonempty scope identifying the actual dataset, tenant, and effective authorization boundary. If two sources use the same SQL and bindings, the Host supplies distinct scopes. The operation issues one bounded SELECT in the current read view. The Host retains the connection attributes, isolation and all transaction commands, and decides how to handle the connection after failure.
+
+**Read and resume.** With a null cursor, the paginator reads the first page. For a continuation, give the same registration, scope, bindings, and effective limit with the returned `nextCursor`. An omitted limit uses the default and a supplied limit must be in `1..maxLimit`. The read groups the scope and filter predicates individually. The continuation adds `t.id > :__ks_after`, bound as an integer. Both reads use `id ASC` and fetch up to `limit + 1`. Projected columns must match the registered names. Every raw ID, including the extra row, must be a positive in-range integer or its canonical ASCII decimal representation and must strictly increase. After confirmed statement release the mapper receives only displayed rows in order. The extra row determines `hasNext`, and the next cursor comes from the last displayed raw ID. The empty page result is `[]/false/null`. Each request reads its own view. Changes to membership between reads are visible according to the Host's transaction and isolation.
+
+**Cursor v1.** Treat the returned cursor as opaque when forwarding it. Its signed position is readable, and it carries no time-to-live. Verification binds it to the query ID and revision, the trusted scope, both query texts, the effective limit, and the exact typed bindings. A change in that context invalidates it before the page query. During rotation retain the old ID and secret while accepting old cursors, issue with the new active ID, and remove the old ID to retire its cursors. Keep the same keyring across workers and never reuse a key ID for a different secret. The exact signing and context format is recorded in the [approved v1 design](https://github.com/Maatify-ltd/php-persistence/issues/35#issuecomment-7056253955).
+
+**Failures.** Rejected cursors get a common `InvalidKeysetCursorException` message. The package distinguishes normal fetch completion from a PDO-reported failure, and preserves the primary failure if cleanup fails as well. A false return from PDO or invalid row and mapper results raise `PaginationExecutionException`. An unsuccessful close or cursor issuance prevents result delivery. A PDO or mapper throwable propagates unchanged. See the [runnable Composer example](examples/pagination_keyset_usage.php) for first-page and continuation calls.
+
 ### 5.4 `ScopedOrderingManager`
 
 The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
@@ -585,10 +654,11 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 
 | Exception | Base | Thrown when |
 |---|---|---|
-| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist. |
-| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value). |
-| `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3). |
+| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; invalid Keyset limit policy or signing keyring (see §3.3). |
+| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
+| `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (see §3.3/§5.3.2). |
 | `SnapshotPaginationException` | `SystemMaatifyException` | C1 rejects the delegated connection or operation state, cannot confirm resources or owned transaction control, or is given an invalid discard outcome. Driver and mapper throwables retain their identities. |
+| `InvalidKeysetCursorException` | `ValidationMaatifyException` | A supplied Keyset cursor is malformed, out of range, unauthentic, uses an unavailable key, or does not match the authorized query context. |
 
 ### 6.3 Ordering
 
@@ -664,6 +734,7 @@ This section exists so that every behavioral claim above can be checked directly
 |---|---|---|
 | Transaction | `tests/Regression/TransactionPublicApiRegressionTest.php`, `tests/Regression/Exception/*ContractTest.php` | `tests/Unit/Transaction/Repository/{PdoTransactionRunnerTest,PdoSavepointTransactionRunnerTest,PdoSavepointTransactionRunnerRetryTest,OwnedTransactionExecutorTest,DeadlockRetryFailClosedTest,SavepointScopeTest}.php`; `tests/Integration/Transaction/{PdoTransactionRunnerIntegrationTest,PdoSavepointTransactionRunnerIntegrationTest,DeadlockRetryIntegrationTest}.php` (genuine deadlocks via a real partner process) |
 | Pagination | `tests/Regression/Pagination/{PaginationPublicApiRegressionTest,PaginationSqlContractRegressionTest}.php` | `tests/Unit/Pagination/*.php`; `tests/Integration/Pagination/{PdoPaginatorQuerySemanticsTest,PdoPaginatorFailureContractTest,PdoPaginatorSnapshotConsistencyTest,PdoPaginatorTransactionTest}.php` (caller-controlled pagination); `tests/Integration/Pagination/{PdoSnapshotPaginatorTest,PdoSnapshotPaginatorFailureTest}.php` (C1 snapshot, session continuity, and Host disposition) |
+| Optional Keyset | `harness/keyset-api.php` and the installed Composer example via `composer test:consumer` | `tests/Unit/Pagination/{KeysetContractTest,PdoKeysetPaginatorTest}.php` (registration, JSON, SQL/wire golden, diagnostics and failure); `tests/Integration/Pagination/PdoKeysetPaginatorIntegrationTest.php` (PDO, native/emulated, Host transaction, scope, and bounds) |
 | Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest,Repository/ScopedOrderingManagerExecutionFailureTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
 
 A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its legacy-vs-current delta) remains available in [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as a framed historical/evidence record; this section and §§5–8 above are the current normative restatement for a consumer.

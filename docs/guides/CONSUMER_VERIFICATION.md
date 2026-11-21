@@ -11,6 +11,8 @@ The required CI job provisions two separate MySQL 8.4.13 services through the ex
 
 After each scenario passes, the harness runs the [C1 snapshot example](../../examples/pagination_snapshot_usage.php) from the corresponding external Composer root. The example and its bootstrap come from the installed candidate and load that root's production autoloader. It exercises success and mapper failure on fresh non-persistent readers. Both paths confirm reuse of the same session after settlement, and the failure path verifies original exception identity. The legacy comparison covers caller-controlled pagination. C1 is verified on the candidate only.
 
+Each production Composer root also checks the installed Keyset signatures and exception marker, then runs the [Keyset example](../../examples/pagination_keyset_usage.php) from the installed archive. It reads two pages and checks the continuation, terminal JSON and cursor rejection for a different Host scope. Keyset is verified on the candidate in this scenario.
+
 ## Coexistence audit
 
 [DEC-016](../decisions/DEC-016-legacy-coexistence-abandonment-audit.md) allows an audit-only abandonment ignore for the published legacy fixture in the temporary coexistence project. The harness first installs with the default policy, checks platform requirements, and verifies that the production lock identifies `maatify/persistence:1.4.0` with dist reference `fc1459b49fe5af5ead17814eeb3ada7a3fa81791`. Composer matches abandonment ignores by package name, so the harness checks this exact version and reference before adding the rule. It runs `composer audit --abandoned=fail` with the rest of the policy intact. The differential project and other audits use the standard policy.
