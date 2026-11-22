@@ -50,6 +50,9 @@ if ($host === false || $port === false || !in_array($target, [
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
     'RELEASE SAVEPOINT',
+    'SAVEPOINT maatify_wub22_proof',
+    'ROLLBACK TO SAVEPOINT maatify_wub22_proof',
+    'RELEASE SAVEPOINT maatify_wub22_proof',
 ], true) || !in_array($stage, [
     'after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020',
     'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql',
