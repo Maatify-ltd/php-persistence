@@ -109,6 +109,11 @@ final class ProtectedTransactionConnection
         return $this->continuityFailure;
     }
 
+    /**
+     * Confirms the qualified active session for a Verified command. Null
+     * signals missing qualification. Any failure is latched as a continuity
+     * failure if the receiver has no earlier failure.
+     */
     public function verifyActive(?string $session): void
     {
         try {
@@ -123,6 +128,7 @@ final class ProtectedTransactionConnection
         }
     }
 
+    /** Stops tracking a statement that the command executor has already sealed. */
     public function forgetStatement(ProtectedTransactionStatement $statement): void
     {
         unset($this->statements[spl_object_id($statement)]);

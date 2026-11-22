@@ -9,10 +9,16 @@ use Fiber;
 use WeakMap;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 
-/** @internal Command grant for one invocation under a checkout reservation. */
+/**
+ * Command grant bound to the creating Fiber or root context. The weak owner
+ * reference lets an abandoned Fiber unwind. Closing the grant expires it and
+ * releases its captured command before transaction control resumes.
+ *
+ * @internal
+ */
 final class VerifiedTransactionCommandScope implements VerifiedTransactionCommandsInterface
 {
-    /** @var WeakMap<object, true>|null */
+    /** @var WeakMap<object, true>|null Fiber identity when created inside a Fiber. Null represents the root context while live. */
     private ?WeakMap $owner = null;
 
     /** @param (Closure(string, array<array-key, mixed>): (int|list<array<array-key, mixed>>))|null $command */
@@ -25,6 +31,7 @@ final class VerifiedTransactionCommandScope implements VerifiedTransactionComman
         }
     }
 
+    /** Rejects expired grants and calls from another execution context before dispatch. */
     public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
     {
         $fiber = Fiber::getCurrent();
@@ -35,6 +42,7 @@ final class VerifiedTransactionCommandScope implements VerifiedTransactionComman
         return ($this->command)($commandId, $bindings);
     }
 
+    /** Ends command authority and detaches the closure even if the callback failed. */
     public function close(): void
     {
         $this->command = null;

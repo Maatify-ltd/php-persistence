@@ -14,7 +14,12 @@ final readonly class ProtectedTransactionCommandExecutor
     public function __construct(private ProtectedTransactionConnection $connection) {}
 
     /**
-     * @param array<string, int|string|bool|null> $params
+     * Executes a validated plan against the reserved receiver. Exceeding the
+     * row bound raises an exception instead of returning a partial result.
+     *
+     * @param array<string, int|string|bool|null> $params Bindings already validated by the plan.
+     * @param bool $releaseBeforeReturn Fold cursor release into this command's result. Otherwise the checkout owns release.
+     *                                 An earlier command error retains precedence over cursor cleanup.
      * @return int|list<array<array-key, mixed>>
      */
     public function run(

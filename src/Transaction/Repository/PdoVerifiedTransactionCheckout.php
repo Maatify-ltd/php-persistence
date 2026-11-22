@@ -17,12 +17,27 @@ use PDOException;
 use SensitiveParameter;
 use Throwable;
 
-/** A single exclusive delegation for one verified Owned or Host transaction. */
+/**
+ * Holds one delegated PDO for one verified transaction. Use runOwned() for a
+ * checkout-managed start and end, or beginHost() and runInHost() for a single
+ * savepoint operation whose outer end remains a Host decision.
+ *
+ * The Host supplies an idle and exclusively held session with trusted,
+ * transaction-preserving commands. The checkout's continuity checks rely on
+ * the Host preventing raw aliases, reconnect and concurrent use.
+ *
+ * Normal payloads require acknowledged control and confirmed continuity.
+ * A latched failure fences further SQL and handoff. The first safety failure
+ * governs settlement and an escaping callback throwable keeps its identity.
+ * Decide handoff or retirement from settlement(). Callbacks are never replayed.
+ */
 final class PdoVerifiedTransactionCheckout
 {
+    /** Qualified session ID while the transaction is held. Terminal settlement clears it. */
     private ?string $session = null;
     private bool $mariaDb = false;
     private bool $busy = false;
+    /** The one permitted operation has been attempted, including a failed attempt. */
     private bool $attempted = false;
     private VerifiedTransactionSettlementDTO $snapshot;
 
@@ -35,11 +50,12 @@ final class PdoVerifiedTransactionCheckout
     }
 
     /**
-     * Locally claims an idle, genuinely exclusive PDO. The first start
-     * qualifies the server session. The Host owns the connection settings and
-     * must prevent aliases, reconnect, multiplexing and transaction-changing SQL.
+     * Claims an idle, non-persistent pdo_mysql connection without issuing SQL.
+     * The Host configures native prepares, exception mode, the default statement
+     * class, disabled multi-statements and enabled autocommit. The first start
+     * qualifies the session. Supply trusted plans that preserve the transaction.
      *
-     * @throws ProtectedTransactionException The Host retains authority on refusal.
+     * @throws ProtectedTransactionException The connection is already claimed or fails local eligibility. The Host retains authority on refusal.
      */
     public static function attachExclusive(
         #[SensitiveParameter]
@@ -61,8 +77,9 @@ final class PdoVerifiedTransactionCheckout
     }
 
     /**
-     * Owns start and end. Returns the application payload only after the
-     * requested end and the idle connection are confirmed.
+     * Starts the single Owned transaction from an unused checkout. Apply
+     * commits and Discard rolls back. The normal payload is returned after
+     * acknowledgement of that end and confirmation of the same idle session.
      *
      * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation
      */
@@ -73,7 +90,11 @@ final class PdoVerifiedTransactionCheckout
         return $this->run($operation, owned: true);
     }
 
-    /** Starts the transaction whose final decision remains with the Host. */
+    /**
+     * Starts the Host transaction from an unused checkout and confirms the
+     * qualified session before admitting work. A start that fails after
+     * reservation publishes a terminal settlement requiring retirement.
+     */
     public function beginHost(): void
     {
         $this->requireIdle();
@@ -91,7 +112,10 @@ final class PdoVerifiedTransactionCheckout
     }
 
     /**
-     * Runs a registered Host command outside the operation window.
+     * Runs a registered command before or after the Host operation window.
+     * Requires an active Host transaction and confirms session continuity
+     * and cursor release before returning the result. An invalid command ID
+     * or binding is rejected before SQL. A latched failure fences the checkout.
      *
      * @param array<array-key, mixed> $bindings Exact names without colons, with scalar or null values.
      * @return int|list<array<array-key, mixed>>
@@ -136,8 +160,10 @@ final class PdoVerifiedTransactionCheckout
     }
 
     /**
-     * Runs one savepoint-local operation. The Host still decides the outcome
-     * of the outer transaction after a confirmed apply or local discard.
+     * Runs the only savepoint-local operation in an active Host transaction.
+     * Apply requires acknowledged release. Discard requires acknowledged
+     * rollback to the savepoint and release. Both require continuity before
+     * returning the payload. The Host still decides the outer end.
      *
      * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation
      */
@@ -151,25 +177,39 @@ final class PdoVerifiedTransactionCheckout
         return $this->run($operation, owned: false);
     }
 
-    /** Ends the Host transaction with an explicit COMMIT. */
+    /**
+     * Commits the active Host transaction. An acknowledged commit is recorded
+     * even when the final idle-session check requires connection retirement.
+     */
     public function commit(): void
     {
         $this->finishHost(commit: true);
     }
 
-    /** Ends the Host transaction with an explicit ROLLBACK. */
+    /**
+     * Rolls back the active Host transaction. An acknowledged rollback is
+     * recorded even when the final idle-session check fails.
+     */
     public function rollBack(): void
     {
         $this->finishHost(commit: false);
     }
 
-    /** Returns the last published immutable snapshot, without I/O. */
+    /**
+     * Reads the last published local snapshot without I/O. Its fields are null
+     * on attachment. Previously returned snapshots remain unchanged.
+     */
     public function settlement(): VerifiedTransactionSettlementDTO
     {
         return $this->snapshot;
     }
 
-    /** Returns the same PDO once after confirmed completion or untouched cancellation. */
+    /**
+     * Returns the same PDO once and releases its claim after confirmed
+     * completion or untouched cancellation. Cancellation needs no server probe.
+     *
+     * @throws ProtectedTransactionException The checkout is busy, already handed off, retired, still active or requires discard.
+     */
     public function returnForHost(): PDO
     {
         $this->reserve();
@@ -190,7 +230,11 @@ final class PdoVerifiedTransactionCheckout
         }
     }
 
-    /** Retires the delegation without sending SQL or handing back the PDO. */
+    /**
+     * Retires the delegation by dropping the PDO reference. The claim remains
+     * while the object lives. This issues no explicit database command and
+     * preserves previously recorded terminal evidence.
+     */
     public function discardForHost(): void
     {
         $this->reserve();
@@ -209,6 +253,10 @@ final class PdoVerifiedTransactionCheckout
     }
 
     /**
+     * Reserves the checkout through callback expiry and settlement. A latched
+     * safety failure suppresses the decision before transaction control. An
+     * escaping callback throwable has precedence even if cleanup fails.
+     *
      * @param Closure(VerifiedTransactionCommandsInterface): mixed $operation
      */
     private function run(Closure $operation, bool $owned): mixed
@@ -328,6 +376,10 @@ final class PdoVerifiedTransactionCheckout
         return $payload;
     }
 
+    /**
+     * Qualifies an idle session, then records start uncertainty before START.
+     * Publishes the qualified session only after confirming it is active.
+     */
     private function start(Reason &$reason, Outcome &$transaction): void
     {
         $reason = Reason::QUALIFICATION_FAILED;
@@ -341,6 +393,10 @@ final class PdoVerifiedTransactionCheckout
         $this->mariaDb = $session['mariaDb'];
     }
 
+    /**
+     * Records acknowledged local undo before RELEASE so a later release or
+     * continuity failure preserves that evidence while suppressing the payload.
+     */
     private function finishWindow(SavepointScope $savepoint, bool $apply, Reason &$reason, Outcome &$effect): void
     {
         $reason = Reason::CONTINUITY_UNCONFIRMED;
@@ -376,6 +432,10 @@ final class PdoVerifiedTransactionCheckout
         }
     }
 
+    /**
+     * Records the acknowledged whole-transaction end before checking whether
+     * the same idle session is safe to return. An unacknowledged end stays unknown.
+     */
     private function end(bool $commit, Reason &$reason, Outcome &$transaction): void
     {
         $reason = Reason::CONTINUITY_UNCONFIRMED;
@@ -396,6 +456,7 @@ final class PdoVerifiedTransactionCheckout
         );
     }
 
+    /** Classifies the first latched failure, with recognized transaction loss taking precedence. */
     private function receiverReason(ProtectedTransactionConnection $receiver): Reason
     {
         if ($this->isTransactionLoss($receiver->failure())) {
@@ -415,6 +476,7 @@ final class PdoVerifiedTransactionCheckout
             : $reason;
     }
 
+    /** Matches the engine-specific driver signals used to classify loss of transaction authority. */
     private function isTransactionLoss(?Throwable $failure): bool
     {
         $info = $failure instanceof PDOException ? $failure->errorInfo : null;
@@ -425,6 +487,7 @@ final class PdoVerifiedTransactionCheckout
             || ($this->mariaDb && $state === 'HY000' && ($code === 1020 || $code === '1020'));
     }
 
+    /** Publishes the terminal checkout result while keeping the operation evidence intact. */
     private function settleEnd(Outcome $outcome, ?Reason $reason, Disposition $disposition): void
     {
         $this->snapshot = new VerifiedTransactionSettlementDTO(
@@ -473,13 +536,23 @@ final class PdoVerifiedTransactionCheckout
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * Rejects serialization of the checkout and its connection authority.
+     *
+     * @return array<array-key, mixed>
+     * @throws ProtectedTransactionException Always.
+     */
     public function __serialize(): array
     {
         throw new ProtectedTransactionException('A verified checkout cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * Serialized data cannot restore connection authority.
+     *
+     * @param array<array-key, mixed> $data
+     * @throws ProtectedTransactionException Always.
+     */
     public function __unserialize(array $data): void
     {
         throw new ProtectedTransactionException('A verified checkout cannot be restored.');

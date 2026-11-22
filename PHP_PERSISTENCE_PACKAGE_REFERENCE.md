@@ -895,7 +895,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidTransactionConfigurationException` | `SystemMaatifyException` | A transaction-runner constructor receives `$maxDeadlockRetries` outside `[0, 3]`. |
 | `TransactionExecutionException` | `SystemMaatifyException` | A PDO transaction-control statement (`BEGIN`, `COMMIT`, `SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) returns `false` instead of throwing; or the shared savepoint helper observes that a caller-owned transaction is no longer active immediately after a successful `SAVEPOINT`, before the callback or Ordering mutation. |
-| `ProtectedTransactionException` | `SystemMaatifyException` | Invalid registration, binding, checkout lifecycle or resource confirmation in the optional protected path. Existing driver exceptions preserve their identity. |
+| `ProtectedTransactionException` | `SystemMaatifyException` | The optional [Protected](#521-optional-protected-host-write-transaction) and [Verified](#522-optional-verified-apply-and-discard) paths reject a connection, lifecycle action, command registration, lookup, bindings or row bound, or cannot confirm a resource, session or control operation when the driver does not throw. Verified also rejects an invalid callback decision, an unavailable command grant and an unsafe PDO handoff. Propagated driver and callback throwables retain their identity under the precedence rules in §5.2.1 and §5.2.2. |
 
 ### 6.2 Pagination
 

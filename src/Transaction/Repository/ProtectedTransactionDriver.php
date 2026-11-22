@@ -20,6 +20,7 @@ final readonly class ProtectedTransactionDriver
 
     public function __construct(#[SensitiveParameter] private PDO $pdo) {}
 
+    /** Checks the shared local PDO baseline. Each checkout qualifies its own session before work. */
     public static function isEligible(#[SensitiveParameter] PDO $pdo): bool
     {
         return ($pdo::class === PDO::class || $pdo::class === Mysql::class)
@@ -29,7 +30,18 @@ final readonly class ProtectedTransactionDriver
             && $pdo->getAttribute(PDO::ATTR_STATEMENT_CLASS) === [PDOStatement::class];
     }
 
-    /** @return array{id: string, mariaDb: bool} */
+    /**
+     * Checks the session, enabled autocommit and the driver's transaction
+     * state. Session ID and activity support continuity checks under
+     * exclusive custody. They cannot detect a replaced transaction through an
+     * external alias.
+     *
+     * @param bool $active Expected transaction state at the time of the probe.
+     * @param ?string $expected Qualified session ID to match. Null accepts a valid observed ID for first qualification.
+     * @param bool $closeOnFetchFailure Whether to attempt cursor cleanup after a fetch throws. The original throwable still escapes.
+     * @return array{id: string, mariaDb: bool} Observed session ID and engine classification.
+     * @throws ProtectedTransactionException The probe or the expected state could not be confirmed and the driver did not throw.
+     */
     public function inspect(bool $active, ?string $expected, bool $closeOnFetchFailure = false): array
     {
         $statement = $this->pdo->query('SELECT CONNECTION_ID(), @@autocommit, VERSION()');
@@ -64,16 +76,19 @@ final readonly class ProtectedTransactionDriver
         return ['id' => (string) $row[0], 'mariaDb' => stripos($row[2], 'MariaDB') !== false];
     }
 
+    /** Requests one read-write START. The caller checks activity after acknowledgement. */
     public function start(): void
     {
         $this->control(self::START);
     }
 
+    /** Requests one commit or rollback, with chaining and disconnect disabled. */
     public function end(bool $commit): void
     {
         $this->control($commit ? self::COMMIT : self::ROLLBACK);
     }
 
+    /** Requires an acknowledgement of trusted control SQL and preserves any driver throwable. */
     public function control(string $sql): void
     {
         if ($this->pdo->exec($sql) === false) {
