@@ -6,6 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Closure;
 use Maatify\Exceptions\Enum\ErrorCodeEnum;
+use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Integration\Support\ObservedTailStatement;
@@ -33,6 +34,145 @@ final class ScopedOrderingTailBudgetTest extends OrderingIntegrationTestCase
         ?int $expected,
         bool $closeFails,
     ): void {
+        $this->assertScheduledTail($emulated, $appends, $readCount, $expected, $closeFails);
+    }
+
+    /** @return iterable<string, array{bool, int, int, int, ?int}> */
+    public static function customSchedules(): iterable
+    {
+        foreach (['native' => false, 'emulated' => true] as $mode => $emulated) {
+            yield "$mode two reads are sufficient" => [$emulated, 2, 0, 2, 3];
+            yield "$mode requires a third read" => [$emulated, 2, 1, 2, null];
+            yield "$mode stable on read 512" => [$emulated, 512, 510, 512, 513];
+            yield "$mode requires read 513" => [$emulated, 512, 511, 512, null];
+        }
+    }
+
+    #[DataProvider('customSchedules')]
+    public function testNamedBudgetControlsTheSameInnoDbReads(
+        bool $emulated,
+        int $budget,
+        int $appends,
+        int $readCount,
+        ?int $expected,
+    ): void {
+        $this->assertScheduledTail($emulated, $appends, $readCount, $expected, false, $budget);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function invalidBudgets(): iterable
+    {
+        yield 'below minimum' => [1];
+        yield 'above maximum' => [513];
+    }
+
+    #[DataProvider('invalidBudgets')]
+    public function testInvalidBudgetIsRejectedBeforePreparingSql(int $budget): void
+    {
+        $allocator = $this->connectFaultInjecting();
+        $allocator->beginTransaction();
+        $allocator->failPrepare('/./');
+        try {
+            (new ScopedOrderingManager())->getNextPositionForUpdate($allocator, $this->scopedConfig(), 'budget', maxTailReads: $budget);
+            self::fail('An out-of-range read budget must fail before preparing SQL.');
+        } catch (InvalidOrderingOperationException $failure) {
+            self::assertSame('The ordering tail-read limit must be between 2 and 512.', $failure->getMessage());
+            self::assertTrue($allocator->inTransaction());
+            self::assertSame([], $allocator->executed);
+        } finally {
+            $allocator->rollBack();
+        }
+    }
+
+    public function testEmptyScopeWithMinimumBudgetAndLegacyNamedCall(): void
+    {
+        $allocator = $this->allocator(false);
+        $tails = [];
+        $this->observe($allocator, function (int $read, string $tail, string $sql, ?array $params) use (&$tails): bool {
+            $this->assertScopedRead($sql, $params);
+            $tails[] = $tail;
+
+            return true;
+        });
+        $allocator->beginTransaction();
+        try {
+            $manager = new ScopedOrderingManager();
+            self::assertSame(1, $manager->getNextPositionForUpdate(pdo: $allocator, config: $this->scopedConfig(), scopeValue: 'budget'));
+            self::assertSame(1, $manager->getNextPositionForUpdate(pdo: $allocator, config: $this->scopedConfig(), scopeValue: 'budget', maxTailReads: 2));
+            self::assertSame(['EOF', 'EOF', 'EOF', 'EOF'], $tails);
+        } finally {
+            $allocator->rollBack();
+        }
+    }
+
+    public function testStableIntegerMaximumOnFinalReadKeepsOverflowFailure(): void
+    {
+        $this->pdo()->exec("ALTER TABLE `{$this->scopedTable}` MODIFY `display_order` BIGINT NOT NULL");
+        $this->fixture->insertScoped('budget', PHP_INT_MAX);
+        $allocator = $this->allocator(false);
+        $reads = [];
+        $this->observe($allocator, function (int $read, string $tail, string $sql, ?array $params) use (&$reads): bool {
+            $this->assertScopedRead($sql, $params);
+            $reads[] = $tail;
+
+            return true;
+        });
+        $allocator->beginTransaction();
+        try {
+            (new ScopedOrderingManager())->getNextPositionForUpdate($allocator, $this->scopedConfig(), 'budget', maxTailReads: 2);
+            self::fail('A position greater than PHP_INT_MAX must fail.');
+        } catch (OrderingExecutionException $failure) {
+            self::assertSame('The next ordering position is outside the PHP integer range.', $failure->getMessage());
+            self::assertSame([], $failure->getMeta());
+            self::assertSame([(string) PHP_INT_MAX, (string) PHP_INT_MAX], $reads);
+            self::assertTrue($allocator->inTransaction());
+        } finally {
+            $allocator->rollBack();
+        }
+    }
+
+    public function testRealLockTimeoutOnLastReadKeepsDriverError(): void
+    {
+        $this->fixture->insertScoped('budget', 2);
+        $allocator = $this->allocator(false);
+        $allocator->exec('SET SESSION innodb_lock_wait_timeout = 1');
+        $writer = $this->pdo();
+        $this->observe($allocator, function (int $read, string $tail, string $sql, ?array $params) use ($writer): bool {
+            $this->assertScopedRead($sql, $params);
+            self::assertSame(1, $read);
+            self::assertSame('2', $tail);
+            $id = $this->fixture->insertScoped('budget', 3);
+            $writer->beginTransaction();
+            $writer->exec("UPDATE `{$this->scopedTable}` SET label = 'held' WHERE id = $id");
+
+            return true;
+        });
+        $allocator->beginTransaction();
+        try {
+            $failure = self::failureOf(fn(): int => (new ScopedOrderingManager())->getNextPositionForUpdate(
+                $allocator,
+                $this->scopedConfig(),
+                'budget',
+                maxTailReads: 2,
+            ));
+            self::assertSame(1205, self::driverCode($failure));
+            self::assertTrue($allocator->inTransaction());
+        } finally {
+            $allocator->rollBack();
+            if ($writer->inTransaction()) {
+                $writer->rollBack();
+            }
+        }
+    }
+
+    private function assertScheduledTail(
+        bool $emulated,
+        int $appends,
+        int $readCount,
+        ?int $expected,
+        bool $closeFails,
+        ?int $budget = null,
+    ): void {
         $this->fixture->insertScoped('budget', 1);
         $lockedId = $this->fixture->insertScoped('budget', 2);
         $marker = $this->createTable($this->pdo());
@@ -55,7 +195,9 @@ final class ScopedOrderingTailBudgetTest extends OrderingIntegrationTestCase
             $position = null;
             $failure = null;
             try {
-                $position = $manager->getNextPositionForUpdate($allocator, $this->scopedConfig(), 'budget');
+                $position = $budget === null
+                    ? $manager->getNextPositionForUpdate($allocator, $this->scopedConfig(), 'budget')
+                    : $manager->getNextPositionForUpdate($allocator, $this->scopedConfig(), 'budget', maxTailReads: $budget);
             } catch (OrderingExecutionException $error) {
                 $failure = $error;
             }
@@ -70,7 +212,7 @@ final class ScopedOrderingTailBudgetTest extends OrderingIntegrationTestCase
                     self::assertSame('Failed to close the ordering result for getNextPositionForUpdate.', $failure->getMessage());
                     self::assertSame([], $failure->getMeta());
                 } else {
-                    $this->assertExhausted($failure, 64);
+                    $this->assertExhausted($failure, $budget ?? 64);
                 }
             } else {
                 self::assertNull($failure);
