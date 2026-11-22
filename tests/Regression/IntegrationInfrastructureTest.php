@@ -210,12 +210,13 @@ final class IntegrationInfrastructureTest extends TestCase
             + 600;
 
         $workflow = self::read('.github/workflows/ci.yml');
-        self::assertSame(1, preg_match(
+        if (preg_match(
             "/^          COMPOSER_PROCESS_TIMEOUT: '([0-9]+)'\n        run: composer test:integration -- --fresh-runs=2$/m",
             $workflow,
             $composer,
-        ), 'The required database matrix must let its own orchestration deadline control teardown.');
-        self::assertArrayHasKey(1, $composer);
+        ) !== 1) {
+            self::fail('The required database matrix must let its own orchestration deadline control teardown.');
+        }
         self::assertGreaterThan($budget, (int) $composer[1]);
 
         foreach (['integration', 'examples-smoke', 'consumer-verification', 'exploratory'] as $job) {
