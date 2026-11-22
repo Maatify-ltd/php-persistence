@@ -12,11 +12,13 @@ use SensitiveParameter;
 use Throwable;
 
 /** @internal Driver operations used under an exclusive write checkout reservation. */
-final class ProtectedTransactionDriver
+final readonly class ProtectedTransactionDriver
 {
     public const START = 'START TRANSACTION READ WRITE';
     public const COMMIT = 'COMMIT AND NO CHAIN NO RELEASE';
     public const ROLLBACK = 'ROLLBACK AND NO CHAIN NO RELEASE';
+
+    public function __construct(#[SensitiveParameter] private PDO $pdo) {}
 
     public static function isEligible(#[SensitiveParameter] PDO $pdo): bool
     {
@@ -28,9 +30,9 @@ final class ProtectedTransactionDriver
     }
 
     /** @return array{id: string, mariaDb: bool} */
-    public static function inspect(#[SensitiveParameter] PDO $pdo, bool $active, ?string $expected, bool $closeOnFetchFailure = false): array
+    public function inspect(bool $active, ?string $expected, bool $closeOnFetchFailure = false): array
     {
-        $statement = $pdo->query('SELECT CONNECTION_ID(), @@autocommit, VERSION()');
+        $statement = $this->pdo->query('SELECT CONNECTION_ID(), @@autocommit, VERSION()');
         if ($statement === false) {
             throw new ProtectedTransactionException('Unable to inspect the protected session.');
         }
@@ -54,7 +56,7 @@ final class ProtectedTransactionDriver
             || !in_array($row[1] ?? null, [1, '1'], true)
             || !is_string($row[2] ?? null)
             || ($expected !== null && (string) $row[0] !== $expected)
-            || $pdo->inTransaction() !== $active
+            || $this->pdo->inTransaction() !== $active
         ) {
             throw new ProtectedTransactionException('Unable to confirm the protected session.');
         }
@@ -62,19 +64,19 @@ final class ProtectedTransactionDriver
         return ['id' => (string) $row[0], 'mariaDb' => stripos($row[2], 'MariaDB') !== false];
     }
 
-    public static function start(#[SensitiveParameter] PDO $pdo): void
+    public function start(): void
     {
-        self::control($pdo, self::START);
+        $this->control(self::START);
     }
 
-    public static function end(#[SensitiveParameter] PDO $pdo, bool $commit): void
+    public function end(bool $commit): void
     {
-        self::control($pdo, $commit ? self::COMMIT : self::ROLLBACK);
+        $this->control($commit ? self::COMMIT : self::ROLLBACK);
     }
 
-    public static function control(#[SensitiveParameter] PDO $pdo, string $sql): void
+    public function control(string $sql): void
     {
-        if ($pdo->exec($sql) === false) {
+        if ($this->pdo->exec($sql) === false) {
             throw new ProtectedTransactionException('Unable to confirm the protected transaction command.');
         }
     }

@@ -104,17 +104,17 @@ final class PdoVerifiedTransactionCheckout
         $this->reserve();
         $receiver = new ProtectedTransactionConnection($this->connection());
         try {
-            $this->verifyActive($receiver);
+            $receiver->verifyActive($this->session);
             $primary = null;
             try {
-                $result = ProtectedTransactionCommandExecutor::run($receiver, $plan, $params, releaseBeforeReturn: true);
+                $result = (new ProtectedTransactionCommandExecutor($receiver))->run($plan, $params, releaseBeforeReturn: true);
             } catch (Throwable $failure) {
                 $primary = $failure;
                 throw $failure;
             } finally {
                 if ($receiver->failure() === null) {
                     try {
-                        $this->verifyActive($receiver);
+                        $receiver->verifyActive($this->session);
                     } catch (Throwable $failure) {
                         if ($primary === null) {
                             throw $failure;
@@ -235,8 +235,26 @@ final class PdoVerifiedTransactionCheckout
             }
 
             $effect = Outcome::UNKNOWN;
+            // Keep execution handles out of arguments exposed by exceptions inside the callback.
+            $executor = new ProtectedTransactionCommandExecutor($receiver);
             $scope = new VerifiedTransactionCommandScope(
-                fn(string $commandId, array $bindings): int|array => $this->runScopedCommand($receiver, $commandId, $bindings),
+                function (string $commandId, array $bindings) use ($receiver, $executor): int|array {
+                    $receiver->ensureAvailable();
+                    $plan = $this->catalog->command($commandId);
+                    $params = $plan->bind($bindings);
+                    try {
+                        return $executor->run($plan, $params, releaseBeforeReturn: true);
+                    } catch (Throwable $primary) {
+                        if ($receiver->failure() === null) {
+                            try {
+                                $receiver->verifyActive($this->session);
+                            } catch (Throwable) {
+                                // Keep the command failure visible; the probe is latched.
+                            }
+                        }
+                        throw $primary;
+                    }
+                },
             );
             $decision = null;
             try {
@@ -310,46 +328,15 @@ final class PdoVerifiedTransactionCheckout
         return $payload;
     }
 
-    /**
-     * @param array<array-key, mixed> $bindings
-     * @return int|list<array<array-key, mixed>>
-     */
-    private function runScopedCommand(ProtectedTransactionConnection $receiver, string $commandId, array $bindings): int|array
-    {
-        $receiver->ensureAvailable();
-        $plan = $this->catalog->command($commandId);
-        $params = $plan->bind($bindings);
-        try {
-            return ProtectedTransactionCommandExecutor::run($receiver, $plan, $params, releaseBeforeReturn: true);
-        } catch (Throwable $primary) {
-            if ($receiver->failure() === null) {
-                try {
-                    $this->verifyActive($receiver);
-                } catch (Throwable) {
-                    // Keep the command failure visible; the probe is latched.
-                }
-            }
-            throw $primary;
-        }
-    }
-
-    private function verifyActive(ProtectedTransactionConnection $receiver): void
-    {
-        try {
-            $this->inspect(true);
-        } catch (Throwable $failure) {
-            $receiver->fail($failure, continuity: true);
-        }
-    }
-
     private function start(Reason &$reason, Outcome &$transaction): void
     {
         $reason = Reason::QUALIFICATION_FAILED;
-        $session = ProtectedTransactionDriver::inspect($this->connection(), false, null, closeOnFetchFailure: true);
+        $driver = new ProtectedTransactionDriver($this->connection());
+        $session = $driver->inspect(false, null, closeOnFetchFailure: true);
         $reason = Reason::START_UNCONFIRMED;
         $transaction = Outcome::UNKNOWN;
-        ProtectedTransactionDriver::start($this->connection());
-        ProtectedTransactionDriver::inspect($this->connection(), true, $session['id'], closeOnFetchFailure: true);
+        $driver->start();
+        $driver->inspect(true, $session['id'], closeOnFetchFailure: true);
         $this->session = $session['id'];
         $this->mariaDb = $session['mariaDb'];
     }
@@ -394,7 +381,7 @@ final class PdoVerifiedTransactionCheckout
         $reason = Reason::CONTINUITY_UNCONFIRMED;
         $this->inspect(true);
         $reason = $commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED;
-        ProtectedTransactionDriver::end($this->connection(), $commit);
+        (new ProtectedTransactionDriver($this->connection()))->end($commit);
         $transaction = $commit ? Outcome::COMMITTED : Outcome::ROLLED_BACK;
         $reason = Reason::HANDOFF_UNCONFIRMED;
         $this->inspect(false);
@@ -402,8 +389,7 @@ final class PdoVerifiedTransactionCheckout
 
     private function inspect(bool $active): void
     {
-        ProtectedTransactionDriver::inspect(
-            $this->connection(),
+        (new ProtectedTransactionDriver($this->connection()))->inspect(
             $active,
             $this->session ?? throw new ProtectedTransactionException('There is no verified session.'),
             closeOnFetchFailure: true,

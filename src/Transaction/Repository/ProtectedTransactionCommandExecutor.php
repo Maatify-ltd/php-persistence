@@ -9,19 +9,20 @@ use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Throwable;
 
 /** @internal Executes one registered command against a scoped driver receiver. */
-final class ProtectedTransactionCommandExecutor
+final readonly class ProtectedTransactionCommandExecutor
 {
+    public function __construct(private ProtectedTransactionConnection $connection) {}
+
     /**
      * @param array<string, int|string|bool|null> $params
      * @return int|list<array<array-key, mixed>>
      */
-    public static function run(
-        ProtectedTransactionConnection $connection,
+    public function run(
         ProtectedTransactionCommandPlan $command,
         array $params,
         bool $releaseBeforeReturn = false,
     ): int|array {
-        $statement = $connection->prepare($command->sql);
+        $statement = $this->connection->prepare($command->sql);
         $primary = null;
         try {
             foreach ($params as $name => $value) {
@@ -47,11 +48,13 @@ final class ProtectedTransactionCommandExecutor
         } finally {
             if ($releaseBeforeReturn) {
                 try {
-                    $connection->release($statement);
+                    $statement->seal();
                 } catch (Throwable $cleanupFailure) {
                     if ($primary === null) {
                         throw $cleanupFailure;
                     }
+                } finally {
+                    $this->connection->forgetStatement($statement);
                 }
             }
         }

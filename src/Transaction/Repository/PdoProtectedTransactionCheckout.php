@@ -105,7 +105,7 @@ final class PdoProtectedTransactionCheckout
         $params = $command->bind($bindings);
 
         return $this->run(static fn(ProtectedTransactionConnection $connection): int|array
-            => ProtectedTransactionCommandExecutor::run($connection, $command, $params));
+            => (new ProtectedTransactionCommandExecutor($connection))->run($command, $params));
     }
 
     /**
@@ -303,7 +303,7 @@ final class PdoProtectedTransactionCheckout
 
     private function inspect(bool $active, ?string $expected = null): string
     {
-        $session = ProtectedTransactionDriver::inspect($this->connection(), $active, $expected);
+        $session = (new ProtectedTransactionDriver($this->connection()))->inspect($active, $expected);
         if ($expected === null) {
             $this->mariaDb = $session['mariaDb'];
         }
@@ -313,7 +313,7 @@ final class PdoProtectedTransactionCheckout
 
     private function control(string $sql): void
     {
-        ProtectedTransactionDriver::control($this->connection(), $sql);
+        (new ProtectedTransactionDriver($this->connection()))->control($sql);
     }
 
     private function settle(Disposition $disposition, Reason $reason): void

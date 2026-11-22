@@ -18,8 +18,13 @@ use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum as Rea
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout as ProtectedCheckout;
 use Maatify\PhpPersistence\Transaction\Repository\PdoVerifiedTransactionCheckout as Checkout;
+use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionCommandExecutor;
+use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
+use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionDriver;
+use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionStatement;
 use Maatify\PhpPersistence\Transaction\Repository\VerifiedTransactionCommandsInterface as Commands;
 use PDO;
+use PDOStatement;
 use Pdo\Mysql;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
@@ -115,6 +120,62 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         $checkout->returnForHost();
     }
 
+    /** @return iterable<string, array{bool, string, string}> */
+    public static function recoverableCommandFailures(): iterable
+    {
+        foreach (self::modes() as $mode => [$owned]) {
+            yield "$mode unknown command" => [$owned, 'unregistered', 'Unknown protected transaction command.'];
+            yield "$mode invalid bindings" => [$owned, 'read', 'Invalid protected transaction bindings.'];
+            yield "$mode row bound" => [$owned, 'limited', 'The protected transaction result exceeds its row bound.'];
+        }
+    }
+
+    #[DataProvider('recoverableCommandFailures')]
+    public function testCaughtCommandFailureDoesNotExposeLiveExecutionHandles(bool $owned, string $command, string $message): void
+    {
+        [$observer, $table, $catalog] = $this->fixture();
+        $pdo = $this->connect();
+        $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, false);
+        $checkout = Checkout::attachExclusive($pdo, $catalog);
+        if (!$owned) {
+            $this->beginWithMarker($checkout);
+        }
+
+        $payload = new \stdClass();
+        $work = static function (Commands $scope) use ($owned, $command, $message, $payload): Decision {
+            if ($owned) {
+                self::assertSame(1, $scope->runRegisteredCommand('insert', ['id' => 1, 'value' => 10]));
+            }
+            self::assertSame(1, $scope->runRegisteredCommand('insert', ['id' => 2, 'value' => 20]));
+            $failure = self::raised(fn() => $scope->runRegisteredCommand($command));
+            self::assertInstanceOf(ProtectedTransactionException::class, $failure);
+            self::assertSame($message, $failure->getMessage());
+            self::assertNoExecutionHandlesInTrace($failure);
+
+            self::assertSame([['v' => 20]], $scope->runRegisteredCommand('read', ['id' => 2]));
+            return Decision::discard($payload);
+        };
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        self::assertNotFalse($previous);
+        try {
+            self::assertSame($payload, $this->runMode($checkout, $owned, $work));
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
+
+        $operation = $checkout->settlement();
+        self::assertSame($owned ? Outcome::ROLLED_BACK : Outcome::LOCAL_UNDONE, $operation->operationOutcome);
+        self::assertNull($operation->operationReason);
+        self::assertSame($owned ? Disposition::REUSABLE : null, $operation->disposition);
+        self::assertSame([], $this->values($observer, $table));
+        if (!$owned) {
+            self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('visible'));
+            $checkout->commit();
+            self::assertSame([10], $this->values($observer, $table));
+        }
+        self::assertSame($pdo, $checkout->returnForHost());
+    }
+
     /** @return iterable<string, array{bool, string}> */
     public static function caughtDriverCases(): iterable
     {
@@ -145,6 +206,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             $scope->runRegisteredCommand('insert', ['id' => 2, 'value' => 20]);
             $driver = self::failureOf(fn() => $scope->runRegisteredCommand('update', ['id' => 3, 'value' => 32]));
             self::assertSame(1205, self::driverCode($driver));
+            self::assertNoExecutionHandlesInTrace($driver);
             $questionsAfterFailure = $this->questions($pdo);
             self::assertSame($driver, self::raised(fn() => $scope->runRegisteredCommand('visible')));
 
@@ -154,6 +216,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
                 default => Decision::discard(),
             };
         };
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        self::assertNotFalse($previous);
         try {
             $caught = self::raised(fn() => $this->runMode($checkout, $owned, $work));
             self::assertSame($afterDriver === 'throw' ? $primary : $driver, $caught);
@@ -163,6 +227,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             $this->fenced($checkout, Reason::COMMAND_FAILED);
             self::assertSame($questionsAfterFailure + 1, $this->questions($pdo));
         } finally {
+            ini_set('zend.exception_ignore_args', $previous);
             $checkout->discardForHost();
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -219,16 +284,19 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     {
         [$observer, $table, $catalog] = $this->fixture();
         $relay = self::relay(($commit ? 'COMMIT' : 'ROLLBACK') . ' AND NO CHAIN NO RELEASE', $stage);
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        self::assertNotFalse($previous);
         try {
             $checkout = Checkout::attachExclusive($this->relayed($relay), $catalog);
             $work = self::work($owned ? $commit : true);
             if ($owned) {
-                self::failureOf(fn() => $checkout->runOwned($work));
+                $failure = self::failureOf(fn() => $checkout->runOwned($work));
             } else {
                 $this->beginWithMarker($checkout);
                 self::assertFalse($checkout->runInHost($work));
-                self::failureOf($commit ? $checkout->commit(...) : $checkout->rollBack(...));
+                $failure = self::failureOf($commit ? $checkout->commit(...) : $checkout->rollBack(...));
             }
+            self::assertNoExecutionHandlesInTrace($failure);
             self::assertSame(self::relayEvidence($stage), $relay->readLine(12.0));
             $reason = $stage === 'after-ack' ? Reason::HANDOFF_UNCONFIRMED
                 : ($commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED);
@@ -240,6 +308,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             self::assertSame($commit && $stage !== 'before' ? ($owned ? [20] : [10, 20]) : [], $this->values($observer, $table));
             $checkout->discardForHost();
         } finally {
+            ini_set('zend.exception_ignore_args', $previous);
             $relay->stop();
         }
     }
@@ -629,6 +698,23 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         $statement->closeCursor();
         self::assertIsNumeric($value);
         return (int) $value;
+    }
+
+    private static function assertNoExecutionHandlesInTrace(Throwable $failure): void
+    {
+        $trace = $failure->getTrace();
+        self::assertNotEmpty(array_filter(array_column($trace, 'args')));
+        foreach ($trace as $frame) {
+            foreach ($frame['args'] ?? [] as $arg) {
+                self::assertNotInstanceOf(PDO::class, $arg);
+                self::assertNotInstanceOf(PDOStatement::class, $arg);
+                self::assertNotInstanceOf(ProtectedTransactionConnection::class, $arg);
+                self::assertNotInstanceOf(ProtectedTransactionStatement::class, $arg);
+                self::assertNotInstanceOf(ProtectedTransactionCommandExecutor::class, $arg);
+                self::assertNotInstanceOf(ProtectedTransactionDriver::class, $arg);
+                self::assertNotInstanceOf(\SensitiveParameterValue::class, $arg);
+            }
+        }
     }
 
     private static function raised(Closure $call): Throwable

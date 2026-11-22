@@ -109,13 +109,23 @@ final class ProtectedTransactionConnection
         return $this->continuityFailure;
     }
 
-    public function release(ProtectedTransactionStatement $statement): void
+    public function verifyActive(?string $session): void
     {
         try {
-            $statement->seal();
-        } finally {
-            unset($this->statements[spl_object_id($statement)]);
+            $driver = new ProtectedTransactionDriver($this->driver());
+            $driver->inspect(
+                true,
+                $session ?? throw new ProtectedTransactionException('There is no verified session.'),
+                closeOnFetchFailure: true,
+            );
+        } catch (Throwable $failure) {
+            $this->fail($failure, continuity: true);
         }
+    }
+
+    public function forgetStatement(ProtectedTransactionStatement $statement): void
+    {
+        unset($this->statements[spl_object_id($statement)]);
     }
 
     public function sentSql(): bool

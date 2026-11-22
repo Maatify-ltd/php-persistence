@@ -40,8 +40,7 @@ final class VerifiedTransactionDriverFailureTest extends TestCase
 
         $receiver = new ProtectedTransactionConnection($pdo);
         try {
-            ProtectedTransactionCommandExecutor::run(
-                $receiver,
+            (new ProtectedTransactionCommandExecutor($receiver))->run(
                 new ProtectedTransactionCommandPlan('UPDATE ledger SET amount = 5', []),
                 [],
                 releaseBeforeReturn: true,
@@ -134,11 +133,12 @@ final class VerifiedTransactionDriverFailureTest extends TestCase
         $expect = $pdo->expects(self::once())->method('exec')->with($sql);
         $fault = new PDOException('control fault');
         $throws ? $expect->willThrowException($fault) : $expect->willReturn(false);
+        $driver = new ProtectedTransactionDriver($pdo);
         try {
             if ($sql === 'START TRANSACTION READ WRITE') {
-                ProtectedTransactionDriver::start($pdo);
+                $driver->start();
             } else {
-                ProtectedTransactionDriver::end($pdo, $sql === 'COMMIT AND NO CHAIN NO RELEASE');
+                $driver->end($sql === 'COMMIT AND NO CHAIN NO RELEASE');
             }
             self::fail('Unconfirmed control must fail.');
         } catch (ProtectedTransactionException|PDOException $caught) {
