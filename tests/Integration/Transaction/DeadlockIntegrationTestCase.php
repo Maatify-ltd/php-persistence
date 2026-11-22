@@ -56,18 +56,24 @@ abstract class DeadlockIntegrationTestCase extends IntegrationTestCase
      */
     protected function provokeDeadlockAsVictim(PDO $victim): PDOException
     {
+        return $this->provokeDeadlockUsing(fn(int $id) => $this->lockRow($victim, $id));
+    }
+
+    /** @param callable(int): void $lockRow */
+    protected function provokeDeadlockUsing(callable $lockRow): PDOException
+    {
         $partner = PartnerProcess::deadlockPartner($this->table, 1, 2);
         $this->partners[] = $partner;
 
         $ready = $partner->readLine(self::PARTNER_READ_TIMEOUT_SECONDS);
         self::assertStringStartsWith('READY ', $ready);
 
-        $this->lockRow($victim, 1);
+        $lockRow(1);
         $partner->writeLine('go');
         $this->awaitBlockedLockingRead(substr($ready, strlen('READY ')));
 
         try {
-            $this->lockRow($victim, 2);
+            $lockRow(2);
         } catch (PDOException $exception) {
             self::assertSame(self::DEADLOCK_SQLSTATE, $exception->errorInfo[0] ?? null, $exception->getMessage());
             self::assertSame(self::DEADLOCK_DRIVER_CODE, $exception->errorInfo[1] ?? null, $exception->getMessage());
@@ -180,10 +186,15 @@ abstract class DeadlockIntegrationTestCase extends IntegrationTestCase
 
     private function lockRow(PDO $pdo, int $id): void
     {
-        $statement = $pdo->prepare('SELECT `id` FROM `' . $this->table . '` WHERE `id` = :id FOR UPDATE');
+        $statement = $pdo->prepare($this->lockingReadSql());
         self::assertInstanceOf(PDOStatement::class, $statement);
         $statement->execute(['id' => $id]);
         $statement->fetchAll();
+    }
+
+    protected function lockingReadSql(): string
+    {
+        return 'SELECT `id` FROM `' . $this->table . '` WHERE `id` = :id FOR UPDATE';
     }
 
     /**

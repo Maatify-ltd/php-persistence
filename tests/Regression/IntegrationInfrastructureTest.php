@@ -142,9 +142,9 @@ final class IntegrationInfrastructureTest extends TestCase
         }
         self::assertStringContainsString('exploratory cell only', $decision);
 
-        $open = self::read('docs/decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md');
-        self::assertStringContainsString('**Status:** `PROPOSED`', $open);
-        self::assertStringNotContainsString('9.7.4', $open, 'the ratified version rows are removed from the still-proposed record');
+        $protection = self::read('docs/decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md');
+        self::assertStringContainsString('**Status:** ACTIVE', $protection);
+        self::assertStringNotContainsString('9.7.4', $protection, 'DEC-013 owns the database version matrix');
     }
 
     public function testWorkflowFollowsTheHardeningRules(): void

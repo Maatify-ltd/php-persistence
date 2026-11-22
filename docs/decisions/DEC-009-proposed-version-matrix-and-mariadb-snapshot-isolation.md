@@ -1,41 +1,28 @@
-# DEC-009 — MariaDB snapshot-isolation (`1020`) contract (version matrix moved to DEC-013)
+# DEC-009 — Protect delegated Host transactions from uncertain outcomes
 
-- **Decision ID:** `DEC-009`
-- **Title:** MariaDB snapshot-isolation (`1020`) contract (version matrix moved to DEC-013)
-- **Status:** `PROPOSED`
-- **Date:** `2026-10-27`
-- **Decision Authority:** `Project Owner` — not yet ratified. The version-matrix rows of this record were ratified on 2026-10-27 and moved to [DEC-013](./DEC-013-test-only-database-version-boundary.md) (partial ratification). The `1020` contract below stays `PROPOSED`/`DEFERRED` by the Owner's decision. This record is not implementation authority.
-- **Scope / Concern:** The contract for MariaDB error `1020` with `innodb_snapshot_isolation` in caller-owned transactions.
-- **Supersedes:** `—`
-- **Superseded By:** `—`
-- **Canonical Contract / Current Owner:** [DATABASE_SUPPORT_AND_TEST_POLICY.md](../architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md) describes the hazard and the required tests; the matrix is owned by [DEC-013](./DEC-013-test-only-database-version-boundary.md). Policy already ratified is in [DEC-008](./DEC-008-database-engine-targets-and-verification-policy.md).
+- **Decision ID:** DEC-009
+- **Status:** ACTIVE
+- **Date:** 2026-11-21
+- **Decision Authority:** Project Owner. [Design approval](https://github.com/Maatify-ltd/php-persistence/issues/16#issuecomment-7069652846) and [execution authorization](https://github.com/Maatify-ltd/php-persistence/issues/16#issuecomment-7069701815).
+- **Scope / Concern:** Optional exclusive Host write checkout and protected Ordering, including the MariaDB `1020` failure.
+- **Canonical Contract / Current Owner:** [Package Reference §3.2](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#32-transaction-capability--maatifyphppersistencetransaction), [§5.2.1](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction), and [§7.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard).
+- **Supersedes:** —
+- **Superseded By:** —
 
 ## Context
 
-Version lines were observed on 2026-10-24 and 2026-10-27 from the cited announcements and are not tested in this repository: [Oracle, October 2026 releases](https://blogs.oracle.com/mysql/mysql-october-2026-ga-releases-now-available) and [MariaDB Foundation, Q3 2026 maintenance releases](https://mariadb.org/mariadb-server-12-3-11-8-11-4-and-10-11-q3-2026-maintenance-releases-and-goodbye-10-6/). The legacy study of Issue #47 ([REPORT.md at `1f6a7aa`](https://github.com/Maatify/persistence/blob/1f6a7aafe601090b7e55f60d83794364afdefe67/docs/studies/issue-47-mariadb-snapshot/REPORT.md)) measured the following on real engines with the legacy code: with `innodb_snapshot_isolation=ON`, a locking read or an update after an older `REPEATABLE READ` snapshot raises error `1020` when it touches a row changed after that snapshot; the server then rolls back the caller's whole transaction while `PDO::inTransaction()` still reports it as active; behavior after the error differs between 10.11.18, 11.4.7 and 11.8.9; the setting, not the version, decides. These measurements were made in the legacy repository, on the legacy code, and are evidence for the hazard, not proof for the new package.
+With MariaDB `innodb_snapshot_isolation=ON`, a locking read that encounters a later change than an older REPEATABLE READ view can fail with `HY000/1020`. In [the pinned study](https://github.com/Maatify-ltd/php-persistence/issues/16#issuecomment-7068981491), the server rolled back an earlier Host write and the next statement could autocommit while PDO still indicated an active transaction. Explicitly probing transaction status exposed the discrepancy but left raw PDO usable. A wrapper around the raw Ordering API also exposed PDO in exception arguments. The Owner ratified only the test-version matrix in [DEC-013](./DEC-013-test-only-database-version-boundary.md) on 2026-10-27. The MariaDB recovery decision stayed open until the protected checkout design was approved on 2026-11-21.
 
-## Proposal (not ratified)
+## Decision
 
-The version-matrix rows that this record first proposed (endpoints, intermediate cells, the Innovation track and the upper-bound policy) were ratified and are recorded in [DEC-013](./DEC-013-test-only-database-version-boundary.md). They are removed from this record.
+The Host may exclusively delegate an eligible PDO to one protected write checkout. The Host explicitly directs begin, commit, rollback, handoff, and discard. A reservation covers registered Host commands and protected Ordering. A terminal outcome is published once after completion checks and before reservation release. The driver receiver preserves the first exception and keeps PDO and statements out of ordinary trace arguments.
 
+A broken or uncertain transaction is fenced before subsequent application SQL. Loss of use authority never proves that the server rolled back or makes replay safe. The settlement distinguishes an unknown commit from a confirmed commit whose connection is unsafe to return. Ordering and Transaction share savepoint control under [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md) and keep the dependency direction in [DEC-010](./DEC-010-package-topology-multi-capability.md). Protected Ordering requires confirmed savepoint cleanup before a normal result can escape.
 
-**Proposed MariaDB `1020` contract**
+## Rationale
 
-1. Positive and negative tests run with `innodb_snapshot_isolation` both `ON` and `OFF` at each MariaDB endpoint.
-2. When the engine raises `1020`, the error reaches the caller unchanged. It is not swallowed, translated into success, or retried.
-3. Documentation states that after `1020` the caller's transaction may already be rolled back by the server even though `PDO::inTransaction()` reports it as active.
-4. The package does not change `innodb_snapshot_isolation`, the isolation level, or any connection attribute.
-5. If an honest and safe contract cannot be demonstrated for caller-owned transactions, MariaDB support is not advertised unconditionally; the claim is narrowed or withheld.
-
-## Deferred contract and WU-8 evidence
-
-At proposal time, Ordering acceptance for MariaDB and broader MariaDB claims were listed as pending. WU-8 later completed with test-only evidence while the Owner kept the recovery contract deferred.
-
-In the cases exercised by the [WU-8 Ordering integration test](https://github.com/Maatify-ltd/php-persistence/blob/2212fb0a74e8f44c82b2c508f3585e2b87ed5a8c/tests/Integration/Ordering/ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest.php), the server rolls back a prior caller-owned write after error `1020`. The test also attempts a subsequent statement on the same connection and observes whether it is rejected or commits independently. [DEC-013](./DEC-013-test-only-database-version-boundary.md) governs the tested matrix. A general recovery guarantee or supported range remains outside the accepted contract.
+A transaction-status probe can identify the stale PDO state while the raw connection still accepts statements. Exclusive delegation gates those statements and gives the Host a durable local outcome after a failure. An optional checkout preserves the published raw contract for consumers that own and coordinate PDO directly.
 
 ## Consequences
 
-- Nothing in this record may be cited as a supported range or as a MariaDB support claim.
-- `SUPERSEDED` applies only to a record that was `ACTIVE` ([Decision Governance Standard](../php-engineering-standards/standards/governance/DECISION_GOVERNANCE_STANDARD_AR.md) status model), so it is never the outcome for this `PROPOSED` record.
-- When the Owner ratifies the `1020` contract, as written or amended, this record is edited to the ratified content and its status becomes `ACTIVE` (`PROPOSED` → `ACTIVE`), with the index updated in the same change. If it is postponed it becomes `DEFERRED`; if declined, `REJECTED`. It is never `SUPERSEDED`, because it was never `ACTIVE`.
-- The partial ratification of 2026-10-27 moved the version rows to DEC-013; neither record uses `Supersedes` or `Superseded By`.
+Raw PDO entry points retain their existing behavior. Delegation excludes aliases, persistent connections, transparent reconnect, replay and multiplexing. The checkout does not acquire, reconfigure or replace connections. The Host may retrieve a connection with a safe disposition or explicitly discard the checkout. Driver cleanup and external diagnostic references can affect when the connection is physically destroyed. This decision makes no unconditional MariaDB support claim and grants no release authority.

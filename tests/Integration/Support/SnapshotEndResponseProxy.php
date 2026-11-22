@@ -41,11 +41,19 @@ $host = getenv('PHP_PERSISTENCE_IT_HOST');
 $port = getenv('PHP_PERSISTENCE_IT_PORT');
 $target = $argv[1] ?? '';
 $stage = $argv[2] ?? '';
+$fixtureTable = $argv[3] ?? '';
 if ($host === false || $port === false || !in_array($target, [
     'START TRANSACTION READ ONLY',
+    'START TRANSACTION READ WRITE',
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
-], true) || ! in_array($stage, ['after', 'before'], true)) {
+    'RELEASE SAVEPOINT',
+], true) || !in_array($stage, [
+    'after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020',
+    'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql',
+], true)
+    || ($stage === 'protected-tail-churn' && preg_match('/\Ait_ordering_scoped_[0-9a-f]{12}\z/', $fixtureTable) !== 1)
+) {
     throw new InvalidArgumentException('Missing relay target.');
 }
 $listener = stream_socket_server('tcp://127.0.0.1:0');
@@ -69,6 +77,9 @@ try {
             stream_set_timeout($client, 10);
             stream_set_timeout($server, 10);
             $awaitingTargetResponse = false;
+            $savepointSent = false;
+            $orderingErrorSent = false;
+            $tailReads = 0;
             for (;;) {
                 $readable = [$client, $server];
                 $write = $except = null;
@@ -81,6 +92,69 @@ try {
                 $length = ord($header[0]) | (ord($header[1]) << 8) | (ord($header[2]) << 16);
                 $sequence = ord($header[3]);
                 $payload = readPacketBytes($peer, $length);
+                if ($stage === 'prequalification-no-sql' && $peer === $client && $sequence === 0) {
+                    if ($payload !== "\x01") {
+                        throw new RuntimeException('The unqualified checkout sent a driver command.');
+                    }
+                    echo "NO SQL BEFORE HANDOFF\n";
+                    fflush(STDOUT);
+                    break;
+                }
+                if (($stage === 'ordering-1020' || $stage === 'observe-ordering-1020') && $peer === $client && $sequence === 0) {
+                    if (preg_match('/\A\x03SAVEPOINT maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1) {
+                        $savepointSent = true;
+                    } elseif ($stage === 'ordering-1020' && $savepointSent && preg_match('/\A\x03UPDATE .*?WHERE `id` = /s', $payload) === 1) {
+                        $payload = "\x03SIGNAL SQLSTATE 'HY000' SET MYSQL_ERRNO = 1020, MESSAGE_TEXT = 'fixture movement failure'";
+                        $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
+                        $orderingErrorSent = true;
+                    }
+                }
+                if ($peer === $server && ($orderingErrorSent || ($savepointSent && $stage === 'observe-ordering-1020'))) {
+                    $isOrderingError = str_starts_with($payload, "\xff") && unpack('v', substr($payload, 1, 2)) === [1 => 1020];
+                    if ($orderingErrorSent && !$isOrderingError) {
+                        throw new RuntimeException('The server did not respond with the expected injected error.');
+                    }
+                    if ($isOrderingError) {
+                        writePacketBytes($client, $header . $payload);
+                        $afterError = [$client];
+                        if (stream_select($afterError, $write, $except, 0, 500_000) !== 0) {
+                            throw new RuntimeException('A packet followed the fenced driver error.');
+                        }
+                        echo "NO SQL AFTER DRIVER ERROR\n";
+                        fflush(STDOUT);
+                        break;
+                    }
+                }
+                if ($stage === 'protected-tail-churn' && $peer === $client && $sequence === 0
+                    && str_starts_with($payload, "\x03SELECT `display_order`")
+                    && str_contains($payload, 'FROM `' . $fixtureTable . '`')
+                    && str_contains($payload, 'ORDER BY `display_order` DESC, `id` DESC')
+                    && str_ends_with($payload, 'FOR UPDATE')
+                    && ++$tailReads === 2
+                ) {
+                    $writer = new PDO(
+                        'mysql:host=' . $host . ';port=' . $port . ';dbname=' . getenv('PHP_PERSISTENCE_IT_DATABASE'),
+                        (string) getenv('PHP_PERSISTENCE_IT_USER'),
+                        (string) getenv('PHP_PERSISTENCE_IT_PASSWORD'),
+                        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 4],
+                    );
+                    $writer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+                    $writer->exec("INSERT INTO `$fixtureTable` (scope_key, display_order, label) VALUES ('target', 3, 'new-tail')");
+                    echo "TAIL ADVANCED\n";
+                    fflush(STDOUT);
+                }
+                if ($stage === 'ordering-release-error' && $peer === $client && $sequence === 0) {
+                    if (preg_match('/\A\x03UPDATE .*?WHERE `id` = /s', $payload) === 1) {
+                        $payload .= ' AND 1 = 0';
+                        echo "TARGET UPDATE MADE EMPTY\n";
+                        fflush(STDOUT);
+                    } elseif (preg_match('/\A\x03RELEASE SAVEPOINT maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1) {
+                        $payload = "\x03RELEASE SAVEPOINT fixture_savepoint_that_does_not_exist";
+                        echo "RELEASE REPLACED AFTER UNDO\n";
+                        fflush(STDOUT);
+                    }
+                    $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
+                }
                 if ($peer === $client && $sequence === 0 && $payload === "\x03" . $target) {
                     if ($stage === 'before') {
                         echo "COMMAND NOT FORWARDED\n";
@@ -93,7 +167,10 @@ try {
                     if ($sequence !== 1 || !str_starts_with($payload, "\x00")) {
                         throw new RuntimeException('The real server did not acknowledge the target command.');
                     }
-                    echo "SERVER OK WITHHELD\n";
+                    if ($stage === 'after-ack') {
+                        writePacketBytes($client, $header . $payload);
+                    }
+                    echo $stage === 'after-ack' ? "SERVER OK FORWARDED\n" : "SERVER OK WITHHELD\n";
                     fflush(STDOUT);
                     break;
                 }

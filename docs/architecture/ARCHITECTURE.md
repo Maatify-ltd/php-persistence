@@ -143,7 +143,7 @@ Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions
 
 | Item | Record | Blocks |
 |---|---|---|
-| Safe MariaDB contract for `1020` in caller-owned transactions | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `PROPOSED` | An approved recovery contract for MariaDB error `1020`. WU-8 is complete, and DEC-013 remains a test-only matrix. |
+| MariaDB `1020` in caller-owned transactions | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `ACTIVE` for an optional protected checkout | Raw PDO keeps its contract; DEC-013 remains a test-only matrix. |
 | Which two independent Hosts validate the release candidate, and when | none yet | WU-13 |
 | Central standards change, consumer migration, legacy archive | none (separate authorizations) | Any statement that ownership transferred |
 

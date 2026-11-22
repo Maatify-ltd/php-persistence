@@ -22,10 +22,8 @@ use Throwable;
  *   a cleanup failure.
  * - {@see self::undoOrFail()} is for a caller that reports failure without
  *   throwing: ROLLBACK TO must succeed, and its failure is not swallowed;
- *   RELEASE afterwards is best effort. This shape exists so a future
- *   non-callback consumer (Ordering, where a failed move returns `false`
- *   instead of throwing) can reuse this helper without a second
- *   implementation; it is not called by this capability's own runner.
+ *   Ordering uses this path for a move with a zero-row target update. A
+ *   protected receiver records cleanup failure for the checkout to settle.
  * - {@see self::begin()} fails before any mutation when the driver reports no
  *   active transaction right after the SAVEPOINT reply: a server-aborted
  *   caller transaction that the caller swallowed shows up here on the
@@ -41,13 +39,13 @@ final readonly class SavepointScope
 {
     private const SAVEPOINT_PREFIX = 'maatify_persistence_sp_';
 
-    private function __construct(private PDO $pdo, private string $name) {}
+    private function __construct(private PDO|ProtectedTransactionConnection $pdo, private string $name) {}
 
     /**
      * @throws TransactionExecutionException when SAVEPOINT returns false, or when the driver
      *                                        reports no active transaction right after it succeeds
      */
-    public static function begin(PDO $pdo): self
+    public static function begin(PDO|ProtectedTransactionConnection $pdo): self
     {
         $scope = new self($pdo, self::SAVEPOINT_PREFIX . bin2hex(random_bytes(16)));
         $scope->executeControlStatement('SAVEPOINT ' . $scope->name);
@@ -95,8 +93,9 @@ final readonly class SavepointScope
     }
 
     /**
-     * For a non-throwing failed window: ROLLBACK TO must succeed, otherwise its
-     * failure propagates; RELEASE is best effort.
+     * For a non-throwing failed window, ROLLBACK TO must succeed. Raw PDO treats
+     * RELEASE as best effort. A protected receiver records a RELEASE failure
+     * so the checkout fences further work and suppresses a normal result.
      *
      * @throws Throwable when ROLLBACK TO fails
      */
@@ -108,7 +107,9 @@ final readonly class SavepointScope
 
     private function executeControlStatement(string $sql): void
     {
-        if ($this->pdo->exec($sql) === false) {
+        if ($this->pdo instanceof ProtectedTransactionConnection) {
+            $this->pdo->control($sql);
+        } elseif ($this->pdo->exec($sql) === false) {
             throw new TransactionExecutionException('PDO transaction control statement failed.');
         }
     }

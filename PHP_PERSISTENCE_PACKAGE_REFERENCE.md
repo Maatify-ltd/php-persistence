@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, and B describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, and protected Host write transactions describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -27,8 +27,9 @@ The package offers three independent capabilities over a **caller-supplied `PDO`
 - It is not an ORM, query builder, schema manager, or migration tool. `Pagination\Repository\PdoPaginator` executes SQL text supplied by the caller through `PdoPaginationQueryDescriptor`; it does not generate SQL from a model.
 - It owns no table, schema, or domain-owned persisted state of its own. It operates entirely on tables the host application owns and names.
 - It contains no HTTP controllers, routes, middleware, permission checks, UI, or export logic.
-- Outside the optional B source, operation state is scoped to each call or operation object. The one-shot C1 operation retains its grant and terminal outcome on its own object, as specified by [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md).
+- Operation state is scoped to each call or operation object. The optional B source and the protected write checkout maintain their own reservation state across calls. The one-shot C1 operation retains its grant and terminal outcome on its own object, as specified by [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md).
 - B is a stateful, opt-in exception. The source maintains a shared reservation, checkout and transaction generation across calls. A process-local `WeakMap` prevents rebinding the same PDO while that object still exists. Each page attempt retains its own terminal settlement. See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md) and [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
+- A protected write checkout keeps one exclusive reservation, one Host-directed transaction, and its final settlement. Its registration is separate from Pagination checkout APIs. See [§5.2.1](#521-optional-protected-host-write-transaction).
 - It is not a connection factory and does not perform dependency injection wiring; a host wires it directly or through its own container.
 
 ### 1.2 Operational Read / Reporting classification
@@ -73,6 +74,8 @@ src/
 │   ├── Exception/InvalidOrderingConfigurationException.php
 │   ├── Exception/InvalidOrderingOperationException.php
 │   ├── Exception/OrderingExecutionException.php
+│   ├── Repository/OrderingOperations.php   (@internal)
+│   ├── Repository/ProtectedScopedOrderingManager.php
 │   └── Repository/ScopedOrderingManager.php
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
@@ -122,11 +125,20 @@ src/
 │   ├── Repository/SnapshotReadResources.php    (@internal)
 │   └── ValueObject/SortWhitelist.php
 └── Transaction/
+    ├── Criteria/ProtectedTransactionCommandCatalog.php
+    ├── Criteria/ProtectedTransactionCommandPlan.php
+    ├── DTO/ProtectedTransactionSettlementDTO.php
+    ├── Enum/ProtectedTransactionDispositionEnum.php
+    ├── Enum/ProtectedTransactionReasonEnum.php
     ├── Exception/InvalidTransactionConfigurationException.php
+    ├── Exception/ProtectedTransactionException.php
     ├── Exception/TransactionExecutionException.php
     ├── Repository/TransactionRunnerInterface.php
     ├── Repository/SavepointTransactionRunnerInterface.php
     ├── Repository/PdoTransactionRunner.php
+    ├── Repository/PdoProtectedTransactionCheckout.php
+    ├── Repository/ProtectedTransactionConnection.php   (@internal)
+    ├── Repository/ProtectedTransactionStatement.php    (@internal)
     ├── Repository/PdoSavepointTransactionRunner.php
     ├── Repository/OwnedTransactionExecutor.php   (@internal)
     └── Repository/SavepointScope.php             (@internal)
@@ -215,7 +227,26 @@ public function run(callable $callback): mixed
 
 Behavior: see §5.2.
 
-#### `Exception\InvalidTransactionConfigurationException` / `Exception\TransactionExecutionException`
+#### Optional protected write checkout
+
+`Repository\PdoProtectedTransactionCheckout` represents one exclusive delegation and one Host-directed write transaction.
+
+```php
+public static function attachExclusive(PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
+public function begin(): void
+public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
+public function commit(): void
+public function rollBack(): void
+public function settlement(): ?ProtectedTransactionSettlementDTO
+public function returnForHost(): PDO
+public function discardForHost(): void
+```
+
+`Criteria\ProtectedTransactionCommandCatalog::__construct(array $commands)` accepts a map of identifiers to `ProtectedTransactionCommandPlan` objects. A plan is constructed with `string $sql, array $parameterNames, ?int $maxRows = null`. A null bound requests affected-row count. A positive bound requests a list of associative result rows, with PDO column-key semantics, and rejects a result exceeding that bound. Bindings match the registered unique names exactly and carry strings, integers, booleans, or null. Names omit the colon. Plans accept statements beginning with SELECT, INSERT, UPDATE, DELETE, REPLACE or WITH, without semicolons. The Host warrants single-statement InnoDB behavior that preserves the session and transaction, including the behavior of any routines or triggers.
+
+`DTO\ProtectedTransactionSettlementDTO` is readonly and exposes `public ProtectedTransactionDispositionEnum $disposition` and `public ProtectedTransactionReasonEnum $reason`. See §5.2.1 for the dispositions and reasons.
+
+#### `Exception\InvalidTransactionConfigurationException` / `Exception\TransactionExecutionException` / `Exception\ProtectedTransactionException`
 
 See §6.1.
 
@@ -562,6 +593,22 @@ public function rowExistsInScope(
 
 `$scopeValue` is required (non-null) whenever `$config->scopeColumn` is set, unless `$config->nullableScope` is `true`, in which case `null` means the single NULL scope; it must be `null` when `$config->scopeColumn` is `null` (global ordering). Every method throws `InvalidOrderingOperationException` for inconsistent scope usage. Full behavior, including updated-at argument rules and the MariaDB hazard, is in §5.4.
 
+#### `Repository\ProtectedScopedOrderingManager`
+
+```php
+public function getNextPositionForUpdate(
+    PdoProtectedTransactionCheckout $checkout, ScopedOrderingConfig $config,
+    int|string|null $scopeValue = null, int $maxTailReads = 64,
+): int
+
+public function moveWithinScope(
+    PdoProtectedTransactionCheckout $checkout, ScopedOrderingConfig $config,
+    int|string|null $scopeValue, int $id, int $newOrder, ?string $updatedAtValue = null,
+): bool
+```
+
+Both methods use the active protected Host transaction and its reservation. For allocation, validate `$maxTailReads` in 2–512 inclusive, then return a position only after two consecutive matching tail reads, including stability on the last allowed read. If the tail remains unstable after the last closed result, throw `OrderingExecutionException` with metadata `reason=TAIL_READ_LIMIT_EXCEEDED` and integer `maxTailReads`. The cap bounds the number of reads. Engine lock-wait settings still apply to each statement. The Host can insert at the allocated position through a registered command and retains control of the transaction and its locks.
+
 #### Ordering exceptions
 
 `InvalidOrderingConfigurationException`, `InvalidOrderingOperationException`, and `OrderingExecutionException` — see §6.3.
@@ -580,7 +627,9 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Pagination\Criteria\HostSnapshotGrantRegistration`** — binds a registered read and request to the source's checkout identity and transaction generation.
 - **`Pagination\Exception\HostSnapshotRowLimitExceededException`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
-- **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper consumed by `PdoSavepointTransactionRunner` and by `ScopedOrderingManager::moveWithinScope()` (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
+- **`Ordering\Repository\OrderingOperations`** — shared Ordering SQL and validation behind both managers.
+- **`Transaction\Repository\ProtectedTransactionConnection`** and **`ProtectedTransactionStatement`** — scoped driver receivers. Ordering reaches the private checkout reservation inside the package. The checkout exposes no callback entry point. Receivers expire at the end of the reservation and provide no raw-resource accessor.
+- **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper used by `PdoSavepointTransactionRunner` and the movement operations of both Ordering managers (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
 ---
 
@@ -588,6 +637,7 @@ PHP can load these classes and reach public members marked `@internal`. These im
 
 - **Caller-owned transaction** — a transaction under the caller's control. When a Transaction runner or Ordering operation joins an active caller transaction, the caller retains all final transaction control. A savepoint, where used, limits the effects of that individual operation. Ordinary and Keyset pagination read in the context supplied by the caller.
 - **Host-owned transaction through B** — the Host keeps transaction and connection ownership while delegating exclusive use of its PDO to a source. The source issues transaction control under the shared reservation in response to explicit Host commands, including `beginRepeatableRead()`, `commit()`, and `rollBack()`. Page reads participate in that transaction. The Host decides how to resolve failures and when to end the transaction, request handoff, or discard the source. See [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
+- **Host-owned transaction through the protected write checkout** — the Host delegates exclusive PDO use for one write transaction. The checkout starts and ends that transaction under reservation in response to the Host's explicit `begin()`, `commit()`, or `rollBack()` calls. Registered commands and protected Ordering participate in the transaction. The Host directs handoff or discard and reconciles any unconfirmed outcome. See [§5.2.1](#521-optional-protected-host-write-transaction).
 - **Package-owned transaction** — begun by the package itself because none was active when a Transaction-runner method, or `ScopedOrderingManager::moveWithinScope()`, was called, or when C1 accepted a qualified exclusive grant and confirmed the start of its read-only transaction. The package commits it on success. Transaction runners and Ordering attempt a best-effort rollback when their transaction is still active after a failure. C1 only attempts rollback after a read failure once cursor release and ownership of the active transaction on the same session are confirmed. See [§5.3.1](#531-optional-c1-snapshot-pagination).
 
 ---
@@ -620,6 +670,20 @@ Host Input (callback) → run($callback) → caller-owned: participate
 
 - **No active transaction:** identical owned-transaction behavior to §5.1 (including optional deadlock replay); no savepoint SQL is issued on this path.
 - **Active caller-owned transaction:** opens an operation-local savepoint through `SavepointScope::begin()`. On success, releases it (`RELEASE SAVEPOINT`). If release fails, it attempts to undo the operation and throws the release failure. On a callback `Throwable`, performs best-effort `ROLLBACK TO SAVEPOINT` then best-effort `RELEASE SAVEPOINT`, and rethrows the **original** callback `Throwable` unchanged — a cleanup failure never replaces it. It never commits, fully rolls back, or retries the caller-owned transaction or the savepoint itself, even on a deadlock. If the driver reports the transaction no longer active immediately after `SAVEPOINT` succeeds (the server already ended the caller's transaction, for example on an earlier swallowed error), `SavepointScope::begin()` throws `TransactionExecutionException` before the callback runs.
+
+#### 5.2.1 Optional protected Host write transaction
+
+The Host delegates a standard non-persistent pdo_mysql connection with exception error mode and the default PDOStatement class. The Host supplies it idle, with autocommit enabled, and transfers exclusive use at the successful return of `attachExclusive()`. Local attachment issues no SQL. `begin()` qualifies the server session under reservation before `START TRANSACTION READ WRITE`, then checks the start on the same session. The session's isolation policy remains Host-controlled. Until confirmation, workload and transaction completion are unavailable. Aliases, multiplexing, automatic reconnect and replay invalidate eligibility. The registration protects this path and does not detect enrollment of the same PDO in Pagination. MySQL and MariaDB deployments must route the guarded unit through this checkout.
+
+The reservation spans registered commands, protected Ordering, finish and disposition. Re-entry is rejected. A successfully completed lease command checks the same session, released resources and the expected transaction state before handing out its result. A result that exceeds its row bound raises `ProtectedTransactionException`. The checkout remains active if the result is released and the same active transaction is confirmed. Engine failures fence the checkout and prevent further application SQL. If guarded savepoint control fails, the first failure escapes instead of a boolean result. Cursor cleanup cannot replace that failure. Raw Ordering keeps its existing best-effort savepoint cleanup.
+
+| Disposition | Reason and meaning for the Host |
+|---|---|
+| `UNCHANGED` | `CANCELLED_BEFORE_QUALIFICATION` when `returnForHost()` cancels a checkout before server work. The original connection is handed back. This conveys no server qualification. |
+| `REUSABLE` | `COMMITTED` or `ROLLED_BACK` after the Host's explicit completion, verified on the same idle session with released resources. The Host may retrieve the same PDO once. |
+| `DISCARD_REQUIRED` | `SERVER_QUALIFICATION_FAILED`, `START_UNCONFIRMED`, `TRANSACTION_LOST`, `OPERATION_UNCONFIRMED`, `COMMIT_OUTCOME_UNKNOWN`, `COMMIT_CONFIRMED_CONNECTION_UNSAFE`, `ROLLBACK_UNCONFIRMED`, or `HOST_DISCARDED`. Work, completion, and handoff are fenced. The Host chooses disposal and any reconciliation. |
+
+`COMMIT_OUTCOME_UNKNOWN` includes loss of the commit response after dispatch. `COMMIT_CONFIRMED_CONNECTION_UNSAFE` preserves an acknowledged commit when connection handoff cannot be confirmed. `TRANSACTION_LOST` identifies loss of authority to use the transaction on a signalled MariaDB `HY000/1020`. The code alone cannot certify rollback, its exact source, or replay safety. No work is replayed. The checkout publishes the terminal DTO once, before releasing the reservation and after completion checks. `settlement()` is a local read and returns null before a terminal result. `discardForHost()` drops the library's references without issuing explicit SQL. Driver cleanup may roll back automatically, and diagnostic extensions may retain references independently of the library.
 
 ### 5.3 `PdoPaginator::paginate()`
 
@@ -773,6 +837,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidTransactionConfigurationException` | `SystemMaatifyException` | A transaction-runner constructor receives `$maxDeadlockRetries` outside `[0, 3]`. |
 | `TransactionExecutionException` | `SystemMaatifyException` | A PDO transaction-control statement (`BEGIN`, `COMMIT`, `SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) returns `false` instead of throwing; or the shared savepoint helper observes that a caller-owned transaction is no longer active immediately after a successful `SAVEPOINT`, before the callback or Ordering mutation. |
+| `ProtectedTransactionException` | `SystemMaatifyException` | Invalid registration, binding, checkout lifecycle or resource confirmation in the optional protected path. Existing driver exceptions preserve their identity. |
 
 ### 6.2 Pagination
 
@@ -810,22 +875,24 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 
 Ordinary and Keyset pagination use the transaction context supplied by the Host ([§5.3](#53-pdopaginatorpaginate) and [§5.3.2](#532-optional-forward-only-keyset-pagination)). C1 manages the read transaction it starts on an eligible delegated connection and reports a terminal outcome to the Host ([§5.3.1](#531-optional-c1-snapshot-pagination)). In B, the Host directs transaction control through explicit commands and keeps ownership throughout the checkout. The source serializes those commands with page attempts, and the Host decides remediation, handoff, or discard ([§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction)).
 
+The protected write checkout executes explicit Host transaction commands and refuses further work after the transaction becomes unsafe (§5.2.1).
+
 ### 7.2 Savepoint ownership
 
-Savepoints are used **only** inside a caller-owned transaction, and only to limit one operation's own failure without ending the caller's transaction. `PdoSavepointTransactionRunner` and `ScopedOrderingManager::moveWithinScope()` share one `@internal` helper, `SavepointScope` (owned by the Transaction capability per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)), rather than each maintaining their own savepoint logic. Savepoint names follow `maatify_persistence_sp_<32 lowercase hex characters>` (a 128-bit random suffix), chosen so that this package and `maatify/persistence` can coexist on the same connection without colliding ([DEC-005](docs/decisions/DEC-005-coexistence-with-legacy-package.md) item 4). **A savepoint does not, and cannot, undo the server having already rolled back the whole surrounding transaction** (§7.3); it only ever limits *this operation's* mutation window within a transaction the server still considers active.
+Savepoints are used **only** inside a Host-owned transaction, and only to limit one operation's own failure without ending that transaction. `PdoSavepointTransactionRunner` and the movement operations of both Ordering managers use the same `@internal` helper, `SavepointScope`, owned by the Transaction capability per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). The protected checkout suppresses further savepoint SQL after a driver failure fences execution (§5.2.1). Savepoint names follow `maatify_persistence_sp_<32 lowercase hex characters>` (a 128-bit random suffix), chosen so that this package and `maatify/persistence` can coexist on the same connection without colliding ([DEC-005](docs/decisions/DEC-005-coexistence-with-legacy-package.md) item 4). A savepoint limits one operation's mutation window within a transaction the server still considers active (§7.3).
 
 ### 7.3 MariaDB `innodb_snapshot_isolation` hazard
 
-This is a **documented hazard with evidence**, not an advertised, unconditional support contract. [DEC-009](docs/decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (the record governing the `1020` contract itself) remains **`PROPOSED`/Owner-deferred**. Only the *test-version matrix* was ratified separately in [DEC-013](docs/decisions/DEC-013-test-only-database-version-boundary.md) (`ACTIVE`); that ratification is about which versions are exercised in CI, not about what error `1020` means or how a consumer should respond to it.
+This is a documented engine hazard. [DEC-009](docs/decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) activates the opt-in protected checkout. [DEC-013](docs/decisions/DEC-013-test-only-database-version-boundary.md) specifies test versions. Neither record advertises unconditional support.
 
-What is verified, by named Integration tests (`tests/Integration/Ordering/ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest.php`, `ScopedOrderingManagerStaleSnapshotTest.php`, `ScopedOrderingManagerMoveStaleSnapshotTest.php`), on real MariaDB cells:
+The raw Ordering entry points have the following verified behavior on real MariaDB cells (`ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest`, `ScopedOrderingManagerStaleSnapshotTest`, and `ScopedOrderingManagerMoveStaleSnapshotTest`):
 
 - With `innodb_snapshot_isolation=ON` (the MariaDB 11.8+ default), a locking read inside `getNextPositionForUpdate()` or the scope lock inside `moveWithinScope()`, taken after an older `REPEATABLE READ` snapshot and touching a row changed since that snapshot, fails with driver code `1020`. In the tested exception mode, the driver's `PDOException` propagates unchanged. A failure reported by return value follows the error-mode policy in §5.4. No savepoint is attempted, no retry happens, and no setting is overridden.
 - In the covered scenarios the server rolled back the caller’s whole transaction, including an earlier write, while `PDO::inTransaction()` could still report `true`. Continuing to use the connection as if the transaction were alive risks later statements running under an unintended implicit/autocommit transaction.
 - With the setting `OFF` (several ratified test cells default to `OFF`; see [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) §3), the ordinary "locking read sees the latest committed state" guarantee holds, matching MySQL 8.0/8.4 behavior.
-- The package **never** sets `innodb_snapshot_isolation`, the isolation level, or any other connection/session attribute, on any engine.
+- Ordering leaves `innodb_snapshot_isolation`, the isolation level, and connection attributes under Host control, including when it propagates error `1020`. Separately, when the Host explicitly calls B’s `beginRepeatableRead()`, B sets `REPEATABLE READ` for the next transaction on the delegated connection as described in [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction). This transaction-scoped setting leaves the session defaults and `innodb_snapshot_isolation` unchanged.
 
-The connection owner must account for the observed difference between the server’s transaction state and PDO’s report. The package preserves any original exception and leaves session settings to the caller. Handling and recovery policy for this case remain deferred in DEC-009.
+The connection owner must account for the observed difference between the server’s transaction state and PDO’s report. The protected write checkout (§5.2.1) fences further work after loss of transaction authority, preserves the original failure, and leaves reconciliation to the Host. `ProtectedScopedOrderingManagerIntegrationTest` exercises a real MariaDB `1020` before a savepoint and during an update after a savepoint.
 
 ### 7.4 Deadlock replay bounds
 

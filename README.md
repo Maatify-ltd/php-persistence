@@ -102,9 +102,10 @@ The public surface is three independent capability namespaces under `Maatify\Php
 - The current source also offers optional forward-only Keyset pagination on the Host’s PDO through `Pagination\{Repository\PdoKeysetPaginator, Criteria\KeysetQueryDescriptor, DTO\KeysetPageResultDTO, Exception\InvalidKeysetCursorException}`. [Keyset contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#532-optional-forward-only-keyset-pagination) · [Runnable example](examples/pagination_keyset_usage.php)
 - Optional B pagination uses a dedicated PdoHostSnapshotSource and PdoHostSnapshotPaginator on the Host's transaction, with per-attempt settlements and explicit Host handoff or discard. [B contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction)
 - `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
+- Optional protected write checkout uses `PdoProtectedTransactionCheckout` and `ProtectedScopedOrderingManager` on an exclusively delegated Host connection. The Host directs transaction completion and uses the settlement to decide handoff or discard. [Protected transaction contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction)
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
-The package uses internal helpers in `Transaction\Repository` and `Pagination\Repository`. The [Package Reference](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#35-internal-types-excluded-from-the-public-contract) identifies them and their contract status.
+The package uses internal helpers in the capability repositories. The [Package Reference](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#35-internal-types-excluded-from-the-public-contract) identifies them and their contract status.
 
 The complete, verified inventory — every constructor, named parameter, default, return type, thrown exception, and behavioral guarantee — is the canonical [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](PHP_PERSISTENCE_PACKAGE_REFERENCE.md). This section is an overview only and is not repeated there in full.
 

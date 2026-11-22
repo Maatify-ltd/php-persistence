@@ -12,6 +12,7 @@ use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingConfigurationException;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
+use Maatify\PhpPersistence\Ordering\Repository\OrderingOperations;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -72,12 +73,12 @@ final class OrderingExceptionContractTest extends TestCase
         self::assertFalse(class_exists('Maatify\\PhpPersistence\\Ordering\\Internal\\OperationSavepoint'));
         self::assertFalse(class_exists('Maatify\\PhpPersistence\\Ordering\\Repository\\OperationSavepoint'));
 
-        $managerFile = (new ReflectionClass(ScopedOrderingManager::class))->getFileName();
-        self::assertIsString($managerFile);
-        $managerSource = file_get_contents($managerFile);
-        self::assertIsString($managerSource);
-        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\SavepointScope', $managerSource);
-        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\PdoTransactionRunner', $managerSource);
+        $operationsFile = (new ReflectionClass(OrderingOperations::class))->getFileName();
+        self::assertIsString($operationsFile);
+        $operationsSource = file_get_contents($operationsFile);
+        self::assertIsString($operationsSource);
+        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\SavepointScope', $operationsSource);
+        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\PdoTransactionRunner', $operationsSource);
     }
 
     public function testInvalidOrderingConfigurationExceptionRepresentativeTrigger(): void

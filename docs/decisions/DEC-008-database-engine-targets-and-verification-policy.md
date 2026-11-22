@@ -31,5 +31,5 @@ The endpoint rule bounds the claim by evidence on both ends of each range. Treat
 ## Consequences
 
 - Until the matrix exists and passes, the package makes no public database-support statement beyond "design target".
-- The test-matrix endpoints, the Innovation treatment and the upper-bound cap were later ratified in [DEC-013](./DEC-013-test-only-database-version-boundary.md); the MariaDB `1020` contract remains `PROPOSED` in [DEC-009](./DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md). A support claim still needs the endpoint rule above.
+- The test-matrix endpoints, the Innovation treatment and the upper-bound cap were later ratified in [DEC-013](./DEC-013-test-only-database-version-boundary.md); the optional MariaDB `1020` policy is recorded in [DEC-009](./DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md). A support claim still needs the endpoint rule above.
 - The Composer requirement on `ext-pdo_mysql` is decided in WU-4, not here.
