@@ -47,6 +47,17 @@ final readonly class OrderingOperations
         return $this->nextPosition($value);
     }
 
+    /**
+     * Reads the locked tail until two consecutive values agree, then adds one.
+     * Each read closes its cursor before the next one. A waiter can acquire a
+     * lock on a former tail after another transaction appends a higher value.
+     * The repeated read avoids allocating from that former tail.
+     *
+     * A null budget retains the raw API's retry-until-stable behavior. With
+     * a budget of 2 to 512 reads, stability on the last read is valid. Exhaustion
+     * raises OrderingExecutionException with TAIL_READ_LIMIT_EXCEEDED metadata.
+     * The surrounding transaction keeps its locks.
+     */
     public function readStableTail(
         PDO|ProtectedTransactionConnection $pdo,
         ScopedOrderingConfig $config,
@@ -113,6 +124,10 @@ final readonly class OrderingOperations
         );
     }
 
+    /**
+     * Preserves raw PDO ownership. A failed move must unwind a transaction
+     * started for the move before the normal false result reaches the caller.
+     */
     public function moveWithinScope(
         PDO $pdo,
         ScopedOrderingConfig $config,
@@ -151,6 +166,10 @@ final readonly class OrderingOperations
         }
     }
 
+    /**
+     * Runs a move in the already reserved Host transaction. The driver scope
+     * records savepoint or statement failure for the checkout to settle.
+     */
     public function moveProtected(
         ProtectedTransactionConnection $connection,
         ScopedOrderingConfig $config,
@@ -182,6 +201,10 @@ final readonly class OrderingOperations
         }
     }
 
+    /**
+     * Acquires the scope and target locks before opening an operation-local
+     * savepoint. Missing rows and no-op moves bypass the mutation window.
+     */
     private function move(
         PDO|ProtectedTransactionConnection $pdo,
         ScopedOrderingConfig $config,

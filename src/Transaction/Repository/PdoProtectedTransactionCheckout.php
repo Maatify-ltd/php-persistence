@@ -18,10 +18,19 @@ use SensitiveParameter;
 use Throwable;
 use WeakMap;
 
-/** One exclusive Host delegation and one explicitly controlled write transaction. */
+/**
+ * One exclusive Host delegation for one Host-directed write transaction.
+ * The checkout serializes access and reports a terminal disposition for the
+ * Host to retrieve or discard the connection and reconcile uncertain writes.
+ */
 final class PdoProtectedTransactionCheckout
 {
-    /** @var WeakMap<PDO, true>|null */
+    /**
+     * Claims live PDO objects in this checkout type. Only clean handoff clears
+     * the claim explicitly. A discarded object stays ineligible until it dies.
+     *
+     * @var WeakMap<PDO, true>|null
+     */
     private static ?WeakMap $attached = null;
     private ?string $session = null;
     private bool $mariaDb = false;
@@ -33,6 +42,15 @@ final class PdoProtectedTransactionCheckout
         private readonly ProtectedTransactionCommandCatalog $catalog,
     ) {}
 
+    /**
+     * Accepts an idle, non-persistent pdo_mysql connection (PDO or Pdo\Mysql)
+     * with autocommit enabled, exception mode and the default statement class.
+     * The Host keeps ownership and grants exclusive use on successful return. Remove the
+     * connection from circulation, including aliases and other checkout APIs.
+     * Local attachment issues no SQL. begin() qualifies the server session.
+     *
+     * @throws ProtectedTransactionException If local eligibility or the exclusive claim fails. The Host keeps use of the PDO on failure.
+     */
     public static function attachExclusive(#[SensitiveParameter] PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
     {
         self::$attached ??= new WeakMap();
@@ -52,6 +70,16 @@ final class PdoProtectedTransactionCheckout
         return $checkout;
     }
 
+    /**
+     * Qualifies the idle server session under reservation, then starts a write
+     * transaction using the Host's isolation settings. Work becomes available
+     * after the start is confirmed on the same session. A failed qualification
+     * or unconfirmed start settles as DISCARD_REQUIRED with the corresponding
+     * SERVER_QUALIFICATION_FAILED or START_UNCONFIRMED reason.
+     *
+     * @throws ProtectedTransactionException If the checkout is unavailable, the start was already attempted, or the session cannot be confirmed.
+     * @throws PDOException The original driver failure, when the driver throws.
+     */
     public function begin(): void
     {
         if ($this->session !== null || $this->outcome !== null) {
@@ -74,8 +102,18 @@ final class PdoProtectedTransactionCheckout
     }
 
     /**
-     * @param array<array-key, mixed> $bindings
-     * @return int|list<array<array-key, mixed>>
+     * Runs a registered command in the confirmed active transaction. Bindings
+     * must match the plan's names exactly. Invalid commands or bindings fail
+     * before SQL. Result cursors are released and session continuity is checked
+     * before returning. A row-bound failure leaves the checkout active if
+     * cleanup and continuity are confirmed. A driver failure or unconfirmed
+     * cleanup or continuity fences further work.
+     *
+     * @param array<array-key, mixed> $bindings Exact names without colons, with string, int, bool or null values. Omit for a parameterless plan.
+     * @return int|list<array<array-key, mixed>> Affected-row count or bounded associative rows, as configured by the plan.
+     *
+     * @throws ProtectedTransactionException For an invalid command, bindings, lifecycle state, row bound or unconfirmed result.
+     * @throws PDOException The original driver failure, when the driver throws.
      */
     public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
     {
@@ -105,6 +143,9 @@ final class PdoProtectedTransactionCheckout
     }
 
     /**
+     * Runs a package-owned operation under the shared reservation and seals
+     * its driver receiver before releasing the reservation or exposing a result.
+     *
      * @template T
      * @param Closure(ProtectedTransactionConnection): T $operation
      * @return T
@@ -135,6 +176,11 @@ final class PdoProtectedTransactionCheckout
         }
     }
 
+    /**
+     * Releases statement resources before confirming continuity. A latched
+     * driver failure skips the session probe. Publish any terminal disposition
+     * while still reserved and preserve the primary exception on cleanup failure.
+     */
     private function finishOperation(ProtectedTransactionConnection $connection, string $session, ?Throwable $primary): void
     {
         $connection->seal();
@@ -157,21 +203,49 @@ final class PdoProtectedTransactionCheckout
         }
     }
 
+    /**
+     * Attempts to commit the active Host transaction once. Confirmed commit
+     * and an idle session permit handoff. COMMIT_OUTCOME_UNKNOWN covers a
+     * commit that may have been sent without a confirmed reply.
+     * COMMIT_CONFIRMED_CONNECTION_UNSAFE preserves a known commit when the
+     * subsequent session check fails. Read settlement() after an exception.
+     *
+     * @throws ProtectedTransactionException|PDOException If the operation is unavailable or completion cannot be confirmed.
+     */
     public function commit(): void
     {
         $this->finish(true);
     }
 
+    /**
+     * Attempts to roll back the active Host transaction once. Confirmed
+     * rollback on the same idle session permits handoff. An unconfirmed end
+     * requires discard and preserves the original failure.
+     *
+     * @throws ProtectedTransactionException|PDOException If the operation is unavailable or completion cannot be confirmed.
+     */
     public function rollBack(): void
     {
         $this->finish(false);
     }
 
+    /**
+     * Reads the final disposition and its reason without asking the server.
+     * Returns null until settlement. The same value remains available after an
+     * exception, handoff or discard.
+     */
     public function settlement(): ?ProtectedTransactionSettlementDTO
     {
         return $this->outcome;
     }
 
+    /**
+     * Hands the original PDO back once after a verified end (REUSABLE), or
+     * cancels an untouched checkout (UNCHANGED) without qualifying its session.
+     * Either handoff ends this checkout's authority and releases the PDO claim.
+     *
+     * @throws ProtectedTransactionException During a reservation, active transaction, required discard or after handoff or discard.
+     */
     public function returnForHost(): PDO
     {
         $this->reserve();
@@ -193,6 +267,13 @@ final class PdoProtectedTransactionCheckout
         }
     }
 
+    /**
+     * Retires the checkout without returning PDO or issuing explicit SQL.
+     * Preserves a terminal settlement, or records HOST_DISCARDED when none
+     * exists. Dropping the reference may trigger automatic driver rollback.
+     *
+     * @throws ProtectedTransactionException During a reservation or after handoff or discard.
+     */
     public function discardForHost(): void
     {
         $this->reserve();
@@ -207,6 +288,11 @@ final class PdoProtectedTransactionCheckout
         }
     }
 
+    /**
+     * Confirms the active session before sending an explicit end command and
+     * confirms the same idle session before settling. Track the acknowledgement
+     * separately from the post-command check so later failure preserves a known commit.
+     */
     private function finish(bool $commit): void
     {
         $session = $this->activeSession();
@@ -290,13 +376,25 @@ final class PdoProtectedTransactionCheckout
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * Rejects serialization of the exclusive delegation.
+     *
+     * @return array<array-key, mixed>
+     *
+     * @throws ProtectedTransactionException Always.
+     */
     public function __serialize(): array
     {
         throw new ProtectedTransactionException('A protected checkout cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * Rejects restoring a delegation outside the exclusive attachment path.
+     *
+     * @param array<array-key, mixed> $data
+     *
+     * @throws ProtectedTransactionException Always.
+     */
     public function __unserialize(array $data): void
     {
         throw new ProtectedTransactionException('A protected checkout cannot be restored.');

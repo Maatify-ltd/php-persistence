@@ -49,6 +49,11 @@ final class ProtectedTransactionConnection
         }
     }
 
+    /**
+     * Reports transaction activity only while the receiver is usable. Once a
+     * driver failure is latched, savepoint cleanup sees an inactive receiver
+     * even if PDO still reports the transaction active.
+     */
     public function inTransaction(): bool
     {
         if ($this->pdo === null || $this->failure !== null) {
@@ -75,6 +80,7 @@ final class ProtectedTransactionConnection
         return $this->pdo ?? throw new ProtectedTransactionException('The protected driver scope is closed.');
     }
 
+    /** Latches the first driver failure for settlement, then throws the immediate error. */
     public function fail(Throwable $error): never
     {
         $this->failure ??= $error;
@@ -91,6 +97,11 @@ final class ProtectedTransactionConnection
         return $this->sentSql;
     }
 
+    /**
+     * Closes all tracked statement receivers and drops the local PDO reference
+     * before the checkout releases its reservation. Cleanup failures preserve
+     * the first recorded failure and cannot keep the receiver usable.
+     */
     public function seal(): void
     {
         try {

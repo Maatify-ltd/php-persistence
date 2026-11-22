@@ -12,7 +12,20 @@ final readonly class ProtectedTransactionCommandPlan
     /** @var list<string> */
     private array $names;
 
-    /** @param array<array-key, mixed> $parameterNames */
+    /**
+     * Registers one trusted InnoDB statement that preserves the session and
+     * transaction, including any effects of routines or triggers. The plan
+     * admits SELECT, INSERT, UPDATE, DELETE, REPLACE or WITH at the start of
+     * the SQL and rejects semicolons. The Host verifies the statement's effects.
+     *
+     * A null or omitted row bound requests affected-row count. A positive bound
+     * requests a list of associative rows and rejects overflow instead of
+     * truncating the result.
+     *
+     * @param array<array-key, mixed> $parameterNames Ordered list of unique names without a colon. Use an empty list for a parameterless statement.
+     *
+     * @throws ProtectedTransactionException For an invalid statement prefix, parameter declaration or row bound.
+     */
     public function __construct(
         /** @internal */
         public string $sql,
@@ -37,6 +50,8 @@ final readonly class ProtectedTransactionCommandPlan
     }
 
     /**
+     * Validates the exact binding map before SQL and preserves scalar types.
+     *
      * @internal
      * @param array<array-key, mixed> $bindings
      * @return array<string, int|string|bool|null>

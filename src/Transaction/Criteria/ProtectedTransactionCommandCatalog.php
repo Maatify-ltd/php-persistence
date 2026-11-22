@@ -12,7 +12,14 @@ final readonly class ProtectedTransactionCommandCatalog
     /** @var array<array-key, ProtectedTransactionCommandPlan> */
     private array $commands;
 
-    /** @param array<array-key, mixed> $commands */
+    /**
+     * Registers command plans by identifier. Identifiers use PHP array-key
+     * semantics. An empty catalog allows a checkout with no registered commands.
+     *
+     * @param array<array-key, mixed> $commands Map of identifiers to plans.
+     *
+     * @throws ProtectedTransactionException For an empty-string identifier or a value that is not a command plan.
+     */
     public function __construct(array $commands)
     {
         $validated = [];

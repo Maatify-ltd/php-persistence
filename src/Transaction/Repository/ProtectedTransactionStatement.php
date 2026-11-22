@@ -99,14 +99,16 @@ final class ProtectedTransactionStatement
         }
     }
 
+    /**
+     * Releases the result even when SQL execution is fenced. Records a close
+     * failure without trying to close the same cursor during settlement.
+     */
     public function closeCursor(): bool
     {
-        // Cursor cleanup remains available after fencing SQL execution.
         $statement = $this->statement;
         if ($statement === null || !$this->open) {
             return true;
         }
-        // Record an unconfirmed close without retrying it during settlement.
         $this->open = false;
         try {
             if (!$statement->closeCursor()) {
@@ -119,6 +121,7 @@ final class ProtectedTransactionStatement
         }
     }
 
+    /** Releases the result and detaches the driver statement even if cleanup throws. */
     public function seal(): void
     {
         try {
