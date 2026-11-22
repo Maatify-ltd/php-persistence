@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Test-only packet relay. It withholds a successful response to one exact SQL
- * control command, after the real server has processed the complete command.
+ * Test-only packet relay for transaction control. It can disconnect before a
+ * command reaches the server or withhold the real server's acknowledgement.
  * The fixture uses local, non-TLS pdo_mysql; credentials are never printed.
  */
 
@@ -45,6 +45,8 @@ $fixtureTable = $argv[3] ?? '';
 if ($host === false || $port === false || !in_array($target, [
     'START TRANSACTION READ ONLY',
     'START TRANSACTION READ WRITE',
+    'COMMIT',
+    'ROLLBACK',
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
     'RELEASE SAVEPOINT',
@@ -80,6 +82,9 @@ try {
             $savepointSent = false;
             $orderingErrorSent = false;
             $tailReads = 0;
+            $targetPayload = "\x03" . $target;
+            // mysqlnd pads native commit() and rollBack() with one trailing space.
+            $nativeCompletion = $target === 'COMMIT' || $target === 'ROLLBACK';
             for (;;) {
                 $readable = [$client, $server];
                 $write = $except = null;
@@ -155,7 +160,9 @@ try {
                     }
                     $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
                 }
-                if ($peer === $client && $sequence === 0 && $payload === "\x03" . $target) {
+                if ($peer === $client && $sequence === 0
+                    && ($payload === $targetPayload || ($nativeCompletion && $payload === $targetPayload . ' '))
+                ) {
                     if ($stage === 'before') {
                         echo "COMMAND NOT FORWARDED\n";
                         fflush(STDOUT);

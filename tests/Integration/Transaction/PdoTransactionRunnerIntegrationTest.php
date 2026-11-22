@@ -6,6 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Integration\Transaction;
 
 use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Throwable;
 
@@ -16,16 +17,27 @@ use Throwable;
  */
 final class PdoTransactionRunnerIntegrationTest extends IntegrationTestCase
 {
-    public function testOwnedTransactionCommitsAndIsVisibleToAnotherConnection(): void
+    /** @return iterable<string, array{int|false}> */
+    public static function callbackValues(): iterable
+    {
+        yield 'value' => [42];
+        yield 'false' => [false];
+    }
+
+    #[DataProvider('callbackValues')]
+    public function testOwnedNormalReturnCommitsEvenWhenTheCallbackReturnsFalse(int|false $result): void
     {
         $writer = $this->connect();
         $reader = $this->connect();
         $table = $this->createTable($writer);
 
-        (new PdoTransactionRunner($writer))->run(static function () use ($writer, $table): void {
+        $returned = (new PdoTransactionRunner($writer))->run(static function () use ($writer, $table, $result): int|false {
             $writer->exec('INSERT INTO `' . $table . '` (id, v) VALUES (1, 10)');
+
+            return $result;
         });
 
+        self::assertSame($result, $returned);
         self::assertFalse($writer->inTransaction());
         self::assertSame([10], $this->values($reader, $table));
     }
@@ -33,6 +45,7 @@ final class PdoTransactionRunnerIntegrationTest extends IntegrationTestCase
     public function testOwnedTransactionFailureRollsBackAndRethrowsExactThrowable(): void
     {
         $pdo = $this->connect();
+        $reader = $this->connect();
         $table = $this->createTable($pdo);
         $failure = new RuntimeException('owned transaction failure.');
 
@@ -47,6 +60,7 @@ final class PdoTransactionRunnerIntegrationTest extends IntegrationTestCase
         self::assertSame($failure, $thrown);
         self::assertFalse($pdo->inTransaction());
         self::assertSame([], $this->values($pdo, $table));
+        self::assertSame([], $this->values($reader, $table));
     }
 
     public function testCallerOwnedTransactionParticipatesWithoutChangingOwnership(): void
