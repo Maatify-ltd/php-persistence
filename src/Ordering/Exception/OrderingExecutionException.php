@@ -10,8 +10,12 @@ use Maatify\Exceptions\Exception\System\SystemMaatifyException;
 use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 
 /**
- * Reports an ordering statement failure when PDO does not throw an exception,
- * an invalid ordering result, or a next position outside the PHP integer range.
+ * Reports an ordering statement failure when PDO does not throw, an invalid
+ * ordering result, a next position outside the PHP integer range, or exhaustion
+ * of the locking tail-read budget.
+ *
+ * For tail-read exhaustion, getMeta() reports reason TAIL_READ_LIMIT_EXCEEDED
+ * and the integer budget in maxTailReads.
  */
 final class OrderingExecutionException extends SystemMaatifyException implements PhpPersistenceExceptionInterface
 {
