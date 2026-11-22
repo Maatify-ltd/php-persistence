@@ -6,17 +6,20 @@ namespace Maatify\PhpPersistence\Transaction\Repository;
 
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use PDO;
+use SensitiveParameter;
 use Throwable;
 
 /** @internal Driver receiver valid only during one reserved operation. */
 final class ProtectedTransactionConnection
 {
-    /** @var list<ProtectedTransactionStatement> */
+    /** @var array<int, ProtectedTransactionStatement> */
     private array $statements = [];
     private ?Throwable $failure = null;
+    private bool $cursorFailure = false;
+    private bool $continuityFailure = false;
     private bool $sentSql = false;
 
-    public function __construct(private ?PDO $pdo) {}
+    public function __construct(#[SensitiveParameter] private ?PDO $pdo) {}
 
     public function prepare(string $sql): ProtectedTransactionStatement
     {
@@ -28,7 +31,7 @@ final class ProtectedTransactionConnection
                 throw new ProtectedTransactionException('Unable to prepare the protected transaction statement.');
             }
             $guarded = new ProtectedTransactionStatement($this, $statement);
-            $this->statements[] = $guarded;
+            $this->statements[spl_object_id($guarded)] = $guarded;
 
             return $guarded;
         } catch (Throwable $error) {
@@ -81,15 +84,38 @@ final class ProtectedTransactionConnection
     }
 
     /** Latches the first driver failure for settlement, then throws the immediate error. */
-    public function fail(Throwable $error): never
+    public function fail(Throwable $error, bool $cursor = false, bool $continuity = false): never
     {
-        $this->failure ??= $error;
+        if ($this->failure === null) {
+            $this->cursorFailure = $cursor;
+            $this->continuityFailure = $continuity;
+            $this->failure = $error;
+        }
         throw $error;
     }
 
     public function failure(): ?Throwable
     {
         return $this->failure;
+    }
+
+    public function cursorFailure(): bool
+    {
+        return $this->cursorFailure;
+    }
+
+    public function continuityFailure(): bool
+    {
+        return $this->continuityFailure;
+    }
+
+    public function release(ProtectedTransactionStatement $statement): void
+    {
+        try {
+            $statement->seal();
+        } finally {
+            unset($this->statements[spl_object_id($statement)]);
+        }
     }
 
     public function sentSql(): bool

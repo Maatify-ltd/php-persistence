@@ -49,6 +49,8 @@ if ($host === false || $port === false || !in_array($target, [
     'ROLLBACK',
     'COMMIT AND NO CHAIN NO RELEASE',
     'ROLLBACK AND NO CHAIN NO RELEASE',
+    'SAVEPOINT',
+    'ROLLBACK TO SAVEPOINT',
     'RELEASE SAVEPOINT',
     'SAVEPOINT maatify_wub22_proof',
     'ROLLBACK TO SAVEPOINT maatify_wub22_proof',
@@ -164,7 +166,9 @@ try {
                     $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
                 }
                 if ($peer === $client && $sequence === 0
-                    && ($payload === $targetPayload || ($nativeCompletion && $payload === $targetPayload . ' '))
+                    && ($payload === $targetPayload || ($nativeCompletion && $payload === $targetPayload . ' ')
+                        || (in_array($target, ['SAVEPOINT', 'ROLLBACK TO SAVEPOINT', 'RELEASE SAVEPOINT'], true)
+                            && preg_match('/\A' . preg_quote($targetPayload, '/') . ' maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1))
                 ) {
                     if ($stage === 'before') {
                         echo "COMMAND NOT FORWARDED\n";

@@ -11,12 +11,9 @@ use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum 
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionReasonEnum as Reason;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use PDO;
-use Pdo\Mysql;
-use PDOStatement;
 use PDOException;
 use SensitiveParameter;
 use Throwable;
-use WeakMap;
 
 /**
  * One exclusive Host delegation for one Host-directed write transaction.
@@ -25,19 +22,13 @@ use WeakMap;
  */
 final class PdoProtectedTransactionCheckout
 {
-    /**
-     * Claims live PDO objects in this checkout type. Only clean handoff clears
-     * the claim explicitly. A discarded object stays ineligible until it dies.
-     *
-     * @var WeakMap<PDO, true>|null
-     */
-    private static ?WeakMap $attached = null;
     private ?string $session = null;
     private bool $mariaDb = false;
     private bool $busy = false;
     private ?ProtectedTransactionSettlementDTO $outcome = null;
 
     private function __construct(
+        #[SensitiveParameter]
         private ?PDO $pdo,
         private readonly ProtectedTransactionCommandCatalog $catalog,
     ) {}
@@ -53,19 +44,12 @@ final class PdoProtectedTransactionCheckout
      */
     public static function attachExclusive(#[SensitiveParameter] PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
     {
-        self::$attached ??= new WeakMap();
-        if (isset(self::$attached[$pdo])
-            || ($pdo::class !== PDO::class && $pdo::class !== Mysql::class)
-            || $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql'
-            || $pdo->getAttribute(PDO::ATTR_PERSISTENT)
-            || $pdo->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION
-            || $pdo->getAttribute(PDO::ATTR_STATEMENT_CLASS) !== [PDOStatement::class]
-        ) {
+        if (TransactionConnectionClaim::exists($pdo) || !ProtectedTransactionDriver::isEligible($pdo)) {
             throw new ProtectedTransactionException('The Host connection is ineligible for protected transactions.');
         }
 
         $checkout = new self($pdo, $catalog);
-        self::$attached[$pdo] = true;
+        TransactionConnectionClaim::acquire($pdo);
 
         return $checkout;
     }
@@ -90,7 +74,7 @@ final class PdoProtectedTransactionCheckout
         try {
             $session = $this->inspect(false);
             $reason = Reason::START_UNCONFIRMED;
-            $this->control('START TRANSACTION READ WRITE');
+            $this->control(ProtectedTransactionDriver::START);
             $this->inspect(true, $session);
             $this->session = $session;
         } catch (Throwable $failure) {
@@ -120,26 +104,8 @@ final class PdoProtectedTransactionCheckout
         $command = $this->catalog->command($commandId);
         $params = $command->bind($bindings);
 
-        return $this->run(static function (ProtectedTransactionConnection $connection) use ($command, $params): int|array {
-            $statement = $connection->prepare($command->sql);
-            foreach ($params as $name => $value) {
-                $statement->bind($name, $value);
-            }
-            $statement->execute();
-            if ($command->maxRows === null) {
-                return $statement->rowCount();
-            }
-
-            $rows = [];
-            while (($row = $statement->row()) !== false) {
-                if (count($rows) === $command->maxRows) {
-                    throw new ProtectedTransactionException('The protected transaction result exceeds its row bound.');
-                }
-                $rows[] = $row;
-            }
-
-            return $rows;
-        });
+        return $this->run(static fn(ProtectedTransactionConnection $connection): int|array
+            => ProtectedTransactionCommandExecutor::run($connection, $command, $params));
     }
 
     /**
@@ -258,7 +224,7 @@ final class PdoProtectedTransactionCheckout
             }
 
             $pdo = $this->connection();
-            unset(self::$attached[$pdo]);
+            TransactionConnectionClaim::release($pdo);
             $this->pdo = null;
 
             return $pdo;
@@ -301,7 +267,7 @@ final class PdoProtectedTransactionCheckout
         try {
             $this->inspect(true, $session);
             $reason = $commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED;
-            $this->control($commit ? 'COMMIT AND NO CHAIN NO RELEASE' : 'ROLLBACK AND NO CHAIN NO RELEASE');
+            $this->control($commit ? ProtectedTransactionDriver::COMMIT : ProtectedTransactionDriver::ROLLBACK);
             $reason = $commit ? Reason::COMMIT_CONFIRMED_CONNECTION_UNSAFE : Reason::ROLLBACK_UNCONFIRMED;
             $this->inspect(false, $session);
             $this->settle(Disposition::REUSABLE, $commit ? Reason::COMMITTED : Reason::ROLLED_BACK);
@@ -337,35 +303,17 @@ final class PdoProtectedTransactionCheckout
 
     private function inspect(bool $active, ?string $expected = null): string
     {
-        $pdo = $this->connection();
-        $statement = $pdo->query('SELECT CONNECTION_ID(), @@autocommit, VERSION()');
-        if ($statement === false) {
-            throw new ProtectedTransactionException('Unable to inspect the protected session.');
-        }
-        $row = $statement->fetch(PDO::FETCH_NUM);
-        if (!$statement->closeCursor() || !is_array($row)
-            || (!is_string($row[0] ?? null) && !is_int($row[0] ?? null))
-            || preg_match('/\A[1-9][0-9]*\z/', (string) $row[0]) !== 1
-            || !in_array($row[1] ?? null, [1, '1'], true)
-            || !is_string($row[2] ?? null)
-            || ($expected !== null && (string) $row[0] !== $expected)
-            || $pdo->inTransaction() !== $active
-        ) {
-            throw new ProtectedTransactionException('Unable to confirm the protected session.');
-        }
-
+        $session = ProtectedTransactionDriver::inspect($this->connection(), $active, $expected);
         if ($expected === null) {
-            $this->mariaDb = stripos($row[2], 'MariaDB') !== false;
+            $this->mariaDb = $session['mariaDb'];
         }
 
-        return (string) $row[0];
+        return $session['id'];
     }
 
     private function control(string $sql): void
     {
-        if ($this->connection()->exec($sql) === false) {
-            throw new ProtectedTransactionException('Unable to confirm the protected transaction command.');
-        }
+        ProtectedTransactionDriver::control($this->connection(), $sql);
     }
 
     private function settle(Disposition $disposition, Reason $reason): void

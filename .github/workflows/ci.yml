@@ -214,10 +214,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/setup-php-composer
         with:
           php-version: "8.4"
       - name: Install and verify external consumer twice on fresh MySQL
+        env:
+          PP_DB_CELL: mysql-8.4.13
+        run: composer test:consumer
+      - name: Install and verify external consumer twice on fresh MariaDB
+        env:
+          PP_DB_CELL: mariadb-11.8.9
         run: composer test:consumer
       - name: No Compose resources remain
         if: always()
