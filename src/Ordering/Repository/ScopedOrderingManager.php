@@ -160,7 +160,7 @@ final readonly class ScopedOrderingManager
         ScopedOrderingConfig $config,
         int|string|null $scopeValue = null,
     ): int {
-        return (new OrderingOperations())->readStableTail($pdo, $config, $scopeValue, null);
+        return (new OrderingOperations())->readStableTail($pdo, $config, $scopeValue, 64);
     }
 
     /**

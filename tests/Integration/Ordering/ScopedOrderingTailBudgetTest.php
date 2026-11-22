@@ -32,8 +32,7 @@ final class ScopedOrderingTailBudgetTest extends OrderingIntegrationTestCase
         int $readCount,
         ?int $expected,
         bool $closeFails,
-    ): void
-    {
+    ): void {
         $this->fixture->insertScoped('budget', 1);
         $lockedId = $this->fixture->insertScoped('budget', 2);
         $marker = $this->createTable($this->pdo());
