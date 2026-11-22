@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, and protected Host write transactions describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, protected Host write transactions, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -579,6 +579,7 @@ public function getNextPosition(
 
 public function getNextPositionForUpdate(
     PDO $pdo, ScopedOrderingConfig $config, int|string|null $scopeValue = null,
+    int $maxTailReads = 64,
 ): int
 
 public function moveWithinScope(
@@ -788,7 +789,13 @@ Returns `MAX(orderColumn) + 1` (or `1` for an empty scope) with a **plain, non-l
 
 #### `getNextPositionForUpdate()`
 
-Requires an **active caller-owned PDO transaction**; throws `InvalidOrderingOperationException` otherwise. Issues a locking read (`SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`) and repeats it until two consecutive reads agree, so every call issues at least two locking reads — including for an empty scope. A successful current read can see newly committed rows and the transaction’s own writes. See §7.3 for the observed MariaDB failure mode. Limits: an empty scope has no row to lock, so concurrent first inserts into it are not serialized by this method alone; the row scan (and lock) may cover more than the scope's active rows without a suitable `(scope, order)` index; under `REPEATABLE READ` the lock also covers the gap above the last scanned row; a lock-wait timeout or deadlock follows the error-mode policy above. The caller decides whether to retry.
+Requires an **active caller-owned PDO transaction**. The optional fourth argument `$maxTailReads` defaults to **64** and accepts **2–512** inclusive. Invalid limits, scopes or transaction state raise `InvalidOrderingOperationException` before SQL. The limit counts locking reads from the first `SELECT … ORDER BY orderColumn DESC, idColumn DESC LIMIT 1 FOR UPDATE`. An allocation succeeds after two consecutive matching tail values, including a match on the last allowed read. An empty scope still requires two reads and returns `1`.
+
+If the tail remains unstable, the call closes the final cursor and raises `OrderingExecutionException` with `getMeta()['reason'] === 'TAIL_READ_LIMIT_EXCEEDED'` and integer `getMeta()['maxTailReads']`. Driver, fetch and cursor-close errors retain priority. The limit bounds the number of reads. Each read can still wait according to server policy. The Host owns earlier writes and acquired locks and decides when to commit, roll back or retry.
+
+A successful current read can see new commits and the transaction's own writes. Concurrent first inserts into an empty scope need caller coordination. The row scan and lock can cover more than the active scope without a suitable `(scope, order)` index. Under `REPEATABLE READ` the lock can also cover the gap above the last scanned row. Lock timeouts and deadlocks follow the error-mode policy above. See §7.3 for MariaDB `1020`.
+
+Existing positional and named calls keep their argument names, defaults and `int` return type. Reflection exposes the optional fourth argument. Compared with RC.2, a call that would stabilize only after 64 reads can now fail unless given a larger valid budget. [DEC-021](docs/decisions/DEC-021-bound-ordering-tail-reads.md) records this approved behavior change.
 
 #### `moveWithinScope()`
 
@@ -855,8 +862,8 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 | Exception | Base | Thrown when |
 |---|---|---|
 | `InvalidOrderingConfigurationException` | `SystemMaatifyException` | Invalid `ScopedOrderingConfig` construction (bad table/column identifier, or `nullableScope` without a `scopeColumn`). |
-| `InvalidOrderingOperationException` | `ValidationMaatifyException` | Invalid runtime arguments or an unmet precondition on a `ScopedOrderingManager` call: inconsistent scope usage, an invalid row id or target order in `moveWithinScope()`, an updated-at value/column mismatch, or a locking next-position read (`getNextPositionForUpdate()`) requested without an active PDO transaction. |
-| `OrderingExecutionException` | `SystemMaatifyException` | Preparing, executing, fetching, or closing an Ordering statement fails without throwing, the next-position aggregate query returns no row, an ordering value is not a representable integer, or the next position exceeds `PHP_INT_MAX`. A fetch with SQLSTATE `00000` and no row is ordinary end of results for reads that allow no row. |
+| `InvalidOrderingOperationException` | `ValidationMaatifyException` | Invalid runtime arguments or an unmet precondition on a `ScopedOrderingManager` call: inconsistent scope usage, an invalid row id or target order in `moveWithinScope()`, an updated-at value/column mismatch, an out-of-range locking tail-read limit, or a locking next-position read requested without an active PDO transaction. |
+| `OrderingExecutionException` | `SystemMaatifyException` | Preparing, executing, fetching, or closing an Ordering statement fails without throwing, the next-position aggregate query returns no row, an ordering value is not a representable integer, the next position exceeds `PHP_INT_MAX`, or the tail-read budget ends without a stable tail. Only the last case sets the exhaustion metadata described in §5.4. A fetch with SQLSTATE `00000` and no row is ordinary end of results for reads that allow no row. |
 
 ---
 

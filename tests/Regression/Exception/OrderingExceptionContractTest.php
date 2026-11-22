@@ -14,6 +14,8 @@ use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\OrderingOperations;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+use PDO;
+use PDOStatement;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -50,6 +52,28 @@ final class OrderingExceptionContractTest extends TestCase
         self::assertInstanceOf(SystemMaatifyException::class, $exception);
         self::assertInstanceOf(PhpPersistenceExceptionInterface::class, $exception);
         self::assertSame(ErrorCodeEnum::MAATIFY_ERROR, $exception->getErrorCode());
+    }
+
+    public function testTailReadExhaustionUsesTheExistingOrderingExecutionMetadataContract(): void
+    {
+        $statement = $this->createStub(PDOStatement::class);
+        $statement->method('execute')->willReturn(true);
+        $statement->method('fetchColumn')->willReturn(1, 2);
+        $statement->method('closeCursor')->willReturn(true);
+        $pdo = $this->createStub(PDO::class);
+        $pdo->method('inTransaction')->willReturn(true);
+        $pdo->method('prepare')->willReturn($statement);
+
+        try {
+            (new ScopedOrderingManager())->getNextPositionForUpdate($pdo, new ScopedOrderingConfig('items'), maxTailReads: 2);
+        } catch (OrderingExecutionException $failure) {
+            self::assertSame(ErrorCodeEnum::MAATIFY_ERROR, $failure->getErrorCode());
+            self::assertSame(['reason' => 'TAIL_READ_LIMIT_EXCEEDED', 'maxTailReads' => 2], $failure->getMeta());
+
+            return;
+        }
+
+        self::fail('The unstable tail must exhaust the read budget.');
     }
 
     /**

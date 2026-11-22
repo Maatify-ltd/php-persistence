@@ -53,8 +53,7 @@ final readonly class OrderingOperations
      * lock on a former tail after another transaction appends a higher value.
      * The repeated read avoids allocating from that former tail.
      *
-     * A null budget retains the raw API's retry-until-stable behavior. With
-     * a budget of 2 to 512 reads, stability on the last read is valid. Exhaustion
+     * With a budget of 2 to 512 reads, stability on the last read is valid. Exhaustion
      * raises OrderingExecutionException with TAIL_READ_LIMIT_EXCEEDED metadata.
      * The surrounding transaction keeps its locks.
      */
@@ -62,9 +61,9 @@ final readonly class OrderingOperations
         PDO|ProtectedTransactionConnection $pdo,
         ScopedOrderingConfig $config,
         int|string|null $scopeValue,
-        ?int $maxTailReads,
+        int $maxTailReads,
     ): int {
-        if ($maxTailReads !== null && ($maxTailReads < 2 || $maxTailReads > 512)) {
+        if ($maxTailReads < 2 || $maxTailReads > 512) {
             throw new InvalidOrderingOperationException('The ordering tail-read limit must be between 2 and 512.');
         }
         $operation = 'getNextPositionForUpdate';
@@ -99,11 +98,7 @@ final readonly class OrderingOperations
         // holds.
         $previousTail = null;
 
-        $remaining = $maxTailReads;
-        while ($remaining === null || $remaining > 0) {
-            if ($remaining !== null) {
-                --$remaining;
-            }
+        for ($remaining = $maxTailReads; $remaining > 0; --$remaining) {
             $this->executeStatement($stmt, $params, $operation);
 
             $value = $this->fetchIntegerOrEof($stmt, $operation);

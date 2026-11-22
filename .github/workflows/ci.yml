@@ -166,6 +166,8 @@ jobs:
       - name: Integration suite on ${{ matrix.cell }} (two fresh lifecycles, two suite passes each)
         env:
           PP_DB_CELL: ${{ matrix.cell }}
+          # Leave the 1500-second integration runner enough time to perform its own teardown.
+          COMPOSER_PROCESS_TIMEOUT: '1560'
         run: composer test:integration -- --fresh-runs=2
       - name: No Compose resources remain
         if: always()

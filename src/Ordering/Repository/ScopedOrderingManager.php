@@ -106,13 +106,14 @@ final readonly class ScopedOrderingManager
      * last active row by the configured order column, with the configured id
      * column as the tie-breaker.
      *
-     * The locking read is repeated until two consecutive reads return the same
-     * order value, so every call issues at least two locking reads, including
-     * for an empty scope. A read that waited for the lock on the previous tail
-     * may resume after another transaction committed a higher tail (observable
-     * under READ COMMITTED); the repeat makes the returned position follow that
-     * tail. The repeat continues only while the tail keeps changing, and each
-     * repeated read can itself wait for a lock or fail as described below.
+     * A successful allocation requires two consecutive locking reads with the
+     * same order value, including for an empty scope. Repeating the read lets
+     * a waiter see a higher tail committed while it waited under READ COMMITTED.
+     * The budget counts from the first read and allows a match on the last read.
+     * If the tail still changes, the call throws after closing the last cursor
+     * with reason TAIL_READ_LIMIT_EXCEEDED and maxTailReads in exception metadata.
+     * Driver, fetch and cursor errors retain priority. The Host keeps control
+     * of the transaction, its locks and any decision to retry.
      *
      * Guarantee: the returned position reflects the latest committed state, and
      * on a non-empty scope concurrent callers that also use locking reads (this
@@ -150,17 +151,19 @@ final readonly class ScopedOrderingManager
      * not retry 1020 or change session settings. See DEC-009.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
+     * @param int $maxTailReads Maximum locking reads per call, from 2 to 512 inclusive. Defaults to 64. Server lock-wait policy applies to each read.
      *
-     * @throws InvalidOrderingOperationException When no PDO transaction is active or scope usage is inconsistent.
-     * @throws OrderingExecutionException When a statement fails without throwing or the next position cannot be represented as a PHP integer.
+     * @throws InvalidOrderingOperationException When the budget or scope is invalid or no PDO transaction is active.
+     * @throws OrderingExecutionException When the budget is exhausted, a statement fails without throwing, or a position exceeds the PHP integer range.
      * @throws Throwable When a PDO/database operation throws.
      */
     public function getNextPositionForUpdate(
         PDO $pdo,
         ScopedOrderingConfig $config,
         int|string|null $scopeValue = null,
+        int $maxTailReads = 64,
     ): int {
-        return (new OrderingOperations())->readStableTail($pdo, $config, $scopeValue, null);
+        return (new OrderingOperations())->readStableTail($pdo, $config, $scopeValue, $maxTailReads);
     }
 
     /**

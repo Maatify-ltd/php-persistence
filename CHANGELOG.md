@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - Optional consistent pagination for one page on a qualified Host-delegated read connection. The Host receives a terminal connection disposition independently of the page or exception.
 
+### Changed
+
+- Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The new optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
+
 ## [1.0.0-rc.2] - 2026-11-18
 
 Second release candidate, published on [Packagist](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2).
