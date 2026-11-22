@@ -11,9 +11,9 @@ use RuntimeException;
 
 /**
  * Real database connection that can make a matching control statement fail
- * (exec() returns false or throws, the statement is NOT executed) or make a
- * matching prepare() throw. Used to exercise savepoint-control failures on a
- * real connection without simulating the database itself. Golden-captured from
+ * (exec() returns false or throws, the statement is NOT executed), a
+ * matching prepare() throw, or the next rollBack() fail before dispatch.
+ * These faults leave the surrounding work on the real server. Originally captured from
  * legacy tests/Support/MySql/FaultInjectingPdo.php (1f6a7aa, provenance gate
  * recorded in the WU-8 pull request).
  */
@@ -28,6 +28,8 @@ final class FaultInjectingPdo extends PDO
     /** @var list<string> */
     private array $prepareFaults = [];
 
+    private PDOException|false|null $rollbackFault = null;
+
     /** @param 'false'|'throw' $mode */
     public function failExec(string $regex, string $mode): void
     {
@@ -37,6 +39,22 @@ final class FaultInjectingPdo extends PDO
     public function failPrepare(string $regex): void
     {
         $this->prepareFaults[] = $regex;
+    }
+
+    public function failNextRollback(PDOException|false $fault): void
+    {
+        $this->rollbackFault = $fault;
+    }
+
+    public function rollBack(): bool
+    {
+        $fault = $this->rollbackFault;
+        $this->rollbackFault = null;
+        if ($fault instanceof PDOException) {
+            throw $fault;
+        }
+
+        return $fault === false ? false : parent::rollBack();
     }
 
     public function exec(string $statement): int|false
