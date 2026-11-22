@@ -203,12 +203,21 @@ final class IntegrationInfrastructureTest extends TestCase
     public function testJobTimeoutsCoverTheOrchestrationBudgetTeardownAndSetup(): void
     {
         $support = self::read('scripts/integration-support.php');
-        $needed = self::constantSeconds($support, 'TOTAL_BUDGET_SECONDS')
+        $budget = self::constantSeconds($support, 'TOTAL_BUDGET_SECONDS');
+        $needed = $budget
             + self::constantSeconds($support, 'TEARDOWN_TIMEOUT_SECONDS')
             + self::constantSeconds($support, 'TEARDOWN_MARGIN_SECONDS')
             + 600;
 
         $workflow = self::read('.github/workflows/ci.yml');
+        self::assertSame(1, preg_match(
+            "/^          COMPOSER_PROCESS_TIMEOUT: '([0-9]+)'\n        run: composer test:integration -- --fresh-runs=2$/m",
+            $workflow,
+            $composer,
+        ), 'The required database matrix must let its own orchestration deadline control teardown.');
+        self::assertArrayHasKey(1, $composer);
+        self::assertGreaterThan($budget, (int) $composer[1]);
+
         foreach (['integration', 'examples-smoke', 'consumer-verification', 'exploratory'] as $job) {
             self::assertGreaterThanOrEqual(
                 $needed,
