@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, protected Host write transactions, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite Offset pagination, protected Host write transactions, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -79,6 +79,7 @@ src/
 │   └── Repository/ScopedOrderingManager.php
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
+│   ├── Config/StaticSortPlan.php
 │   ├── Criteria/HostSnapshotAttemptRecord.php   (@internal)
 │   ├── Criteria/HostSnapshotBindings.php   (@internal)
 │   ├── Criteria/HostSnapshotCatalog.php
@@ -318,6 +319,14 @@ Throws `InvalidPaginationConfigurationException` when constructed with:
 - `$minPerPage < 1`, or `$maxPerPage < $minPerPage`, or `$defaultPerPage` outside `[$minPerPage, $maxPerPage]`;
 - `$defaultSortBy` or `$tieBreakerSortBy` missing from `$sortWhitelist`. Both must be exact matches for keys that satisfy the full-string grammar enforced by `SortWhitelist`.
 
+#### `Config\StaticSortPlan` (`final readonly class`)
+
+```php
+public function __construct(PaginationConfig $config, array $profiles)
+```
+
+Each entry uses a whitelist key and an explicit `null` or an ordered list of trailing terms. The constructor validates every entry. See [§5.3.4](#534-optional-static-composite-offset-pagination) for the profile format, fallback, and error contract.
+
 #### `ValueObject\SortWhitelist` (`final readonly class`)
 
 ```php
@@ -436,6 +445,23 @@ public function paginate(
 ```
 
 Throws `PaginationExecutionException` when PDO reports failure through a return value or error status, a count result violates §5.3, a data row has no columns or a non-string key, or a mapper returns a value other than an array or object. Exceptions thrown by PDO or the mapper propagate unchanged. Behavior: see §5.3.
+
+The optional [static composite path](#534-optional-static-composite-offset-pagination) uses the same result and execution contract.
+
+```php
+/**
+ * @template TItem of array<array-key, mixed>|object
+ * @param callable(array<string, mixed>): TItem $mapper
+ * @return PageResultDTO<TItem>
+ */
+public function paginateWithStaticSort(
+    PDO $pdo,
+    PdoPaginationQueryDescriptor $query,
+    PageRequest $request,
+    StaticSortPlan $plan,
+    callable $mapper,
+): PageResultDTO
+```
 
 #### `Repository\PdoSnapshotPaginator` (final, one operation per Host checkout)
 
@@ -652,7 +678,8 @@ Both methods use the active protected Host transaction and its reservation. For 
 PHP can load these classes and reach public members marked `@internal`. These implementation details carry **no SemVer guarantee** and may change in any release. Consumers use the public inventory in §§3.1–3.4.
 
 - **`Pagination\Repository\KeysetCursor`** and **`Pagination\Criteria\KeysetQueryDescriptor::registration()`** — internal cursor protocol and the repository’s registration accessor.
-- **`Pagination\Repository\PdoPaginationExecution`** — executes counts and data for ordinary pagination and C1. B reuses its pagination normalization and SQL construction.
+- **`Pagination\Repository\PdoPaginationExecution`** — executes counts and data for ordinary and static composite pagination and C1. B reuses its pagination normalization and SQL construction.
+- **`Pagination\ValueObject\SortIdentifier`** and the `@internal` members of **`Pagination\Config\StaticSortPlan`** support plan resolution and trusted identifier quoting.
 - **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
 - **`Pagination\Repository\HostSnapshotConnection`** — tracks B's PDO and statement lifetimes, executes SQL, and verifies session state.
 - **`Pagination\Repository\HostSnapshotPageReader`** — reads the registered page and releases statement resources before mapping.
@@ -824,6 +851,18 @@ try {
 
 See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md).
 
+### 5.3.4 Optional static composite Offset pagination
+
+The Host builds one `StaticSortPlan` for a query shape and can reuse it across requests and connections. `PdoPaginator::paginateWithStaticSort()` uses the same Offset bounds, counts, mapper, PDO error handling, and `PageResultDTO` as [§5.3](#53-pdopaginatorpaginate). The existing paginator entry point and the C1, B, and Keyset paths retain their own contracts.
+
+- **Plan:** the keys of `profiles` are the keys available to this call. Each key must already exist in the config's `SortWhitelist`. Declare the default key explicitly and include at least one composite profile. Every entry is validated when constructing the plan. Invalid profiles raise `InvalidPaginationConfigurationException`.
+- **Terms:** a composite profile holds one to three additional terms in order. Each term has an `identifier` string and may have a fixed `direction` of type `SortDirectionEnum`. Omitting `direction` uses the resolved primary direction. Each identifier uses the `SortWhitelist` path grammar. Composite profiles reject the same path twice, including the primary path, using ASCII case-insensitive comparison without changing SQL spelling. Different aliases or qualification can represent the same column. The Host checks these equivalences in its query.
+- **Explicit legacy profile:** a `null` profile uses the standard primary/tie-breaker clause, including its identical-identifier rule. A composite profile instead supplies the entire order by adding its terms to the primary. It supplies its own tie-breaker.
+- **Request:** §5.3 resolves the key and direction independently. A key missing from the underlying whitelist falls back to the default. A key in that whitelist that is excluded from the static plan raises `InvalidPaginationQueryException` before any SQL, even if there are no matching rows.
+- **Result and ownership:** `sortBy` and `sortDirection` still identify the effective primary choice. The array and JSON shape remains `PageResultDTO`. The Host supplies trusted SQL and identifier paths and verifies a total order over the actual result, including joins, NULLs, and collation. Use a qualified caller-managed transaction when the page needs one read view. Independent requests can see a different dataset. The method does not change PDO attributes or take transaction ownership.
+
+See the [runnable example](examples/pagination_static_sort_usage.php) and [DEC-024](docs/decisions/DEC-024-optional-static-composite-offset-pagination.md). This path is in the unreleased repository source.
+
 ### 5.4 `ScopedOrderingManager`
 
 The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
@@ -901,8 +940,8 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 
 | Exception | Base | Thrown when |
 |---|---|---|
-| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; invalid Keyset limit policy or signing keyring (see §3.3). |
-| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
+| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` or `StaticSortPlan` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; invalid Keyset limit policy or signing keyring (see §3.3). |
+| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); a whitelisted request key excluded from a static sort plan (§5.3.4); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
 | `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (see §3.3/§5.3.2); rejected B page results such as invalid counts, data rows, or mapper return values (see §5.3.3). |
 | `SnapshotPaginationException` | `SystemMaatifyException` | C1 rejects the delegated connection or operation state, cannot confirm resources or owned transaction control, or is given an invalid discard outcome. Driver and mapper throwables retain their identities. |
 | `InvalidKeysetCursorException` | `ValidationMaatifyException` | A supplied Keyset cursor is malformed, out of range, unauthentic, uses an unavailable key, or does not match the authorized query context. |
@@ -986,6 +1025,7 @@ This section exists so that every behavioral claim above can be checked directly
 | Pagination | `tests/Regression/Pagination/{PaginationPublicApiRegressionTest,PaginationSqlContractRegressionTest}.php` | `tests/Unit/Pagination/*.php`; `tests/Integration/Pagination/{PdoPaginatorQuerySemanticsTest,PdoPaginatorFailureContractTest,PdoPaginatorSnapshotConsistencyTest,PdoPaginatorTransactionTest}.php` (caller-controlled pagination); `tests/Integration/Pagination/{PdoSnapshotPaginatorTest,PdoSnapshotPaginatorFailureTest}.php` (C1 snapshot, session continuity, and Host disposition) |
 | Optional Keyset | `harness/keyset-api.php` and the installed Composer example via `composer test:consumer` | `tests/Unit/Pagination/{KeysetContractTest,PdoKeysetPaginatorTest}.php` (registration, JSON, SQL/wire golden, diagnostics and failure); `tests/Integration/Pagination/PdoKeysetPaginatorIntegrationTest.php` (PDO, native/emulated, Host transaction, scope, and bounds) |
 | Optional B | `harness/host-snapshot-api.php` from Consumer Verification | `tests/Integration/Pagination/PdoHostSnapshot*Test.php` (source, isolation, commands, settlement, handoff and discard) |
+| Optional static composite Offset | `tests/Unit/Pagination/StaticSortPaginationTest.php` (Reflection, SQL/DTO golden, validation and failure) | `tests/Integration/Pagination/StaticSortPaginationIntegrationTest.php` (Product-like window parity, I18n-like Unicode grid, Host transaction and cursor); the installed example via `composer test:consumer` |
 | Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest,Repository/ScopedOrderingManagerExecutionFailureTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
 
 A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its legacy-vs-current delta) remains available in [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as a framed historical/evidence record; this section and §§5–8 above are the current normative restatement for a consumer.

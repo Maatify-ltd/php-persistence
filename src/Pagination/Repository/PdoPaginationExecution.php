@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
 use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
+use Maatify\PhpPersistence\Pagination\Config\StaticSortPlan;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
+use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 use PDO;
 use PDOStatement;
@@ -33,6 +35,7 @@ final readonly class PdoPaginationExecution
      *
      * @throws PaginationExecutionException When a statement fails without throwing
      *                                      or a count, row, or mapped item is invalid.
+     * @throws InvalidPaginationQueryException When a static plan excludes the resolved sort key.
      *
      * @template TItem of array<array-key, mixed>|object
      *
@@ -47,11 +50,13 @@ final readonly class PdoPaginationExecution
         PaginationConfig $config,
         callable $mapper,
         ?SnapshotReadResources $resources = null,
+        ?StaticSortPlan $staticSort = null,
     ): PageResultDTO {
         $page = $this->normalizePage($request->page);
         $perPage = $this->normalizePerPage($request->perPage, $config);
         $sortBy = $this->resolveSortBy($request->sortBy, $config);
         $sortDirection = $this->resolveSortDirection($request->sortDirection, $config);
+        $trailingTerms = $staticSort?->trailingTermsFor($sortBy);
         /** @var list<TItem> $data */
         $data = [];
         $total = $this->executeCount($pdo, $query->totalSql, $query->totalParams, $resources);
@@ -67,7 +72,10 @@ final readonly class PdoPaginationExecution
         }
 
         $offset = ($page - 1) * $perPage;
-        $sql = $this->buildDataSql($query->dataSql, $config->sortWhitelist->quotedIdentifierFor($sortBy), $sortDirection, $config->sortWhitelist->quotedIdentifierFor($config->tieBreakerSortBy), $config->tieBreakerDirection);
+        $primary = $config->sortWhitelist->quotedIdentifierFor($sortBy);
+        $sql = $trailingTerms === null
+            ? $this->buildDataSql($query->dataSql, $primary, $sortDirection, $config->sortWhitelist->quotedIdentifierFor($config->tieBreakerSortBy), $config->tieBreakerDirection)
+            : $this->buildStaticDataSql($query->dataSql, $primary, $sortDirection, $trailingTerms);
         $statement = $this->prepareStatement($pdo, $sql);
         $resources?->track($statement);
         $this->bindParameters($statement, $query->dataParams);
@@ -328,11 +336,27 @@ final readonly class PdoPaginationExecution
 
     public function buildDataSql(string $dataSql, string $quotedPrimary, SortDirectionEnum $direction, string $quotedTieBreaker, SortDirectionEnum $tieBreakerDirection): string
     {
-        $sql = rtrim($dataSql) . "\nORDER BY " . $quotedPrimary . ' ' . $direction->value;
+        $order = $quotedPrimary . ' ' . $direction->value;
         if ($quotedPrimary !== $quotedTieBreaker) {
-            $sql .= ', ' . $quotedTieBreaker . ' ' . $tieBreakerDirection->value;
+            $order .= ', ' . $quotedTieBreaker . ' ' . $tieBreakerDirection->value;
         }
 
-        return $sql . "\nLIMIT :" . self::LIMIT_PARAMETER . "\nOFFSET :" . self::OFFSET_PARAMETER;
+        return $this->boundedDataSql($dataSql, $order);
+    }
+
+    /** @param non-empty-list<array{identifier: non-empty-string, direction: SortDirectionEnum|null}> $trailingTerms */
+    private function buildStaticDataSql(string $dataSql, string $quotedPrimary, SortDirectionEnum $direction, array $trailingTerms): string
+    {
+        $order = $quotedPrimary . ' ' . $direction->value;
+        foreach ($trailingTerms as $term) {
+            $order .= ', ' . $term['identifier'] . ' ' . ($term['direction'] ?? $direction)->value;
+        }
+
+        return $this->boundedDataSql($dataSql, $order);
+    }
+
+    private function boundedDataSql(string $dataSql, string $order): string
+    {
+        return rtrim($dataSql) . "\nORDER BY " . $order . "\nLIMIT :" . self::LIMIT_PARAMETER . "\nOFFSET :" . self::OFFSET_PARAMETER;
     }
 }

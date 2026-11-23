@@ -153,7 +153,7 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     if (! mkdir($exampleDirectory, 0700)) {
         throw new RuntimeException('Cannot create consumer example directory');
     }
-    $examples = ['pagination_snapshot_usage.php', 'pagination_keyset_usage.php', 'verified_transaction_usage.php'];
+    $examples = ['pagination_snapshot_usage.php', 'pagination_keyset_usage.php', 'verified_transaction_usage.php', 'pagination_static_sort_usage.php'];
     foreach (['_bootstrap.php', ...$examples] as $example) {
         if (! copy($installedPath . '/examples/' . $example, $exampleDirectory . '/' . $example)) {
             throw new RuntimeException('Cannot copy the installed example: ' . $example);
