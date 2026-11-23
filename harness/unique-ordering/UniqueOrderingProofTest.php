@@ -336,7 +336,8 @@ final class UniqueOrderingProofTest extends IntegrationTestCase
 
             $b->beginTransaction();
             self::assertSame('7', $this->scalar($b, $lock));
-            $current = $commit ? 4 : 3;
+            $current = (int) $this->scalar($b, "SELECT display_order FROM `$table` WHERE $predicate AND id = 3 FOR UPDATE");
+            self::assertSame($commit ? 4 : 3, $current);
             self::assertSame($commit ? [2, 3, 4, 1] : [1, 2, 3, 4], $this->orders($b, $table, $predicate));
             self::assertSame($commit ? '1' : '0', $this->scalar($b, "SELECT v FROM `$marker` WHERE id = 7"));
             $b->exec("UPDATE `$table` SET display_order = 5 WHERE id = 3");
@@ -352,7 +353,14 @@ final class UniqueOrderingProofTest extends IntegrationTestCase
         }
         $final = $commit ? [3, 4, 1, 2, 5] : [2, 3, 1, 4, 5];
         self::assertSame($final, $this->orders($a, $table, $predicate));
-        self::evidence('competing-writers', ['outer_commit' => $commit, 'failed_step' => 1062, 'anchor_wait' => 1205, 'final' => $final]);
+        self::evidence('competing-writers', [
+            'outer_commit' => $commit,
+            'failed_step' => 1062,
+            'anchor_wait' => 1205,
+            'move_position_read' => $current,
+            'append_position' => $next,
+            'final' => $final,
+        ]);
     }
 
     public function testSingleRowPrependAndSlotOverflowBoundary(): void
