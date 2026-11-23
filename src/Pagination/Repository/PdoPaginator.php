@@ -8,9 +8,12 @@ use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
 use Maatify\PhpPersistence\Pagination\Config\StaticSortPlan;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
+use Maatify\PhpPersistence\Pagination\DTO\MultiSortPageResultDTO;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
+use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationConfigurationException;
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
+use Maatify\PhpPersistence\Pagination\ValueObject\ResolvedDynamicSort;
 use PDO;
 
 /**
@@ -71,5 +74,37 @@ final readonly class PdoPaginator
         callable $mapper,
     ): PageResultDTO {
         return (new PdoPaginationExecution())->paginate($pdo, $query, $request, $plan->config, $mapper, staticSort: $plan);
+    }
+
+    /**
+     * Reads an Offset page using up to three ordered, whitelisted public terms.
+     *
+     * Each term has a string key and ASC/DESC direction. Request sort fields
+     * must be null. Empty selection uses the configured default. An appended
+     * tie keeps its configured direction and has a null public label. The
+     * Host owns the unique tie, query shape, PDO, and any shared snapshot.
+     *
+     * @template TItem of array<array-key, mixed>|object
+     * @param array<mixed> $sorts Ordered list of key/direction pairs.
+     * @param callable(array<string, mixed>): TItem $mapper
+     * @param bool $allowTieBreakerSelection Host policy for the canonical public tie key.
+     * @return MultiSortPageResultDTO<TItem>
+     * @throws InvalidPaginationConfigurationException For ambiguous qualifier casing, before SQL.
+     * @throws InvalidPaginationQueryException For invalid or forbidden selections, before SQL.
+     * @throws PaginationExecutionException When execution fails or the result is invalid.
+     */
+    public function paginateWithDynamicSort(
+        PDO $pdo,
+        PdoPaginationQueryDescriptor $query,
+        PageRequest $request,
+        PaginationConfig $config,
+        array $sorts,
+        callable $mapper,
+        bool $allowTieBreakerSelection = false,
+    ): MultiSortPageResultDTO {
+        $sort = ResolvedDynamicSort::resolve($config, $request, $sorts, $allowTieBreakerSelection);
+        $page = (new PdoPaginationExecution())->paginate($pdo, $query, $request, $config, $mapper, dynamicSort: $sort);
+
+        return MultiSortPageResultDTO::fromResolved($page, $sort);
     }
 }

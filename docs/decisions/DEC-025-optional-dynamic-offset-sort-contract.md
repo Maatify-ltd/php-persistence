@@ -4,8 +4,8 @@
 - **Status:** ACTIVE
 - **Date:** 2026-11-23
 - **Decision Authority:** Project Owner, [contract approval](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7108615742) following [independent design acceptance](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7108166825).
-- **Scope / Concern:** Design approval for a planned dynamic Offset sorting API. Implementation remains on HOLD.
-- **Canonical Contract / Current Owner:** Project Owner's [approved design](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7106286763) as corrected by [F81-01 through F81-03](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7108071764). The Package Reference continues to describe available runtime APIs.
+- **Scope / Concern:** Optional dynamic Offset sorting. Design approval originally placed implementation on HOLD. The Owner subsequently authorized the bounded implementation in [WU-D4](https://github.com/Maatify-ltd/php-persistence/issues/84).
+- **Canonical Contract / Current Owner:** [Package Reference §5.3.5](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#535-optional-dynamic-offset-sorting) for the implementation, based on the Owner's [approved design](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7106286763) and [F81-01 through F81-03](https://github.com/Maatify-ltd/php-persistence/issues/81#issuecomment-7108071764).
 - **Supersedes:** —
 - **Superseded By:** —
 
@@ -19,4 +19,8 @@ Approve the corrected design for a separate planned `PdoPaginator::paginateWithD
 
 ## Rationale and consequences
 
-The entry point and result envelope isolate request-selected order from the existing single-sort contract and from static profiles. The approved design is **not implemented or available**. This record authorizes no runtime API, tests, consumer adoption, or release for dynamic sorting. Implementation requires separate Owner authorization after static sorting acceptance and its own behavioral, database, and installed-artifact verification.
+The entry point and result envelope isolate request-selected order from the existing single-sort contract and from static profiles. At design approval, implementation and runtime availability were deferred pending static sorting acceptance and a separate Owner authorization. Dynamic sorting requires its own behavioral, database, and installed-artifact verification.
+
+## Implementation authorization
+
+After acceptance of static sorting, [WU-D4](https://github.com/Maatify-ltd/php-persistence/issues/84) authorized implementing the existing decision. The implementation in this source is a candidate pending independent review and an Owner merge decision. It becomes part of the default branch only upon merge and requires separate qualification and publication for a released artifact. Published v1.0.0-rc.2 predates this API. Consumer adoption requires separate authorization.

@@ -12,6 +12,7 @@ use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\SortDirectionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
+use Maatify\PhpPersistence\Pagination\ValueObject\ResolvedDynamicSort;
 use PDO;
 use PDOStatement;
 use Throwable;
@@ -51,11 +52,12 @@ final readonly class PdoPaginationExecution
         callable $mapper,
         ?SnapshotReadResources $resources = null,
         ?StaticSortPlan $staticSort = null,
+        ?ResolvedDynamicSort $dynamicSort = null,
     ): PageResultDTO {
         $page = $this->normalizePage($request->page);
         $perPage = $this->normalizePerPage($request->perPage, $config);
-        $sortBy = $this->resolveSortBy($request->sortBy, $config);
-        $sortDirection = $this->resolveSortDirection($request->sortDirection, $config);
+        $sortBy = $dynamicSort?->primaryKey() ?? $this->resolveSortBy($request->sortBy, $config);
+        $sortDirection = $dynamicSort?->primaryDirection() ?? $this->resolveSortDirection($request->sortDirection, $config);
         $trailingTerms = $staticSort?->trailingTermsFor($sortBy);
         /** @var list<TItem> $data */
         $data = [];
@@ -72,10 +74,14 @@ final readonly class PdoPaginationExecution
         }
 
         $offset = ($page - 1) * $perPage;
-        $primary = $config->sortWhitelist->quotedIdentifierFor($sortBy);
-        $sql = $trailingTerms === null
-            ? $this->buildDataSql($query->dataSql, $primary, $sortDirection, $config->sortWhitelist->quotedIdentifierFor($config->tieBreakerSortBy), $config->tieBreakerDirection)
-            : $this->buildStaticDataSql($query->dataSql, $primary, $sortDirection, $trailingTerms);
+        if ($dynamicSort !== null) {
+            $sql = $this->buildDynamicDataSql($query->dataSql, $dynamicSort);
+        } else {
+            $primary = $config->sortWhitelist->quotedIdentifierFor($sortBy);
+            $sql = $trailingTerms === null
+                ? $this->buildDataSql($query->dataSql, $primary, $sortDirection, $config->sortWhitelist->quotedIdentifierFor($config->tieBreakerSortBy), $config->tieBreakerDirection)
+                : $this->buildStaticDataSql($query->dataSql, $primary, $sortDirection, $trailingTerms);
+        }
         $statement = $this->prepareStatement($pdo, $sql);
         $resources?->track($statement);
         $this->bindParameters($statement, $query->dataParams);
@@ -358,5 +364,16 @@ final readonly class PdoPaginationExecution
     private function boundedDataSql(string $dataSql, string $order): string
     {
         return rtrim($dataSql) . "\nORDER BY " . $order . "\nLIMIT :" . self::LIMIT_PARAMETER . "\nOFFSET :" . self::OFFSET_PARAMETER;
+    }
+
+    /** Formats the trusted terms in the same order used for result metadata. */
+    private function buildDynamicDataSql(string $dataSql, ResolvedDynamicSort $sort): string
+    {
+        $terms = array_map(
+            static fn(array $term): string => $term['identifier'] . ' ' . $term['direction']->value,
+            $sort->effectiveTerms(),
+        );
+
+        return $this->boundedDataSql($dataSql, implode(', ', $terms));
     }
 }
