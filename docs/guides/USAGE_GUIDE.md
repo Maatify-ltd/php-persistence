@@ -19,6 +19,7 @@ See the [README](../../README.md#installation) for installation of the published
 | Transaction · Optional verified checkout (current source) | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Pagination · Optional static composite sort (current source) | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
+| Pagination · Optional dynamic sort (unreleased source) | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 
 ## Run the examples
@@ -181,6 +182,15 @@ Use this path when the Host wants a named order such as status ascending, priori
 - **Public call** — pass the descriptor, ordinary `PageRequest`, plan, and mapper to `PdoPaginator::paginateWithStaticSort()`.
 - **Result** — the existing `PageResultDTO` reports the effective primary key and direction. The [runnable example](../../examples/pagination_static_sort_usage.php) reuses one plan for three pages and asserts IDs `5,2,1,3,4` in order.
 - **Boundary** — the profile keys are the allowed set for this path. A whitelisted key omitted from the plan fails before query preparation. The Host defines a unique order on the result and controls PDO, SQL, and the transaction. See the [static sort contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#534-optional-static-composite-offset-pagination).
+
+### Optional dynamic sorting
+
+Use this Offset path when a grid or other caller selects up to three sort keys in priority order and chooses a direction for each. The API is in the unreleased source. The published RC.2 uses the standard pagination path.
+
+- **Input** — translate the grid's request into a list such as `[['key' => 'status', 'direction' => 'asc'], ['key' => 'priority', 'direction' => 'desc']]`. Configure a whitelist of public keys and a unique tie column for this query. Supply only page and page size in `PageRequest`.
+- **Public call** — pass the descriptor, request, configuration, sort list and mapper to `PdoPaginator::paginateWithDynamicSort()`. An empty list uses the configured default order.
+- **Result** — `MultiSortPageResultDTO::page` holds the existing page. The two sort lists expose the normalized selection and the effective order. An automatically appended tie appears with `key: null` and its actual direction. The [runnable example](../../examples/pagination_dynamic_sort_usage.php) checks the resulting order across three pages.
+- **Boundary** — the Host owns the SQL, identifiers, connection and unique ordering on the actual result rows. `allowTieBreakerSelection` is a Host policy for the configured public tie key. To reserve the physical column from selection also omit its public aliases. Sort order alone provides no shared snapshot across requests. See the [dynamic sort contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#535-optional-dynamic-offset-sorting).
 
 ### Optional C1 snapshot pagination
 

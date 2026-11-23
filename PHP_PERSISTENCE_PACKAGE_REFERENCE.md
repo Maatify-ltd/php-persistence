@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite Offset pagination, protected Host write transactions, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -94,6 +94,7 @@ src/
 │   ├── DTO/HostSnapshotPageSettlementDTO.php
 │   ├── DTO/HostSnapshotRetirementDTO.php
 │   ├── DTO/KeysetPageResultDTO.php
+│   ├── DTO/MultiSortPageResultDTO.php
 │   ├── DTO/PageResultDTO.php
 │   ├── DTO/SnapshotConnectionOutcomeDTO.php
 │   ├── Enum/HostSnapshotAccessModeEnum.php
@@ -124,6 +125,7 @@ src/
 │   ├── Repository/PdoPaginator.php
 │   ├── Repository/PdoSnapshotPaginator.php
 │   ├── Repository/SnapshotReadResources.php    (@internal)
+│   ├── ValueObject/ResolvedDynamicSort.php   (@internal)
 │   └── ValueObject/SortWhitelist.php
 └── Transaction/
     ├── Criteria/ProtectedTransactionCommandCatalog.php
@@ -427,6 +429,21 @@ array{
 
 `PageResultDTO` is normally produced by `PdoPaginator::paginate()`, but its constructor is public and may be used directly by a caller that already has the raw numbers (for example when composing a result from a cache).
 
+#### `DTO\MultiSortPageResultDTO` (`final readonly class`, implements `JsonSerializable`, `@template T of array<array-key, mixed>|object`)
+
+Produced by the [dynamic Offset entry point](#535-optional-dynamic-offset-sorting). The constructor is private. The read-only properties and result representations are:
+
+```text
+PageResultDTO<T> $page
+list<array{key: string, direction: SortDirectionEnum}> $selectedSorts
+non-empty-list<array{key: string|null, direction: SortDirectionEnum}> $effectiveSorts
+
+toArray(): array
+jsonSerialize(): array
+```
+
+Both methods return the page array with `selected_sorts` and `effective_sorts` appended in that order to `pagination`. List elements have `key` and `direction` in that order, with direction serialized as `ASC` or `DESC`. An automatically appended tie has a null key. The first effective term always agrees with the page's `sort_by` and `sort_direction`. The library creates the wrapper from the same validated order it uses for SQL. Native PHP restoration via `unserialize()` fails with `PaginationExecutionException`.
+
 #### `Repository\PdoPaginator` (`final readonly class`, no declared constructor)
 
 ```php
@@ -461,6 +478,25 @@ public function paginateWithStaticSort(
     StaticSortPlan $plan,
     callable $mapper,
 ): PageResultDTO
+```
+
+The optional [dynamic Offset path](#535-optional-dynamic-offset-sorting) uses an ordered request list and returns the dedicated wrapper.
+
+```php
+/**
+ * @template TItem of array<array-key, mixed>|object
+ * @param callable(array<string, mixed>): TItem $mapper
+ * @return MultiSortPageResultDTO<TItem>
+ */
+public function paginateWithDynamicSort(
+    PDO $pdo,
+    PdoPaginationQueryDescriptor $query,
+    PageRequest $request,
+    PaginationConfig $config,
+    array $sorts,
+    callable $mapper,
+    bool $allowTieBreakerSelection = false,
+): MultiSortPageResultDTO
 ```
 
 #### `Repository\PdoSnapshotPaginator` (final, one operation per Host checkout)
@@ -678,8 +714,9 @@ Both methods use the active protected Host transaction and its reservation. For 
 PHP can load these classes and reach public members marked `@internal`. These implementation details carry **no SemVer guarantee** and may change in any release. Consumers use the public inventory in §§3.1–3.4.
 
 - **`Pagination\Repository\KeysetCursor`** and **`Pagination\Criteria\KeysetQueryDescriptor::registration()`** — internal cursor protocol and the repository’s registration accessor.
-- **`Pagination\Repository\PdoPaginationExecution`** — executes counts and data for ordinary and static composite pagination and C1. B reuses its pagination normalization and SQL construction.
+- **`Pagination\Repository\PdoPaginationExecution`** — executes counts and data for ordinary, static composite and dynamic Offset pagination and C1. B reuses its pagination normalization and SQL construction.
 - **`Pagination\ValueObject\SortIdentifier`** and the `@internal` members of **`Pagination\Config\StaticSortPlan`** support plan resolution and trusted identifier quoting.
+- **`Pagination\ValueObject\ResolvedDynamicSort`** and the `@internal` members of **`Pagination\DTO\MultiSortPageResultDTO`** carry the validated order into Offset SQL and result construction.
 - **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
 - **`Pagination\Repository\HostSnapshotConnection`** — tracks B's PDO and statement lifetimes, executes SQL, and verifies session state.
 - **`Pagination\Repository\HostSnapshotPageReader`** — reads the registered page and releases statement resources before mapping.
@@ -863,6 +900,18 @@ The Host builds one `StaticSortPlan` for a query shape and can reuse it across r
 
 See the [runnable example](examples/pagination_static_sort_usage.php) and [DEC-024](docs/decisions/DEC-024-optional-static-composite-offset-pagination.md). This path is in the unreleased repository source.
 
+### 5.3.5 Optional dynamic Offset sorting
+
+`PdoPaginator::paginateWithDynamicSort()` uses the Offset count sequence, page and size normalization, overshoot reset, mapper, integer LIMIT/OFFSET bindings, and PDO failure behavior in [§5.3](#53-pdopaginatorpaginate). The Host supplies trusted SQL, identifiers through `SortWhitelist`, the connection and any shared read view.
+
+1. The Host's default and tie identifiers are checked first. The request must carry null `PageRequest::$sortBy` and `$sortDirection`. `$sorts` must be a PHP list of zero to three terms with exactly two string fields, `key` and `direction`. Each key must match a whitelisted public label exactly. Directions accept ASCII `ASC`/`DESC` case-insensitively, with no trimming. Malformed or unauthorized requests fail before query preparation. An empty list means use the configured default and its direction. Only an empty list selects the default automatically.
+2. For identifier comparison, qualifier segments must match exactly and the final segment compares case-insensitively in ASCII. If all segments would match after folding but a qualifier differs in case, the combination fails with `InvalidPaginationConfigurationException` before SQL. This check applies to default versus tie, requested terms versus one another, and requested terms versus the tie. The emitted spelling is the Host's original mapped spelling. The Host establishes equivalence for different paths such as `id` and `o.id` or two projection aliases.
+3. An explicit request cannot repeat a public key or its equivalent SQL path. The canonical tie key is reserved unless the Host enables `allowTieBreakerSelection`. Deliberately whitelisted aliases to the same tie path can be selected under either setting. If a selected term resolves to the tie, it must be last or alone. Its requested label and direction are kept. The Host reserves the physical column by withholding its selectable aliases and reserving the canonical key.
+4. The effective SQL order is the selection, or the default for an empty selection, with the configured tie appended when its path is absent. A default that already uses the tie path keeps its own label and direction. The Host chooses a tie unique on the actual result rows under JOIN, NULL and collation behavior. A three-term request can produce four SQL terms. The term limit bounds the input shape. Query cost depends on the query, indexes and data. Different snapshots can produce Offset drift even with a total order.
+5. The returned `MultiSortPageResultDTO` exposes the `PageResultDTO` plus the normalized selected list and exact effective order, including when filtered count is zero or the page resets to one. An automatically appended tie appears only as the last term with `key: null` and its actual direction, regardless of the selection policy. An explicitly selected or configured default label may appear. The result carries public labels and directions. SQL identifiers stay in the validated execution order.
+
+Existing `paginate()`, static sort, C1, B, and Keyset calls keep their own result contracts. See [DEC-025](docs/decisions/DEC-025-optional-dynamic-offset-sort-contract.md) and the [runnable dynamic example](examples/pagination_dynamic_sort_usage.php) in the unreleased source.
+
 ### 5.4 `ScopedOrderingManager`
 
 The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
@@ -940,9 +989,9 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 
 | Exception | Base | Thrown when |
 |---|---|---|
-| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` or `StaticSortPlan` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; invalid Keyset limit policy or signing keyring (see §3.3). |
-| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); a whitelisted request key excluded from a static sort plan (§5.3.4); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
-| `PaginationExecutionException` | `SystemMaatifyException` | A `PdoPaginator::paginate()` execution failure (see §5.3), or an internally inconsistent `PageResultDTO` construction (see §5.3/§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (see §3.3/§5.3.2); rejected B page results such as invalid counts, data rows, or mapper return values (see §5.3.3). |
+| `InvalidPaginationConfigurationException` | `SystemMaatifyException` | Invalid `PaginationConfig` or `StaticSortPlan` construction; an empty or malformed `SortWhitelist`; `SortWhitelist::quotedIdentifierFor()` called with a key outside the whitelist; ambiguous qualifier casing in dynamic sorting (§5.3.5); invalid Keyset limit policy or signing keyring (see §3.3). |
+| `InvalidPaginationQueryException` | `SystemMaatifyException` | Invalid `PdoPaginationQueryDescriptor` construction (blank/`;`-containing/reserved-placeholder SQL, or an invalid parameter key/value); a whitelisted request key excluded from a static sort plan (§5.3.4); invalid or forbidden dynamic sort input (§5.3.5); an invalid Keyset registration, request or binding map, or an ineligible Keyset connection (see §5.3.2). |
+| `PaginationExecutionException` | `SystemMaatifyException` | Offset execution failure in the standard, static or dynamic path (§5.3); an invalid `PageResultDTO`, inconsistent dynamic result metadata, or attempted native restoration of a dynamic result (§3.3); an invalid Keyset result, a failed Keyset execution or unsupported paginator serialization or restoration (§3.3/§5.3.2); rejected B page results such as invalid counts, data rows, or mapper return values (§5.3.3). |
 | `SnapshotPaginationException` | `SystemMaatifyException` | C1 rejects the delegated connection or operation state, cannot confirm resources or owned transaction control, or is given an invalid discard outcome. Driver and mapper throwables retain their identities. |
 | `InvalidKeysetCursorException` | `ValidationMaatifyException` | A supplied Keyset cursor is malformed, out of range, unauthentic, uses an unavailable key, or does not match the authorized query context. |
 | `HostSnapshotPaginationException` | `SystemMaatifyException` | B reports invalid registration or bindings, an ineligible connection, an unavailable checkout or attempt, a rejected retirement, blocked serialization or restoration, a registered command exceeding its row bound, or a driver return value or observation that prevents confirmation of resources, session, or transaction state. External driver or mapper throwables retain their identities under the failure rules in [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction). |
@@ -1026,6 +1075,7 @@ This section exists so that every behavioral claim above can be checked directly
 | Optional Keyset | `harness/keyset-api.php` and the installed Composer example via `composer test:consumer` | `tests/Unit/Pagination/{KeysetContractTest,PdoKeysetPaginatorTest}.php` (registration, JSON, SQL/wire golden, diagnostics and failure); `tests/Integration/Pagination/PdoKeysetPaginatorIntegrationTest.php` (PDO, native/emulated, Host transaction, scope, and bounds) |
 | Optional B | `harness/host-snapshot-api.php` from Consumer Verification | `tests/Integration/Pagination/PdoHostSnapshot*Test.php` (source, isolation, commands, settlement, handoff and discard) |
 | Optional static composite Offset | `tests/Unit/Pagination/StaticSortPaginationTest.php` (Reflection, SQL/DTO golden, validation and failure) | `tests/Integration/Pagination/StaticSortPaginationIntegrationTest.php` (Product-like window parity, I18n-like Unicode grid, Host transaction and cursor); the installed example via `composer test:consumer` |
+| Optional dynamic Offset | `tests/Unit/Pagination/DynamicSortPaginationTest.php` (Reflection, SQL/bindings, request and alias preflight, result invariants, failure precedence) | `tests/Integration/Pagination/DynamicSortPaginationIntegrationTest.php` (mixed-direction joined grid, Unicode/NULLs, snapshot drift, PDO modes and cursor release); the installed example via `composer test:consumer` |
 | Ordering | `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php` | `tests/Unit/Ordering/{Config/ScopedOrderingConfigTest,Repository/ScopedOrderingManagerSavepointWiringTest,Repository/ScopedOrderingManagerExecutionFailureTest}.php`; `tests/Integration/Ordering/{ScopedOrderingManagerReadOperationsTest,ScopedOrderingManagerStaleSnapshotTest,ScopedOrderingManagerMoveStaleSnapshotTest,ScopedOrderingManagerLazySavepointTest,ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest,ScopedOrderingManagerGlobalMoveTest,ScopedOrderingManagerScopedMoveTest,ScopedOrderingManagerSoftDeleteMoveTest,ScopedOrderingManagerTransactionTest,ScopedOrderingManagerRollbackTest}.php` (real stale-snapshot concurrency and a genuine deadlock while acquiring the scope lock) |
 
 A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its legacy-vs-current delta) remains available in [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as a framed historical/evidence record; this section and §§5–8 above are the current normative restatement for a consumer.

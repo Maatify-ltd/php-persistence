@@ -40,6 +40,7 @@ The package offers three capabilities over a caller-supplied `PDO` connection:
 - **Transaction:** run a callback in a transaction, or in a savepoint when the caller already has one; optional bounded deadlock retry for package-owned transactions.
 - **Pagination:** parameterized, whitelist-sorted, bounded pagination returning a result DTO.
   Optional static composite sort plans belong to Offset pagination and reuse its page executor. The Host supplies the SQL and decides the total order on its result. See [DEC-024](../decisions/DEC-024-optional-static-composite-offset-pagination.md).
+  Optional dynamic Offset sorting shares that executor and uses one validated internal order for SQL and the dynamic result metadata. The Host owns the unique tie and the read view. See [DEC-025](../decisions/DEC-025-optional-dynamic-offset-sort-contract.md).
 - **Ordering:** next-position and move operations for ordered rows inside a scope (for example a column value), with locking reads and savepoint protection.
 
 Not in scope: owning tables or migrations, opening connections, changing PDO attributes or server settings, operational reporting read models, factories or facades, any consumer-specific logic. The optional C1 paginator holds one grant and its terminal outcome on a single-use object. See [DEC-018](../decisions/DEC-018-optional-delegated-snapshot-pagination.md).
