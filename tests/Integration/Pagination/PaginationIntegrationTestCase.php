@@ -28,6 +28,8 @@ abstract class PaginationIntegrationTestCase extends IntegrationTestCase
      * Creates the Pagination fixture schema (golden-captured from legacy
      * `tests/Fixtures/MySql/create_pagination_items_table.sql` at 1f6a7aa) under a
      * run-unique table name, and returns that name.
+     *
+     * @return non-empty-string
      */
     protected function createPaginationTable(PDO $pdo): string
     {
@@ -57,7 +59,7 @@ abstract class PaginationIntegrationTestCase extends IntegrationTestCase
     /**
      * Opens a fresh connection and its own uniquely named Pagination fixture table.
      *
-     * @return array{PDO, string}
+     * @return array{PDO, non-empty-string}
      */
     protected function connectWithPaginationTable(): array
     {

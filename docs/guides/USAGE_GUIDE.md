@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-See the [README](../../README.md#installation) for installation of the published `1.0.0-rc.2` package. The optional C1 and C2 sections describe the current repository source.
+The [published RC.2 quickstart](#run-the-published-rc2-examples-from-a-clean-install) uses the Basic APIs. The [unreleased-source path](#verify-unreleased-source-in-a-clean-consumer) covers the optional paths and the raw Ordering tail-read limit.
 
 ## Before you start
 
@@ -22,18 +22,58 @@ See the [README](../../README.md#installation) for installation of the published
 | Pagination · Optional dynamic sort (unreleased source) | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 
-## Run the examples
+## Run the published RC.2 examples from a clean install
 
-With Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the examples against it.
+Use PHP `^8.4` with `pdo_mysql`, Composer, and an empty disposable MySQL or MariaDB database with InnoDB. Give the example account `CREATE`, `DROP`, `SELECT`, `INSERT`, and `UPDATE` on that database. The scripts create and remove their own tables.
 
-For a standalone run, use a disposable database with InnoDB available. The account must have `CREATE`, `INSERT`, `SELECT`, `UPDATE`, and `DROP` privileges in that database. Set `PHP_PERSISTENCE_IT_HOST`, `PHP_PERSISTENCE_IT_PORT`, `PHP_PERSISTENCE_IT_DATABASE`, `PHP_PERSISTENCE_IT_USER`, and `PHP_PERSISTENCE_IT_PASSWORD` in the environment, then run the example from the repository root:
+```bash
+mkdir persistence-rc2-quickstart
+cd persistence-rc2-quickstart
+cat > composer.json <<'JSON'
+{
+  "require": {
+    "php": "^8.4",
+    "ext-pdo_mysql": "*",
+    "maatify/php-persistence": "1.0.0-rc.2"
+  }
+}
+JSON
+composer install --no-dev --prefer-dist
+composer check-platform-reqs --no-dev
+mkdir examples
+cp vendor/maatify/php-persistence/examples/_bootstrap.php examples/
+for example in transaction_basic_usage pagination_basic_usage ordering_basic_usage; do
+    cp "vendor/maatify/php-persistence/examples/$example.php" examples/
+done
+```
+
+Set `PHP_PERSISTENCE_IT_HOST`, `PHP_PERSISTENCE_IT_PORT`, `PHP_PERSISTENCE_IT_DATABASE`, `PHP_PERSISTENCE_IT_USER`, and `PHP_PERSISTENCE_IT_PASSWORD` in the shell's environment to the disposable database credentials. The copied examples load this project's `vendor/autoload.php`.
 
 ```bash
 php examples/transaction_basic_usage.php
 php examples/pagination_basic_usage.php
-php examples/pagination_snapshot_usage.php
 php examples/ordering_basic_usage.php
 ```
+
+Each command ends with `OK`. Transaction commits invoice 1 and rolls back the second insert. Pagination shows page 2 with 15 of 25 rows matching and a maximum of 10 rows per page. Ordering appends at position 4 in the seeded scope, moves row 3 to the first position, and verifies an outer rollback. Discard the disposable database when finished.
+
+RC.2 contains the three Basic examples. C1, B, Keyset, static and dynamic Offset sorting, Protected Host checkout and Ordering, Verified Apply/Discard and the raw Ordering tail-read budget belong to unreleased source. See the [RC.2 Package Reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+
+## Verify unreleased source in a clean consumer
+
+From a repository checkout at the exact committed source to verify, compare the printed commit and tree against the intended GitHub `main` or PR HEAD. The candidate is installed by the repository harness in separate Composer roots with production dependencies and autoloading.
+
+```bash
+git rev-parse HEAD 'HEAD^{tree}'
+PP_DB_CELL=mysql-8.4.13 composer test:consumer
+PP_DB_CELL=mariadb-11.8.9 composer test:consumer
+```
+
+Each command provisions two disposable services for that engine. Look for `CONSUMER-ARCHIVE` with the commit, tree and archive SHA-256, `CONSUMER-INSTALL` for both scenarios and `CONSUMER VERIFICATION OK (two clean lifecycles)`. See [consumer verification](CONSUMER_VERIFICATION.md) for prerequisites and what the checks establish.
+
+### Run examples from the repository checkout
+
+With the checkout's Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the examples. To run an individual example manually, use the disposable database variables above and run the script from the repository root.
 
 ---
 
@@ -60,7 +100,7 @@ use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Exception\TransactionExecutionException;
 
 // Input: a PDO connection the host already owns, and a unit of work.
-$runner = new PdoTransactionRunner($pdo, maxDeadlockRetries: 1);
+$runner = new PdoTransactionRunner($pdo);
 
 try {
     // Public Call: run() decides ownership for you.
@@ -174,6 +214,19 @@ $payload = $page->toArray(); // ['data' => [...], 'pagination' => ['page' => ...
 
 See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#33-pagination-capability--maatifyphppersistencepagination) for every normalization rule and the exact `PaginationExecutionException`/`InvalidPaginationQueryException`/`InvalidPaginationConfigurationException` conditions.
 
+### Choose a pagination path
+
+| You need | Entry point | Read view and cost |
+|---|---|---|
+| Numbered pages and counts | `PdoPaginator::paginate()` | Runs total and filtered counts, then the bounded data read when rows match. The Host owns the read view. |
+| A fixed tuple for a named sort | `paginateWithStaticSort()` with `StaticSortPlan` | Same Offset reads. The Host supplies the full stable order and its tie. |
+| Request-selected sort priority | `paginateWithDynamicSort()` | Same Offset reads. The Host allowlists keys, configures a unique tie, and keeps input adaptation. |
+| One consistent page on a delegated idle reader | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | C1 owns one read-only transaction. The Host handles the checkout outcome before reuse. |
+| Pages and prior writes on a Host transaction | `PdoHostSnapshotSource::attachExclusive()` with a catalog, then an authorized attempt and `PdoHostSnapshotPaginator::paginate()` | B reserves one connection and validates the actual transaction. Use registered operations and inspect settlement before handoff. [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) |
+| Forward continuation without counts | `PdoKeysetPaginator::paginate()` | Keyset v1 seeks on one immutable, unique positive integer ID. The authenticated cursor binds the query and Host scope. The Host owns the connection and signing keys. [Runnable example](../../examples/pagination_keyset_usage.php) |
+
+Separate Offset requests can drift across writes even with a unique tie. Counts can dominate query cost depending on filters, joins and indexes. Keyset continuation has a separate result contract with no numbered-page or total-count metadata.
+
 ### Optional static composite sorting
 
 Use this path when the Host wants a named order such as status ascending, priority descending, then unique row ID ascending. It is available in the unreleased repository source.
@@ -268,3 +321,11 @@ Run `composer examples:smoke` to see the [standalone example](../../examples/ord
 - The parent row gives writers the same lock target even when there are no child rows. `MAX(display_order) + 1` computes a candidate position. Taking the parent row lock with `FOR UPDATE` and inserting in the same transaction serialize competing writers. `getNextPositionForUpdate()` alone cannot reserve the first position in an empty scope.
 - `getNextPosition()` is a plain read for previews. Under `REPEATABLE READ`, an older snapshot stays in effect after the parent lock is acquired. Taking the lock before the transaction establishes its consistent-read snapshot lets the first plain read see the previous writer's commit. Use `getNextPositionForUpdate()` inside the write transaction to allocate a position.
 - With MariaDB's `innodb_snapshot_isolation=ON`, a locking read that encounters a row changed after an earlier `REPEATABLE READ` snapshot can fail with error `1020`. The server may already have rolled back the transaction while PDO still reports it active. Stop the operation and let the host handle the error. See the [MariaDB snapshot-isolation behavior](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard) and the [protected write checkout decision](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md).
+
+### Protected Ordering and domain constraints
+
+For a protected Host write transaction, delegate an eligible PDO with `PdoProtectedTransactionCheckout::attachExclusive()`, call `begin()`, then pass it to `ProtectedScopedOrderingManager::getNextPositionForUpdate()` or `moveWithinScope()`. Keep the Host's scope-lock protocol and issue any insert through a registered command on the same checkout. The Host chooses completion, inspects settlement and returns or discards the connection under the [protected checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction). After transaction loss, a fenced checkout prevents continuation and handoff.
+
+In the current source, the **raw** `ScopedOrderingManager::getNextPositionForUpdate()` defaults to 64 locking tail reads. Its optional `maxTailReads` parameter accepts 2–512 and counts the initial read. If no two consecutive values match within the budget, the call reports `TAIL_READ_LIMIT_EXCEEDED` in `OrderingExecutionException` metadata. The Host retains transaction control, and engine lock-wait limits apply separately. [DEC-021](../decisions/DEC-021-bound-ordering-tail-reads.md)
+
+If a UNIQUE constraint must hold on positions throughout a move, use a domain-owned strategy verified against the real schema and lock protocol. [DEC-023](../decisions/DEC-023-unique-ordering-release-domain-ownership.md) records this release's ownership decision.
