@@ -7,6 +7,7 @@ namespace Maatify\PhpPersistence\Transaction\Repository;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use PDO;
 use PDOStatement;
+use SensitiveParameter;
 use Throwable;
 
 /** @internal Statement receiver. Clearing it also clears traces retaining this wrapper. */
@@ -16,6 +17,7 @@ final class ProtectedTransactionStatement
 
     public function __construct(
         private readonly ProtectedTransactionConnection $connection,
+        #[SensitiveParameter]
         private ?PDOStatement $statement,
     ) {}
 
@@ -117,7 +119,7 @@ final class ProtectedTransactionStatement
 
             return true;
         } catch (Throwable $error) {
-            $this->connection->fail($error);
+            $this->connection->fail($error, cursor: true);
         }
     }
 

@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-See the [README](../../README.md#installation) for installation of the published `1.0.0-rc.2` package. The C1 section describes the current repository source.
+See the [README](../../README.md#installation) for installation of the published `1.0.0-rc.2` package. The optional C1 and C2 sections describe the current repository source.
 
 ## Before you start
 
@@ -16,6 +16,7 @@ See the [README](../../README.md#installation) for installation of the published
 | Capability | Primary call | Walkthrough | Example |
 |---|---|---|---|
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
+| Transaction · Optional verified checkout (current source) | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 
@@ -89,6 +90,21 @@ try {
 ```
 
 Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the same code is also called from inside a larger caller-owned transaction and you need operation-local, best-effort rollback while the caller’s transaction remains active. See [Package Reference §5.1–§5.2 and §7](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#5-behavior-contracts) for the full ownership and deadlock-replay rules, including why replay only ever applies to a package-owned transaction.
+
+### Optional verified checkout (C2)
+
+Use Verified Checkout when your callback needs to choose whether to keep or undo provisional InnoDB writes and you need confirmation of the required transaction or savepoint control before receiving its payload. This API is available only in the current repository source. The published `v1.0.0-rc.2` predates it.
+
+The Host supplies an idle, non-persistent `PDO` or `Pdo\Mysql` connection from `pdo_mysql` with native prepares, exception mode, the default statement class and autocommit enabled. Disable multi-statements at construction and clear any pending transaction settings or resources before attachment. Reserve the connection for this checkout throughout the delegation, including when it comes from a pool. Prevent raw alias use, reconnect and multiplexing. Supply a trusted command catalog whose SQL, including triggers and routines, preserves the transaction.
+
+#### Walkthrough — Input → Public Call → Result → Boundary
+
+1. **Input** — Register each transaction-preserving command in a `ProtectedTransactionCommandCatalog` and pass the catalog and PDO to `PdoVerifiedTransactionCheckout::attachExclusive()`. The callback receives a `VerifiedTransactionCommandsInterface` grant. Use its `runRegisteredCommand()` with an ID and matching named bindings, then return `VerifiedTransactionDecisionDTO::apply($payload)` or `VerifiedTransactionDecisionDTO::discard($payload)`. Both decisions accept `false` or `null` as payload.
+2. **Public call** — In **Owned** mode, call `runOwned($operation)`. The checkout starts and ends the transaction. In **Host** mode, call `beginHost()`, optionally run registered Host commands, and call `runInHost($operation)` for one savepoint-scoped operation. The Host can continue with registered commands after a confirmed operation and chooses the outer `commit()` or `rollBack()`.
+3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PENDING_HOST` after savepoint release and confirmed continuity. Discard records `LOCAL_UNDONE` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome.
+4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `UNKNOWN` and the connection `DISCARD_REQUIRED`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `REUSABLE` or an untouched `UNCHANGED` cancellation. For `DISCARD_REQUIRED`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
+
+Run `php examples/verified_transaction_usage.php` from the root of the current source checkout with the disposable database settings above. The example covers Owned Apply and Discard, Host Discard followed by an outer commit, and settlement after a callback throws. See the [runnable example](../../examples/verified_transaction_usage.php) and the [complete Verified Checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard).
 
 ---
 

@@ -133,7 +133,8 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     $candidateClass = '/src/Transaction/Repository/PdoTransactionRunner.php';
     $installedPath = $directory . '/vendor/' . CONSUMER_PACKAGE;
     $sourceDigest = hash_file('sha256', $workspace . '/candidate' . $candidateClass);
-    if (is_link($installedPath) || $sourceDigest === false || $sourceDigest !== hash_file('sha256', $installedPath . $candidateClass)) {
+    if (is_link($installedPath) || $sourceDigest === false || $sourceDigest !== hash_file('sha256', $installedPath . $candidateClass)
+        || is_dir($installedPath . '/tests') || is_dir($installedPath . '/harness')) {
         throw new RuntimeException('Candidate installation is not an independent copy of the exact artifact');
     }
 
@@ -152,10 +153,10 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     if (! mkdir($exampleDirectory, 0700)) {
         throw new RuntimeException('Cannot create consumer example directory');
     }
-    $examples = ['pagination_snapshot_usage.php', 'pagination_keyset_usage.php'];
+    $examples = ['pagination_snapshot_usage.php', 'pagination_keyset_usage.php', 'verified_transaction_usage.php'];
     foreach (['_bootstrap.php', ...$examples] as $example) {
         if (! copy($installedPath . '/examples/' . $example, $exampleDirectory . '/' . $example)) {
-            throw new RuntimeException('Cannot copy the installed pagination example: ' . $example);
+            throw new RuntimeException('Cannot copy the installed example: ' . $example);
         }
     }
 
@@ -276,14 +277,20 @@ try {
 } catch (RuntimeException $exception) {
     fail(EXIT_INFRASTRUCTURE, $exception->getMessage());
 }
-$cell = loadMatrix($root)['cells'][CONSUMER_CELL];
-$options = ['cell' => CONSUMER_CELL, 'freshRuns' => 2, 'suitePasses' => 1];
+$cells = loadMatrix($root)['cells'];
+$requested = getenv('PP_DB_CELL');
+$cellKey = $requested === false || $requested === '' ? CONSUMER_CELL : $requested;
+if (!isset($cells[$cellKey]) || !$cells[$cellKey]['required']) {
+    fail(EXIT_USAGE, 'Choose a required database cell for consumer verification.');
+}
+$cell = $cells[$cellKey];
+$options = ['cell' => $cellKey, 'freshRuns' => 2, 'suitePasses' => 1];
 for ($run = 1; $run <= $options['freshRuns']; $run++) {
     if (remainingWorkSeconds() < 1) {
         fail(EXIT_INFRASTRUCTURE, 'No time remains for another clean consumer lifecycle');
     }
 
-    $status = lifecycle($root, CONSUMER_CELL, $cell, $options, $run, static fn(array $environment): int => verifyConsumer($root, $candidateRef, $candidateTree, $environment, $suiteTimeout));
+    $status = lifecycle($root, $cellKey, $cell, $options, $run, static fn(array $environment): int => verifyConsumer($root, $candidateRef, $candidateTree, $environment, $suiteTimeout));
     if ($status !== 0) {
         exit($status);
     }

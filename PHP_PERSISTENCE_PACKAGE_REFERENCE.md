@@ -246,6 +246,39 @@ public function discardForHost(): void
 
 `DTO\ProtectedTransactionSettlementDTO` is readonly and exposes `public ProtectedTransactionDispositionEnum $disposition` and `public ProtectedTransactionReasonEnum $reason`. See §5.2.1 for the dispositions and reasons.
 
+#### Optional verified write checkout
+
+`Repository\PdoVerifiedTransactionCheckout` is final. It rejects cloning, serialization and restoration.
+
+~~~php
+public static function attachExclusive(#[SensitiveParameter] PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
+/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation */
+public function runOwned(Closure $operation): mixed
+public function beginHost(): void
+public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
+/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation */
+public function runInHost(Closure $operation): mixed
+public function commit(): void
+public function rollBack(): void
+public function settlement(): VerifiedTransactionSettlementDTO
+public function returnForHost(): PDO
+public function discardForHost(): void
+~~~
+
+`Repository\VerifiedTransactionCommandsInterface` exposes only `runRegisteredCommand(string $commandId, array $bindings = []): int|array`. `DTO\VerifiedTransactionDecisionDTO` is final readonly with `bool $isApply` and `mixed $payload` and the factories `apply(mixed $payload = null): self` and `discard(mixed $payload = null): self`. The payload may be false or null and its identity is preserved.
+
+`DTO\VerifiedTransactionSettlementDTO` is final readonly. Its constructor takes the public properties in order, without defaults.
+
+| Property | Type |
+| --- | --- |
+| operationOutcome | ?VerifiedTransactionOutcomeEnum |
+| operationReason | ?VerifiedTransactionReasonEnum |
+| transactionOutcome | ?VerifiedTransactionOutcomeEnum |
+| checkoutReason | ?VerifiedTransactionReasonEnum |
+| disposition | ?ProtectedTransactionDispositionEnum |
+
+The unbacked `Enum\VerifiedTransactionOutcomeEnum` has NOT_STARTED, PENDING_HOST, LOCAL_UNDONE, COMMITTED, ROLLED_BACK and UNKNOWN. The unbacked `Enum\VerifiedTransactionReasonEnum` has QUALIFICATION_FAILED, START_UNCONFIRMED, CONTINUITY_UNCONFIRMED, SAVEPOINT_UNCONFIRMED, CALLBACK_FAILED, COMMAND_FAILED, CURSOR_UNCONFIRMED, ROLLBACK_TO_UNCONFIRMED, RELEASE_UNCONFIRMED, COMMIT_OUTCOME_UNKNOWN, ROLLBACK_UNCONFIRMED, HANDOFF_UNCONFIRMED, TRANSACTION_LOST and HOST_DISCARDED. The settlement is a PHP value, without a wire-format or authority to use PDO. See [§5.2.2](#522-optional-verified-apply-and-discard).
+
 #### `Exception\InvalidTransactionConfigurationException` / `Exception\TransactionExecutionException` / `Exception\ProtectedTransactionException`
 
 See §6.1.
@@ -630,6 +663,7 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Ordering\Repository\OrderingOperations`** — shared Ordering SQL and validation behind both managers.
 - **`Transaction\Repository\ProtectedTransactionConnection`** and **`ProtectedTransactionStatement`** — scoped driver receivers. Ordering reaches the private checkout reservation inside the package. The checkout exposes no callback entry point. Receivers expire at the end of the reservation and provide no raw-resource accessor.
+- **Transaction Repository internals for exclusive write checkouts** — TransactionConnectionClaim, ProtectedTransactionDriver, ProtectedTransactionCommandExecutor and VerifiedTransactionCommandScope share claims, implement driver controls and restrict callback authority. These types are package internals and are not attachment or command entry points for consumers.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper used by `PdoSavepointTransactionRunner` and the movement operations of both Ordering managers (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
 ---
@@ -685,6 +719,23 @@ The reservation spans registered commands, protected Ordering, finish and dispos
 | `DISCARD_REQUIRED` | `SERVER_QUALIFICATION_FAILED`, `START_UNCONFIRMED`, `TRANSACTION_LOST`, `OPERATION_UNCONFIRMED`, `COMMIT_OUTCOME_UNKNOWN`, `COMMIT_CONFIRMED_CONNECTION_UNSAFE`, `ROLLBACK_UNCONFIRMED`, or `HOST_DISCARDED`. Work, completion, and handoff are fenced. The Host chooses disposal and any reconciliation. |
 
 `COMMIT_OUTCOME_UNKNOWN` includes loss of the commit response after dispatch. `COMMIT_CONFIRMED_CONNECTION_UNSAFE` preserves an acknowledged commit when connection handoff cannot be confirmed. `TRANSACTION_LOST` identifies loss of authority to use the transaction on a signalled MariaDB `HY000/1020`. The code alone cannot certify rollback, its exact source, or replay safety. No work is replayed. The checkout publishes the terminal DTO once, before releasing the reservation and after completion checks. `settlement()` is a local read and returns null before a terminal result. `discardForHost()` drops the library's references without issuing explicit SQL. Driver cleanup may roll back automatically, and diagnostic extensions may retain references independently of the library.
+
+#### 5.2.2 Optional verified apply and discard
+
+[DEC-022](docs/decisions/DEC-022-verified-apply-discard.md) defines one exclusive delegation for one transaction. The Host supplies an exact PDO or Pdo\Mysql object from pdo_mysql with native prepares, exception mode, the default statement class, no persistence and autocommit enabled. Supply it idle, with no pending transaction settings or resources and multi-statements disabled at construction. Keep raw aliases out of use, including through pools, reconnect, multiplexing or simultaneous enrollment in another capability. The package reserves the PDO object between Verified and Protected Transaction checkouts. Pagination registries remain separate. A trusted plan must preserve the same session and transaction, including the effects of its routines and triggers. The API does not establish safety for an external alias, a non-transactional side effect or a transaction-changing command.
+
+Attachment performs no SQL. A refusal leaves the Host in control. The first start qualifies the session under reservation and verifies the qualified generation before work. The existing Catalog and Plan are used for both modes. Registered commands bind the exact named scalar values. The interface exposes a count or bounded rows, never a statement or PDO. The scope is valid only in the invoking Fiber or root context and closes before finalization. Reentry, stale scopes and a second operation are rejected before SQL. The checkout does not replay callbacks.
+
+| Mode | APPLY | DISCARD |
+| --- | --- | --- |
+| Owned | Starts once, commits, and confirms the same idle session before returning payload. | Starts once, rolls back, and confirms the same idle session before returning payload. |
+| Host | Host starts and may issue registered commands before or after one operation. The operation releases its savepoint and confirms continuity, then returns payload with PENDING_HOST. | Acknowledged ROLLBACK TO and RELEASE plus confirmed continuity permit payload and LOCAL_UNDONE. The Host decides the outer end in either case. |
+
+An escaping callback Throwable retains its identity, including after a caught driver failure or a cleanup failure. The receiver preserves the first safety failure for fencing and settlement. A normal return from the callback after a latched failure is suppressed and that failure is thrown. A healthy generation may be rolled back or undone after a clean callback error. A failed control or uncertainty fences the checkout, suppresses payload and prevents further queries and handoff. A lost end reply records UNKNOWN. An acknowledged end remains COMMITTED or ROLLED_BACK if the later handoff check fails. ACK of ROLLBACK TO remains LOCAL_UNDONE even when release or continuity cannot be confirmed.
+
+The immutable snapshot is a local read and publishes before release of the reservation. Operation facts survive a later Host end. Transaction outcome is null while active. Disposition null means the checkout holds the connection, UNCHANGED is an untouched cancellation without server qualification, and REUSABLE attests eligibility at confirmed completion. DISCARD_REQUIRED bars handoff even when the database effect is known. Successful handoff returns the same object once, while discard releases library references without an explicit database command. Disposal and loss of the final PDO reference do not attest transaction outcome.
+
+See the [runnable Owned, Host and exception examples](examples/verified_transaction_usage.php).
 
 ### 5.3 `PdoPaginator::paginate()`
 
@@ -844,7 +895,7 @@ External `\PDOException` or callback/mapper `Throwable` generally propagates unc
 |---|---|---|
 | `InvalidTransactionConfigurationException` | `SystemMaatifyException` | A transaction-runner constructor receives `$maxDeadlockRetries` outside `[0, 3]`. |
 | `TransactionExecutionException` | `SystemMaatifyException` | A PDO transaction-control statement (`BEGIN`, `COMMIT`, `SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) returns `false` instead of throwing; or the shared savepoint helper observes that a caller-owned transaction is no longer active immediately after a successful `SAVEPOINT`, before the callback or Ordering mutation. |
-| `ProtectedTransactionException` | `SystemMaatifyException` | Invalid registration, binding, checkout lifecycle or resource confirmation in the optional protected path. Existing driver exceptions preserve their identity. |
+| `ProtectedTransactionException` | `SystemMaatifyException` | The optional [Protected](#521-optional-protected-host-write-transaction) and [Verified](#522-optional-verified-apply-and-discard) paths reject a connection, lifecycle action, command registration, lookup, bindings or row bound, or cannot confirm a resource, session or control operation when the driver does not throw. Verified also rejects an invalid callback decision, an unavailable command grant and an unsafe PDO handoff. Propagated driver and callback throwables retain their identity under the precedence rules in §5.2.1 and §5.2.2. |
 
 ### 6.2 Pagination
 

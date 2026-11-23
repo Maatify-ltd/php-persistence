@@ -47,14 +47,34 @@ final readonly class SavepointScope
      */
     public static function begin(PDO|ProtectedTransactionConnection $pdo): self
     {
-        $scope = new self($pdo, self::SAVEPOINT_PREFIX . bin2hex(random_bytes(16)));
-        $scope->executeControlStatement('SAVEPOINT ' . $scope->name);
+        $scope = self::open($pdo);
 
         if (!$pdo->inTransaction()) {
             throw new TransactionExecutionException('The caller-owned transaction is no longer active; the operation was not started.');
         }
 
         return $scope;
+    }
+
+    /** Opens the savepoint, leaving full continuity verification to a strict caller. */
+    public static function open(PDO|ProtectedTransactionConnection $pdo): self
+    {
+        $scope = new self($pdo, self::SAVEPOINT_PREFIX . bin2hex(random_bytes(16)));
+        $scope->executeControlStatement('SAVEPOINT ' . $scope->name);
+
+        return $scope;
+    }
+
+    /** Requires acknowledgement, without falling back to best-effort cleanup. */
+    public function releaseStrict(): void
+    {
+        $this->executeControlStatement('RELEASE SAVEPOINT ' . $this->name);
+    }
+
+    /** Requires acknowledgement before a caller can record a local undo. */
+    public function rollbackStrict(): void
+    {
+        $this->executeControlStatement('ROLLBACK TO SAVEPOINT ' . $this->name);
     }
 
     /**
@@ -65,7 +85,7 @@ final readonly class SavepointScope
     public function releaseOrUndo(): void
     {
         try {
-            $this->executeControlStatement('RELEASE SAVEPOINT ' . $this->name);
+            $this->releaseStrict();
         } catch (Throwable $releaseThrowable) {
             $this->cleanupAfterFailure();
 
@@ -101,7 +121,7 @@ final readonly class SavepointScope
      */
     public function undoOrFail(): void
     {
-        $this->executeControlStatement('ROLLBACK TO SAVEPOINT ' . $this->name);
+        $this->rollbackStrict();
         $this->tryControlStatement('RELEASE SAVEPOINT ' . $this->name);
     }
 

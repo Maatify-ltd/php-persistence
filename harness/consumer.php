@@ -147,16 +147,31 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         verifySame(true, $manager->moveWithinScope($pdo, $config, 7, 1, 3), 'Move at current position succeeds');
         verifySame(false, $manager->moveWithinScope($pdo, $config, 7, 99, 2), 'Missing move reports false');
 
-        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        $pdo->beginTransaction();
-        verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Initial snapshot sees the old maximum');
-        $writer->exec("INSERT INTO `{$table}` (id, scope_id, position, deleted_at) VALUES (9, 7, 9, NULL)");
-        verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Plain snapshot remains stale after the independent commit');
-        verifySame(true, $manager->moveWithinScope($pdo, $config, 7, 1, 99), 'Move uses the current locked maximum');
-        verifySame(9, (int) $pdo->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Move clamps to the new maximum instead of the snapshot maximum');
-        $pdo->rollBack();
-        verifySame(3, (int) $writer->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Caller can undo the stale-snapshot move');
-        $writer->exec("DELETE FROM `{$table}` WHERE id = 9");
+        $mariaDb = consumerEnvironment('ENGINE') === 'mariadb';
+        if ($mariaDb) {
+            // This existing raw comparison needs locking reads to see the current
+            // version after the snapshot. The protected API tests use their own sessions.
+            $pdo->exec('SET SESSION innodb_snapshot_isolation = OFF');
+        }
+        try {
+            $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            $pdo->beginTransaction();
+            verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Initial snapshot sees the old maximum');
+            $writer->exec("INSERT INTO `{$table}` (id, scope_id, position, deleted_at) VALUES (9, 7, 9, NULL)");
+            verifySame(4, $manager->getNextPosition($pdo, $config, 7), 'Plain snapshot remains stale after the independent commit');
+            verifySame(true, $manager->moveWithinScope($pdo, $config, 7, 1, 99), 'Move uses the current locked maximum');
+            verifySame(9, (int) $pdo->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Move clamps to the new maximum instead of the snapshot maximum');
+            $pdo->rollBack();
+            verifySame(3, (int) $writer->query("SELECT position FROM `{$table}` WHERE id = 1")->fetchColumn(), 'Caller can undo the stale-snapshot move');
+            $writer->exec("DELETE FROM `{$table}` WHERE id = 9");
+        } finally {
+            if ($mariaDb) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $pdo->exec('SET SESSION innodb_snapshot_isolation = DEFAULT');
+            }
+        }
 
         $timestampedConfig = $legacy
             ? new LegacyOrderingConfig(table: $table, scopeColumn: 'scope_id', orderColumn: 'position', updatedAtColumn: 'stamp')
@@ -168,7 +183,7 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
             $manager->moveWithinScope($pdo, $timestampedConfig, 7, 1, 1, 'blocked');
             throw new LogicException('Target write unexpectedly passed its CHECK constraint');
         } catch (PDOException $error) {
-            verifySame(3819, (int) ($error->errorInfo[1] ?? 0), 'Target write failed after the range shift');
+            verifySame($mariaDb ? 4025 : 3819, (int) ($error->errorInfo[1] ?? 0), 'Target write failed after the range shift');
         }
         verifySame($beforeMove, $pdo->query("SELECT id, position FROM `{$table}` ORDER BY id")->fetchAll(PDO::FETCH_KEY_PAIR), 'Ordering savepoint reversed the shift');
         verifySame(true, $pdo->inTransaction(), 'Ordering failure retained caller ownership');
