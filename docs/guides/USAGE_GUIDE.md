@@ -18,6 +18,7 @@ See the [README](../../README.md#installation) for installation of the published
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
 | Transaction · Optional verified checkout (current source) | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
+| Pagination · Optional static composite sort (current source) | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 
 ## Run the examples
@@ -171,6 +172,15 @@ $payload = $page->toArray(); // ['data' => [...], 'pagination' => ['page' => ...
 ```
 
 See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#33-pagination-capability--maatifyphppersistencepagination) for every normalization rule and the exact `PaginationExecutionException`/`InvalidPaginationQueryException`/`InvalidPaginationConfigurationException` conditions.
+
+### Optional static composite sorting
+
+Use this path when the Host wants a named order such as status ascending, priority descending, then unique row ID ascending. It is available in the unreleased repository source.
+
+- **Input** — build `StaticSortPlan` once with trusted identifier paths and a profile for each key this query should offer. Put the primary column in the whitelist and specify the trailing terms in order. Omit a term direction to inherit the requested primary direction. Use an explicit `null` profile for the standard primary/tie-breaker order.
+- **Public call** — pass the descriptor, ordinary `PageRequest`, plan, and mapper to `PdoPaginator::paginateWithStaticSort()`.
+- **Result** — the existing `PageResultDTO` reports the effective primary key and direction. The [runnable example](../../examples/pagination_static_sort_usage.php) reuses one plan for three pages and asserts IDs `5,2,1,3,4` in order.
+- **Boundary** — the profile keys are the allowed set for this path. A whitelisted key omitted from the plan fails before query preparation. The Host defines a unique order on the result and controls PDO, SQL, and the transaction. See the [static sort contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#534-optional-static-composite-offset-pagination).
 
 ### Optional C1 snapshot pagination
 

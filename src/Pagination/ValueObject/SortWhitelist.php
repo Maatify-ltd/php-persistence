@@ -14,8 +14,6 @@ use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationConfigurationEx
  */
 final readonly class SortWhitelist
 {
-    private const IDENTIFIER_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_]*\z/';
-
     /** @var non-empty-array<non-empty-string, non-empty-string> */
     private array $quotedSorts;
 
@@ -71,7 +69,7 @@ final readonly class SortWhitelist
                 throw new InvalidPaginationConfigurationException('Invalid pagination sort key.');
             }
 
-            if (! preg_match(self::IDENTIFIER_PATTERN, $key)) {
+            if (! preg_match(SortIdentifier::SEGMENT_PATTERN, $key)) {
                 throw new InvalidPaginationConfigurationException('Invalid pagination sort key.');
             }
 
@@ -79,28 +77,9 @@ final readonly class SortWhitelist
                 throw new InvalidPaginationConfigurationException('Invalid pagination sort identifier.');
             }
 
-            $quotedSorts[$key] = $this->quoteIdentifierPath($identifierPath);
+            $quotedSorts[$key] = SortIdentifier::quotePath($identifierPath);
         }
 
         return $quotedSorts;
-    }
-
-    /**
-     * @return non-empty-string
-     */
-    private function quoteIdentifierPath(string $identifierPath): string
-    {
-        $segments = explode('.', $identifierPath);
-        if (count($segments) > 3) {
-            throw new InvalidPaginationConfigurationException('Invalid pagination sort identifier path.');
-        }
-
-        foreach ($segments as $segment) {
-            if (! preg_match(self::IDENTIFIER_PATTERN, $segment)) {
-                throw new InvalidPaginationConfigurationException('Invalid pagination sort identifier segment.');
-            }
-        }
-
-        return '`' . implode('`.`', $segments) . '`';
     }
 }

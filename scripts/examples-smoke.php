@@ -30,6 +30,7 @@ $root = dirname(__DIR__);
 $examples = [
     'transaction_basic_usage.php',
     'pagination_basic_usage.php',
+    'pagination_static_sort_usage.php',
     'pagination_snapshot_usage.php',
     'verified_transaction_usage.php',
     'pagination_keyset_usage.php',
