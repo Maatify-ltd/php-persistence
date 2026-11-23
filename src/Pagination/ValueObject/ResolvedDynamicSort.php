@@ -35,7 +35,9 @@ final readonly class ResolvedDynamicSort
 
     /**
      * Resolves trusted paths before PDO is used. An ambiguous default/tie
-     * configuration takes precedence over an invalid request.
+     * configuration takes precedence over an invalid request. Once the request
+     * terms are valid in shape, qualifier conflicts take precedence over
+     * duplicate and tie selection errors.
      *
      * @param array<mixed> $sorts
      * @throws InvalidPaginationConfigurationException For conflicting qualifier casing.
@@ -63,24 +65,29 @@ final readonly class ResolvedDynamicSort
         $terms = self::normalizeTerms($sorts, $whitelist);
         $last = count($terms) - 1;
         $previous = [];
+        $selectionError = null;
         foreach ($terms as $index => $term) {
             $identifier = $term['identifier'];
             $isTie = self::sameIdentifier($identifier, $tiePath);
             $folded = strtolower($identifier);
             if (isset($previous[$folded]) && self::sameIdentifier($identifier, $previous[$folded])) {
-                throw new InvalidPaginationQueryException('Duplicate identifier in dynamic pagination sort.');
+                $selectionError ??= 'Duplicate identifier in dynamic pagination sort.';
             }
             $previous[$folded] = $identifier;
 
             if ($term['key'] === $config->tieBreakerSortBy && ! $allowTieBreakerSelection) {
-                throw new InvalidPaginationQueryException('The Host has reserved the dynamic pagination tie-breaker key.');
+                $selectionError ??= 'The Host has reserved the dynamic pagination tie-breaker key.';
             }
             if ($isTie) {
                 if ($index !== $last) {
-                    throw new InvalidPaginationQueryException('A selected tie-breaker must be the last dynamic pagination term.');
+                    $selectionError ??= 'A selected tie-breaker must be the last dynamic pagination term.';
                 }
                 $automaticTie = null;
             }
+        }
+
+        if ($selectionError !== null) {
+            throw new InvalidPaginationQueryException($selectionError);
         }
 
         return new self($terms, $automaticTie, true);

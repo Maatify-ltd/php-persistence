@@ -267,6 +267,35 @@ final class DynamicSortPaginationTest extends TestCase
         yield 'selected pair' => [false];
     }
 
+    /** @param list<string> $keys */
+    #[DataProvider('qualifierConflictOrders')]
+    public function testQualifierConflictTakesPrecedenceOverTiePosition(array $keys): void
+    {
+        $pdo = new ScriptedPdo([]);
+        $config = new PaginationConfig(
+            new SortWhitelist(['name' => 'o.name', 'tie' => 'o.id', 'alias' => 'O.id']),
+            'name',
+            Direction::ASC,
+            'tie',
+            Direction::ASC,
+        );
+        $sorts = array_map(static fn(string $key): array => self::sort($key, 'ASC'), $keys);
+
+        $this->expectException(InvalidPaginationConfigurationException::class);
+        try {
+            (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(), $config, $sorts, self::row(...), allowTieBreakerSelection: true);
+        } finally {
+            self::assertSame([], $pdo->preparedSql);
+        }
+    }
+
+    /** @return iterable<string, array{list<string>}> */
+    public static function qualifierConflictOrders(): iterable
+    {
+        yield 'canonical tie first' => [['tie', 'alias']];
+        yield 'conflicting alias first' => [['alias', 'tie']];
+    }
+
     public function testDtoFactoryRejectsUnrelatedPageBeforePublishingMetadata(): void
     {
         $sort = ResolvedDynamicSort::resolve(self::config(), new PageRequest(), [self::sort('score', 'ASC')], false);
