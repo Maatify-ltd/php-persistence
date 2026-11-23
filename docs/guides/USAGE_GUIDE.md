@@ -6,7 +6,7 @@ The [published RC.2 quickstart](#run-the-published-rc2-examples-from-a-clean-ins
 
 ## Before you start
 
-- Every capability operates on a `PDO` connection **you** create, configure, and own. The package never opens a connection, never changes a PDO attribute, and never changes a session/server setting.
+- You create and own the `PDO` connection and control its attributes and session and server defaults. Optional B applies an isolation setting for the next transaction when you explicitly start it through the checkout.
 - Every capability is independent to use: you may use only Transaction, only Pagination, or only Ordering. Internally, `Ordering → Transaction` (Ordering reuses the Transaction capability's runner and savepoint helper); `Pagination` depends on neither.
 - **Non-goals:** no connection factory, no schema/migration tool, no ORM, no HTTP/host logic, no operational reporting API (see [Package Reference §1](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#1-purpose-and-boundaries)). Do not look in `tests/` or `src/` for usage guidance — this guide and [examples/](../../examples/) are the supported consumer path.
 - Every database version claim in this guide is the same narrow claim the README and Package Reference make: "version tested" on named MySQL/MariaDB versions, not a declared supported range.
@@ -222,7 +222,7 @@ See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.
 | A fixed tuple for a named sort | `paginateWithStaticSort()` with `StaticSortPlan` | Same Offset reads. The Host supplies the full stable order and its tie. |
 | Request-selected sort priority | `paginateWithDynamicSort()` | Same Offset reads. The Host allowlists keys, configures a unique tie, and keeps input adaptation. |
 | One consistent page on a delegated idle reader | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | C1 owns one read-only transaction. The Host handles the checkout outcome before reuse. |
-| Pages and prior writes on a Host transaction | `PdoHostSnapshotSource::attachExclusive()` with a catalog, then an authorized attempt and `PdoHostSnapshotPaginator::paginate()` | B reserves one connection and validates the actual transaction. Use registered operations and inspect settlement before handoff. [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) |
+| Pages that include earlier writes in the same Host transaction | [B pagination](#optional-b-pagination-in-a-host-transaction) on an idle, exclusively delegated PDO | The Host starts the transaction through the checkout. Registered writes and page reads share the confirmed transaction. |
 | Forward continuation without counts | `PdoKeysetPaginator::paginate()` | Keyset v1 seeks on one immutable, unique positive integer ID. The authenticated cursor binds the query and Host scope. The Host owns the connection and signing keys. [Runnable example](../../examples/pagination_keyset_usage.php) |
 
 Separate Offset requests can drift across writes even with a unique tie. Counts can dominate query cost depending on filters, joins and indexes. Keyset continuation has a separate result contract with no numbered-page or total-count metadata.
@@ -256,6 +256,17 @@ Use C1 when all reads for one page can run through the same eligible InnoDB conn
 3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `REUSABLE` after confirmed cleanup, retains its policy for `UNCHANGED`, and retires a `DISCARD` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
 
 The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the candidate package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
+
+### Optional B pagination in a Host transaction
+
+Use B from the unreleased source when the Host needs eligible page reads, including its earlier writes, within one transaction it starts through the checkout.
+
+1. **Input** — Start with an idle, exclusively delegated, non-persistent `pdo_mysql` PDO with exception mode, the default statement class and autocommit enabled. Register non-locking, side-effect-free InnoDB page plans and trusted commands in a `HostSnapshotCatalog`. Route all use of the connection through the checkout during delegation.
+2. **Start** — Create the source with `PdoHostSnapshotSource::attachExclusive($pdo, $catalog)`, obtain a lease with `$source->checkout()`, then call `$checkout->beginRepeatableRead()`. Checkout rejects an already active transaction. At the Host's request, B issues `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` for the next transaction, starts it, and confirms the same session and active transaction. The Host's session and server defaults stay in effect for later transactions. For writes before a page, use `runRegisteredCommand()` on that checkout in read-write mode with commands registered to preserve the transaction.
+3. **Read** — Call `$checkout->authorizePage($queryId, $bindings, $request)`, pass the grant to `$checkout->newAttempt()`, and use `(new PdoHostSnapshotPaginator())->paginate($attempt)` to receive a `PageResultDTO`.
+4. **Boundary** — Eligible page reads share the InnoDB read view within the confirmed transaction and can see the Host's own writes in that transaction. A later transaction has its own read view. Inspect `$attempt->settlement()` after return or exception. The Host directs `commit()` or `rollBack()` on the checkout and handles handoff or discard. If B cannot confirm that startup consumed the isolation setting, the Host must reconcile the connection before reuse.
+
+See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) for confirmation and handoff rules. The [installed consumer verification](CONSUMER_VERIFICATION.md) exercises a registered write followed by a page in the same transaction.
 
 ---
 
