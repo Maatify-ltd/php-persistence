@@ -10,6 +10,7 @@ use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
+use Maatify\PhpPersistence\Tests\Integration\Support\FaultInjectingCursorStatement;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
@@ -18,9 +19,11 @@ use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionReasonEnum;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use PDO;
+use PDOException;
 use Pdo\Mysql;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\TestWith;
+use SensitiveParameter;
 
 final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 {
@@ -30,6 +33,9 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private string $anchor;
     private ?int $scope;
     private ProtectedScopedOrderingManager $manager;
+    private ?PDO $fixtureAdmin = null;
+    private ?string $restrictedAccount = null;
+    private ?string $dependencySchema = null;
     /** @var list<PdoProtectedTransactionCheckout> */
     private array $checkouts = [];
 
@@ -54,6 +60,14 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             }
         }
         $this->checkouts = [];
+        if ($this->fixtureAdmin !== null) {
+            if ($this->dependencySchema !== null) {
+                $this->fixtureAdmin->exec('DROP DATABASE IF EXISTS ' . $this->dependencySchema);
+            }
+            if ($this->restrictedAccount !== null) {
+                $this->fixtureAdmin->exec('DROP USER IF EXISTS ' . $this->restrictedAccount);
+            }
+        }
         $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->items));
         $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->anchor));
         parent::tearDown();
@@ -368,6 +382,158 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame('pending', $this->scalar($this->observer, $this->markerSql()));
     }
 
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testUnconfirmedCursorCloseFencesRealCheckoutAndPreservesFirstThrowable(bool $executeAlsoFails): void
+    {
+        $this->createProfile(false, false);
+        $this->seedFaultProfile();
+        $config = $this->config();
+        $closeFailure = new PDOException('Injected cursor close failure after real driver close.');
+        $executeFailure = $executeAlsoFails ? new PDOException('Injected execute failure after real driver write.') : null;
+        $checkout = $this->checkout(cursorFault: [$closeFailure, $executeFailure]);
+        self::assertSame(1, $checkout->runRegisteredCommand('mark', ['id' => 1]));
+
+        $primary = self::failureOf(fn() => $this->manager->moveUniqueWithinScope($checkout, $config, null, 3, 1));
+
+        self::assertSame($executeFailure ?? $closeFailure, $primary);
+        $settlement = $checkout->settlement();
+        self::assertNotNull($settlement);
+        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED, $settlement->reason);
+        foreach ([
+            fn() => $checkout->runRegisteredCommand('mark', ['id' => 2]),
+            fn() => $this->manager->getNextUniquePositionForAppend($checkout, $config, null),
+            $checkout->commit(...),
+            $checkout->rollBack(...),
+            $checkout->returnForHost(...),
+        ] as $laterCommand) {
+            try {
+                $laterCommand();
+                self::fail('A fenced checkout accepted subsequent work.');
+            } catch (ProtectedTransactionException) {
+                self::assertSame($settlement, $checkout->settlement());
+            }
+        }
+        self::assertSame('original', $this->scalar($this->observer, $this->markerSql()));
+        $checkout->discardForHost();
+        self::assertSame($checkout, array_pop($this->checkouts));
+
+        // Synchronize with server-side disconnect/rollback by taking the marker lock.
+        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+        $this->observer->beginTransaction();
+        try {
+            self::assertSame('original', $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
+            self::assertSame([1, 2, 3], $this->orderedIds(null));
+        } finally {
+            $this->observer->rollBack();
+        }
+    }
+
+    public function testLimitedAccountCanUseReviewedScopeToAnchorForeignKey(): void
+    {
+        $this->createProfile(true, false);
+        [$user, $password] = $this->createRestrictedAccount();
+        $this->observer->exec('INSERT INTO ' . self::quoted($this->items) . ' (id, scope_id, pos) VALUES (1, 7, 1), (2, 7, 2)');
+        $checkout = $this->checkout(connection: $this->fixtureConnection($user, $password));
+        self::assertSame(3, $this->manager->getNextUniquePositionForAppend($checkout, $this->config(), 7));
+        self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $this->config(), 7, 2, 1));
+        $checkout->commit();
+        $checkout->returnForHost();
+
+        self::assertSame([2, 1], $this->orderedIds(7));
+    }
+
+    #[TestWith(['incoming-foreign-key'])]
+    #[TestWith(['trigger'])]
+    public function testLimitedAccountUsesReceiptWhereDependencyVisibilityIsIncomplete(string $dependency): void
+    {
+        $this->createProfile(false, false);
+        [$user, $password] = $this->createRestrictedAccount();
+        $admin = $this->fixtureAdmin;
+        self::assertNotNull($admin);
+        [$schema, $table] = explode('.', $this->items);
+        if ($dependency === 'incoming-foreign-key') {
+            $this->dependencySchema = 'b1_dep_' . bin2hex(random_bytes(6));
+            $child = $this->dependencySchema . '.items_reference';
+            $admin->exec('CREATE DATABASE ' . $this->dependencySchema);
+            $admin->exec('CREATE TABLE ' . $child . ' (id INT PRIMARY KEY, item_id INT NOT NULL,'
+                . ' FOREIGN KEY (item_id) REFERENCES ' . self::quoted($this->items) . ' (id)) ENGINE=InnoDB');
+            $metadataSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = '$schema'"
+                . " AND REFERENCED_TABLE_NAME = '$table'";
+            $reveal = 'GRANT SELECT ON ' . $child;
+        } else {
+            $admin->exec('CREATE TRIGGER ' . self::quoted($schema . '.b1_trigger_' . bin2hex(random_bytes(6)))
+                . ' BEFORE UPDATE ON ' . self::quoted($this->items) . ' FOR EACH ROW SET NEW.label = NEW.label');
+            $metadataSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = '$schema'"
+                . " AND EVENT_OBJECT_TABLE = '$table'";
+            $reveal = 'GRANT TRIGGER ON ' . self::quoted($this->items);
+        }
+        self::assertSame('1', $this->scalar($admin, $metadataSql));
+        $limited = $this->fixtureConnection($user, $password);
+        $seenByLimitedAccount = $this->scalar($limited, $metadataSql);
+        if ($dependency === 'incoming-foreign-key' || self::engine() === 'mysql') {
+            self::assertSame('0', $seenByLimitedAccount);
+        }
+        $checkout = $this->checkout(connection: $limited);
+        unset($limited);
+        $missingReview = $this->config(receipt: ['dependenciesReviewed' => false]);
+        $this->reject('SCHEMA_UNVERIFIED', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $missingReview, null));
+        $staleFingerprint = $this->config(receipt: ['itemsFingerprint' => str_repeat('0', 64)]);
+        $this->reject('SCHEMA_UNVERIFIED', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $staleFingerprint, null));
+        self::assertNull($checkout->settlement());
+
+        $assertedReview = $this->config();
+        if ($seenByLimitedAccount === '0') {
+            // Deliberately incorrect receipt in a read-only allocator call: it
+            // demonstrates the conditional trust boundary and performs no DML.
+            self::assertSame(1, $this->manager->getNextUniquePositionForAppend($checkout, $assertedReview, null));
+        } else {
+            self::assertSame('1', $seenByLimitedAccount);
+            $this->reject('INELIGIBLE_SCHEMA', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $assertedReview, null));
+        }
+        $checkout->rollBack();
+        $checkout->returnForHost();
+        $admin->exec($reveal . ' TO ' . $this->restrictedAccount);
+
+        $visible = $this->fixtureConnection($user, $password);
+        self::assertSame('1', $this->scalar($visible, $metadataSql));
+        $checkout = $this->checkout(connection: $visible);
+        unset($visible);
+        $this->reject('INELIGIBLE_SCHEMA', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $assertedReview, null));
+        self::assertNull($checkout->settlement());
+        $checkout->rollBack();
+        $checkout->returnForHost();
+        self::assertSame([], $this->orderedIds(null));
+    }
+
+    /** @return array{string, string} */
+    private function createRestrictedAccount(): array
+    {
+        $admin = $this->fixtureConnection('root', self::setting('ADMIN_PASSWORD'));
+        $admin->exec('SET SESSION lock_wait_timeout = 4');
+        $this->fixtureAdmin = $admin;
+        $user = 'b1_user_' . bin2hex(random_bytes(6));
+        $password = bin2hex(random_bytes(16));
+        $this->restrictedAccount = "'" . $user . "'@'%'";
+        $admin->exec("CREATE USER " . $this->restrictedAccount . " IDENTIFIED BY '" . $password . "'");
+        foreach ([$this->items, $this->anchor] as $table) {
+            $admin->exec('GRANT SELECT, UPDATE ON ' . self::quoted($table) . ' TO ' . $this->restrictedAccount);
+        }
+
+        return [$user, $password];
+    }
+
+    private function fixtureConnection(string $user, #[SensitiveParameter] string $password): PDO
+    {
+        return new PDO(
+            'mysql:host=' . self::setting('HOST') . ';port=' . self::setting('PORT') . ';dbname=' . self::setting('DATABASE'),
+            $user,
+            $password,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
+        );
+    }
+
     private function relay(string $stage, string $phase): PartnerProcess
     {
         return PartnerProcess::start([
@@ -619,15 +785,24 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         return hash('sha256', $ddl);
     }
 
-    /** @param list<string> $sessionSetup */
-    private function checkout(string $isolation = 'READ COMMITTED', bool $foundRows = false, array $sessionSetup = [], ?string $relayPort = null): PdoProtectedTransactionCheckout
-    {
+    /**
+     * @param list<string> $sessionSetup
+     * @param array{PDOException, ?PDOException}|null $cursorFault
+     */
+    private function checkout(
+        string $isolation = 'READ COMMITTED',
+        bool $foundRows = false,
+        array $sessionSetup = [],
+        ?string $relayPort = null,
+        ?PDO $connection = null,
+        ?array $cursorFault = null,
+    ): PdoProtectedTransactionCheckout {
         $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_EMULATE_PREPARES => $relayPort !== null,
             Mysql::ATTR_FOUND_ROWS => $foundRows,
         ];
-        $pdo = new PDO(
+        $pdo = $connection ?? new PDO(
             'mysql:host=' . self::setting('HOST') . ';port=' . ($relayPort ?? self::setting('PORT')) . ';dbname=' . self::setting('DATABASE'),
             self::setting('USER'),
             self::setting('PASSWORD'),
@@ -654,6 +829,12 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             'wrong-bindings' => new ProtectedTransactionCommandPlan($delete, ['id']),
         ]));
         $this->checkouts[] = $checkout;
+        if ($cursorFault !== null) {
+            // Test seam: install a statement wrapper after the real checkout
+            // accepts the default statement class, then release the PDO alias.
+            self::assertTrue($pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [FaultInjectingCursorStatement::class, $cursorFault]));
+        }
+        unset($pdo, $connection);
         $checkout->begin();
 
         return $checkout;

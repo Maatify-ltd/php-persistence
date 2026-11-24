@@ -370,7 +370,7 @@ function globalVariable(PDO $pdo, string $name): string
 /**
  * @param array<string, string> $suiteEnvironment
  */
-function connect(array $suiteEnvironment, string $user, string $password): PDO
+function connect(array $suiteEnvironment, string $user, #[SensitiveParameter] string $password): PDO
 {
     return new PDO(
         'mysql:host=' . $suiteEnvironment['PHP_PERSISTENCE_IT_HOST'] . ';port=' . $suiteEnvironment['PHP_PERSISTENCE_IT_PORT']
@@ -379,6 +379,68 @@ function connect(array $suiteEnvironment, string $user, string $password): PDO
         $password,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5],
     );
+}
+
+/**
+ * @return list<array{id: string, state: string, started: string, thread: int}>
+ */
+function readTransactionResidue(PDO $admin): array
+{
+    $snapshot = $admin->query('SELECT trx_id AS id, trx_state AS state, trx_started AS started,'
+        . ' trx_mysql_thread_id AS thread FROM information_schema.innodb_trx');
+    if ($snapshot === false) {
+        throw new PDOException('Unable to read the server transaction snapshot.');
+    }
+    $transactions = [];
+    while (($row = $snapshot->fetch(PDO::FETCH_ASSOC)) !== false) {
+        if (!is_scalar($row['id'] ?? null) || !is_string($row['state'] ?? null)
+            || !is_string($row['started'] ?? null) || !is_numeric($row['thread'] ?? null)
+        ) {
+            throw new PDOException('Unexpected transaction snapshot shape.');
+        }
+        $transactions[] = ['id' => (string) $row['id'], 'state' => $row['state'], 'started' => $row['started'], 'thread' => (int) $row['thread']];
+    }
+    $snapshot->closeCursor();
+
+    return $transactions;
+}
+
+/**
+ * @param list<array{id: string, state: string, started: string, thread: int}> $transactions
+ */
+function reportTransactionResidue(PDO $admin, array $transactions, string $applicationUser, string $testDatabase): void
+{
+    $sessions = [];
+    try {
+        $processes = $admin->query('SHOW PROCESSLIST');
+        if ($processes !== false) {
+            while (($session = $processes->fetch(PDO::FETCH_ASSOC)) !== false) {
+                if (!is_numeric($session['Id'] ?? null)) {
+                    continue;
+                }
+                $sessions[(int) $session['Id']] = [
+                    'source' => match ($session['User'] ?? null) {
+                        $applicationUser => 'suite',
+                        'root' => 'disposable-admin',
+                        'system user', 'event_scheduler' => 'server',
+                        default => 'other',
+                    },
+                    'command' => $session['Command'] ?? null,
+                    'seconds' => $session['Time'] ?? null,
+                    'testDatabase' => ($session['db'] ?? null) === $testDatabase,
+                ];
+            }
+            $processes->closeCursor();
+        }
+    } catch (PDOException) {
+        // Keep the original InnoDB evidence and the failing gate.
+    }
+    foreach ($transactions as $transaction) {
+        fwrite(STDERR, 'RESIDUE-TRANSACTION ' . json_encode(
+            $transaction + ['session' => $sessions[$transaction['thread']] ?? null],
+            JSON_THROW_ON_ERROR,
+        ) . "\n");
+    }
 }
 
 /**
@@ -466,7 +528,12 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
         }
         echo '--- suite pass ' . $pass . '/' . $options['suitePasses'] . "\n";
         $result = $verification === null
-            ? passthrough($phpunit, $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)))
+            ? passthrough(
+                $phpunit,
+                $suiteEnvironment + ['PHP_PERSISTENCE_IT_ADMIN_PASSWORD' => $environment['PP_DB_ROOT_PASSWORD']],
+                $root,
+                boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)),
+            )
             : $verification($suiteEnvironment);
         if ($result !== 0) {
             return $verification === null ? EXIT_TEST_FAILURE : $result;
@@ -475,7 +542,11 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
             // The application user has no PROCESS privilege; the disposable root account inspects the server.
             $admin = connect($suiteEnvironment, 'root', $environment['PP_DB_ROOT_PASSWORD']);
             $residue = (int) scalar($admin, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '" . $environment['PP_DB_DATABASE'] . "'");
-            $openTransactions = (int) scalar($admin, 'SELECT COUNT(*) FROM information_schema.innodb_trx');
+            $transactions = readTransactionResidue($admin);
+            $openTransactions = count($transactions);
+            if ($openTransactions !== 0) {
+                reportTransactionResidue($admin, $transactions, $suiteEnvironment['PHP_PERSISTENCE_IT_USER'], $suiteEnvironment['PHP_PERSISTENCE_IT_DATABASE']);
+            }
         } catch (PDOException $exception) {
             fwrite(STDERR, 'Residue check failed: ' . $exception->getMessage() . "\n");
 
