@@ -1,14 +1,14 @@
 # DEC-023 — ملكية المجال لتحريك المواضع تحت UNIQUE في الإصدار المخطط
 
 - **Decision ID:** DEC-023
-- **Status:** ACTIVE
+- **Status:** SUPERSEDED
 - **Date:** 2026-11-23
 - **اللغة:** العربية
 - **Decision Authority:** مالك المشروع، وفق [الاعتماد الصريح](https://github.com/Maatify-ltd/php-persistence/issues/77#issuecomment-7096558971) بعد [المراجعة الفنية المستقلة](https://github.com/Maatify-ltd/php-persistence/issues/77#issuecomment-7095501146).
 - **Scope / Concern:** حدود ملكية تحريك المواضع الفريدة ضمن الإصدار المقبل الذي تتناوله [خطة الإصدار #65](https://github.com/Maatify-ltd/php-persistence/issues/65) عند اعتماد القرار في 23 نوفمبر 2026.
 - **Canonical Contract / Current Owner:** [Package Reference §5.4](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager) لعقد `ScopedOrderingManager`، و[خطة الإصدار #65](https://github.com/Maatify-ltd/php-persistence/issues/65) لتحديد نطاق الإصدار.
 - **Supersedes:** —
-- **Superseded By:** —
+- **Superseded By:** [DEC-026](./DEC-026-protected-unique-ordering-b1.md)
 
 ## السياق
 

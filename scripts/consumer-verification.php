@@ -157,6 +157,7 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         'transaction_basic_usage.php',
         'pagination_basic_usage.php',
         'ordering_basic_usage.php',
+        'ordering_unique_usage.php',
         'pagination_snapshot_usage.php',
         'pagination_keyset_usage.php',
         'verified_transaction_usage.php',

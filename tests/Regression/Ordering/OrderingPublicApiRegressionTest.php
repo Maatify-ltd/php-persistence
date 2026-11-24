@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Regression\Ordering;
 
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Config\UniqueOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingConfigurationException;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
 use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use PDO;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -90,6 +93,43 @@ final class OrderingPublicApiRegressionTest extends TestCase
             ['config', ScopedOrderingConfig::class, false, false, null],
             ['scopeValue', 'int|string', true, false, null],
             ['id', 'int', false, false, null],
+        ], 'bool');
+    }
+
+    public function testProtectedB1NamedCallsAreAdditive(): void
+    {
+        $manager = ProtectedScopedOrderingManager::class;
+        $host = ['checkout', PdoProtectedTransactionCheckout::class, false, false, null];
+        $legacy = ['config', ScopedOrderingConfig::class, false, false, null];
+        $legacyScope = ['scopeValue', 'int|string', true, false, null];
+        $id = ['id', 'int', false, false, null];
+        $newOrder = ['newOrder', 'int', false, false, null];
+        self::assertMethod($manager, 'getNextPositionForUpdate', [
+            $host, $legacy, ['scopeValue', 'int|string', true, true, null], ['maxTailReads', 'int', false, true, 64],
+        ], 'int');
+        self::assertMethod($manager, 'moveWithinScope', [
+            $host, $legacy, $legacyScope, $id, $newOrder, ['updatedAtValue', 'string', true, true, null],
+        ], 'bool');
+
+        $config = new ReflectionClass(UniqueOrderingConfig::class);
+        self::assertTrue($config->isFinal());
+        self::assertTrue($config->isReadOnly());
+        self::assertConstructor(UniqueOrderingConfig::class, [
+            ['ordering', ScopedOrderingConfig::class, false, false, null],
+            ['anchorTable', 'string', false, false, null],
+            ['anchorIdColumn', 'string', false, false, null],
+            ['globalAnchorId', 'int', true, false, null],
+            ['maxPosition', 'int', false, false, null],
+            ['maxScopeRows', 'int', false, false, null],
+            ['schemaAttestation', 'array', false, false, null],
+            ['activeSchemaRevision', 'string', false, false, null],
+        ]);
+        $b1 = ['config', UniqueOrderingConfig::class, false, false, null];
+        $scope = ['scopeId', 'int', true, false, null];
+        self::assertMethod($manager, 'getNextUniquePositionForAppend', [$host, $b1, $scope], 'int');
+        self::assertMethod($manager, 'moveUniqueWithinScope', [$host, $b1, $scope, $id, $newOrder], 'bool');
+        self::assertMethod($manager, 'deleteUniqueWithinScope', [
+            $host, $b1, $scope, $id, ['deleteCommandId', 'string', false, false, null],
         ], 'bool');
     }
 

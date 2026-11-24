@@ -276,7 +276,7 @@ See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-p
 
 **Requirements:** the table's identifiers (table, id column, order column, and optionally a scope column, a soft-delete column, and an updated-at column) as **trusted application constants** — never raw user input, since they are quoted, not bound as parameters.
 
-Use an InnoDB table for the locking and rollback behavior shown here. A failed move on a nontransactional table can leave rows shifted. Before choosing `moveWithinScope()`, check whether a key enforces unique positions globally or within each scope. The range shift can temporarily collide with the target row's original position. If your schema requires that key, use a move strategy that maintains uniqueness during each update. See the [Ordering contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
+Use an InnoDB table for the locking and rollback behavior shown here. A failed move on a nontransactional table can leave rows shifted. Before choosing `moveWithinScope()`, check whether a key enforces unique positions globally or within each scope. The range shift can temporarily collide with the target row's original position. If your schema requires that key, use the eligible protected B1 path below or verify a domain-specific strategy. See the [Ordering contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
 
 **Non-goals:** the manager does not create or alter the table, does not maintain a cache of positions, and does not fix a transaction the server has already rolled back (the MariaDB hazard in §7.3 of the Package Reference).
 
@@ -339,4 +339,119 @@ For a protected Host write transaction, delegate an eligible PDO with `PdoProtec
 
 In the current source, the **raw** `ScopedOrderingManager::getNextPositionForUpdate()` defaults to 64 locking tail reads. Its optional `maxTailReads` parameter accepts 2–512 and counts the initial read. If no two consecutive values match within the budget, the call reports `TAIL_READ_LIMIT_EXCEEDED` in `OrderingExecutionException` metadata. The Host retains transaction control, and engine lock-wait limits apply separately. [DEC-021](../decisions/DEC-021-bound-ordering-tail-reads.md)
 
-If a UNIQUE constraint must hold on positions throughout a move, use a domain-owned strategy verified against the real schema and lock protocol. [DEC-023](../decisions/DEC-023-unique-ordering-release-domain-ownership.md) records this release's ownership decision.
+For dense positions backed by a UNIQUE key, use the protected B1 lifecycle below on an eligible schema.
+
+### Protected UNIQUE-safe Ordering B1
+
+B1 is an opt-in feature of the current source. See the [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1) for schema, receipt and connection requirements.
+
+#### Basic — append to a global banner list
+
+A migration creates the eligible tables and seeds an anchor. The reviewed deployment provides `$receipt`, and separately provides `$activeRevision`. Build these objects once from trusted configuration.
+
+```sql
+CREATE TABLE app.banner_anchor (id INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO app.banner_anchor (id) VALUES (1);
+CREATE TABLE app.banners (
+    id INT NOT NULL PRIMARY KEY,
+    pos INT NOT NULL,
+    title VARCHAR(140) NOT NULL,
+    UNIQUE KEY banner_position (pos)
+) ENGINE=InnoDB;
+```
+
+```php
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Config\UniqueOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
+use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
+use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
+use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum;
+use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
+
+$config = new UniqueOrderingConfig(
+    ordering: new ScopedOrderingConfig(table: 'app.banners', orderColumn: 'pos', deletedAtColumn: null),
+    anchorTable: 'app.banner_anchor',
+    anchorIdColumn: 'id',
+    globalAnchorId: 1,
+    maxPosition: 101,
+    maxScopeRows: 100,
+    schemaAttestation: $receipt,
+    activeSchemaRevision: $activeRevision,
+);
+$catalog = new ProtectedTransactionCommandCatalog([
+    'banner.insert' => new ProtectedTransactionCommandPlan(
+        'INSERT INTO `app`.`banners` (id, pos, title) VALUES (:id, :position, :title)',
+        ['id', 'position', 'title'],
+    ),
+]);
+$checkout = PdoProtectedTransactionCheckout::attachExclusive($hostPdo, $catalog);
+unset($hostPdo);
+$manager = new ProtectedScopedOrderingManager();
+try {
+    $checkout->begin();
+    $position = $manager->getNextUniquePositionForAppend($checkout, $config, scopeId: null);
+    $count = $checkout->runRegisteredCommand('banner.insert', [
+        'id' => $newBannerId,
+        'position' => $position,
+        'title' => $title,
+    ]);
+    if ($count !== 1) {
+        throw new RuntimeException('Expected one new banner.');
+    }
+    $checkout->commit();
+} catch (Throwable $failure) {
+    if ($checkout->settlement() === null) {
+        try {
+            $checkout->rollBack();
+        } catch (Throwable $rollbackFailure) {
+            // Record both failures in the Host; retain the initiating exception.
+        }
+    }
+    throw $failure;
+} finally {
+    if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
+        $checkout->discardForHost();
+    } else {
+        $hostPdo = $checkout->returnForHost();
+    }
+}
+```
+
+Run the [complete example](../../examples/ordering_unique_usage.php) with `composer examples:smoke` to verify append, move and delete on a disposable database.
+
+A full list rejects allocation with `SCOPE_ROW_LIMIT` or `NO_STAGING_POSITION`. The Host can expose this as a capacity error after settling the transaction.
+
+#### Professional — move and remove items within a playlist
+
+Qualify the `app.playlists` parent with an `INT UNSIGNED` primary key and `app.playlist_items` with matching non-null `scope_id`, `UNIQUE(scope_id, pos)`, and a restricted foreign key to its parent. Use `globalAnchorId: null` and a positive playlist ID. The Host provisions each parent when it creates the scope and reviews both definitions and their dependencies before issuing the deployment receipt.
+
+The following fragment runs inside a Host write transaction like the Basic example. Register a locking parent authorization query and the exact affected-row DELETE in the trusted catalog. In this example, authorization depends on an owner stored in the locked parent.
+
+```php
+$catalog = new ProtectedTransactionCommandCatalog([
+    'playlist.authorize' => new ProtectedTransactionCommandPlan(
+        'SELECT owner_id FROM `app`.`playlists` WHERE id = :scope_id FOR UPDATE',
+        ['scope_id'],
+        maxRows: 1,
+    ),
+    'playlist.delete' => new ProtectedTransactionCommandPlan(
+        'DELETE FROM `app`.`playlist_items` WHERE `id` = :id AND `scope_id` = :scope_id AND `pos` = :position',
+        ['id', 'scope_id', 'position'],
+    ),
+]);
+
+// After attaching this catalog and beginning the protected transaction:
+$rows = $checkout->runRegisteredCommand('playlist.authorize', ['scope_id' => $playlistId]);
+if (!is_array($rows) || count($rows) !== 1 || (string) $rows[0]['owner_id'] !== (string) $actorId) {
+    throw new RuntimeException('Playlist unavailable to this actor.');
+}
+
+$removed = $manager->deleteUniqueWithinScope($checkout, $config, $playlistId, $itemId, 'playlist.delete');
+if ($removed && $nextItemId !== null) {
+    $manager->moveUniqueWithinScope($checkout, $config, $playlistId, $nextItemId, newOrder: 1);
+}
+// Both changes become durable only after Host commit.
+```
+
+Review any authorization that depends on other rows under a compatible lock order. A policy requiring predicates at the DELETE itself is outside the B1 profile. For multiple scopes, acquire anchors in a stable order. Scope transfers, anchor retirement and changes to dependencies require a separate maintenance protocol. Quiesce ordering writers during migrations, requalify both tables and dependencies, then activate a new revision and receipt together. The guarantee depends on every writer following the same anchor protocol.

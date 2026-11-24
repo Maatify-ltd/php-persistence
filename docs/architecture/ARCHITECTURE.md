@@ -89,6 +89,7 @@ src/
 Rules from [DEC-010](../decisions/DEC-010-package-topology-multi-capability.md):
 
 - Dependency direction: `Ordering → Transaction`; `Pagination` and `Transaction` are independent.
+- B1 runs its metadata check, anchor lock and dense ordering commands inside one private Protected checkout reservation. Moves and compaction use the existing Transaction savepoint and settlement path. The Host supplies the reviewed schema, trusted catalog, business authorization and transaction completion. See [DEC-026](../decisions/DEC-026-protected-unique-ordering-b1.md) and the [B1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1).
 - No `src/Pdo/`, no `Internal/`, `Shared/`, `Helpers/`, `Utils/`; no empty folders.
 - Public FQCN root: `Maatify\PhpPersistence\`; marker: `Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface` ([DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md)).
 

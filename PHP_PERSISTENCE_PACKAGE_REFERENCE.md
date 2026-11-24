@@ -705,6 +705,45 @@ public function moveWithinScope(
 
 Both methods use the active protected Host transaction and its reservation. For allocation, validate `$maxTailReads` in 2–512 inclusive, then return a position only after two consecutive matching tail reads, including stability on the last allowed read. If the tail remains unstable after the last closed result, throw `OrderingExecutionException` with metadata `reason=TAIL_READ_LIMIT_EXCEEDED` and integer `maxTailReads`. The cap bounds the number of reads. Engine lock-wait settings still apply to each statement. The Host can insert at the allocated position through a registered command and retains control of the transaction and its locks.
 
+#### `Config\UniqueOrderingConfig` and protected B1 methods
+
+```php
+public function __construct(
+    ScopedOrderingConfig $ordering,
+    string $anchorTable,
+    string $anchorIdColumn,
+    ?int $globalAnchorId,
+    int $maxPosition,
+    int $maxScopeRows,
+    array $schemaAttestation,
+    string $activeSchemaRevision,
+);
+
+public function getNextUniquePositionForAppend(
+    PdoProtectedTransactionCheckout $checkout,
+    UniqueOrderingConfig $config,
+    ?int $scopeId,
+): int;
+
+public function moveUniqueWithinScope(
+    PdoProtectedTransactionCheckout $checkout,
+    UniqueOrderingConfig $config,
+    ?int $scopeId,
+    int $id,
+    int $newOrder,
+): bool;
+
+public function deleteUniqueWithinScope(
+    PdoProtectedTransactionCheckout $checkout,
+    UniqueOrderingConfig $config,
+    ?int $scopeId,
+    int $id,
+    string $deleteCommandId,
+): bool;
+```
+
+The last three methods belong to `Repository\ProtectedScopedOrderingManager`. Pass `deletedAtColumn: null`, omit `updatedAtColumn` and use `nullableScope: false` in the underlying `ScopedOrderingConfig`. See [§5.4.1](#541-protected-unique-safe-ordering-b1) for the eligibility, result and settlement contract.
+
 #### Ordering exceptions
 
 `InvalidOrderingConfigurationException`, `InvalidOrderingOperationException`, and `OrderingExecutionException` — see §6.3.
@@ -940,7 +979,7 @@ Existing positional and named calls keep their argument names, defaults and `int
 
 Never trusts a caller-supplied "current order"; it first locks the active ordering scope and derives its maximum from that locking read. It then reads the target’s current order through a separate locking query. A positive `$newOrder` is limited to `min($newOrder, max(1, $lockedMaximum))`. Runs through `PdoTransactionRunner` (so it owns a transaction when none is active, or participates in the caller's with the behavior of §5.1).
 
-The range shift runs while the target row still occupies its original position. A uniqueness constraint on the order column or on the scope and order columns can reject an intermediate update, even when the intended final order would satisfy the constraint. For general reordering, use a schema that permits these intermediate positions. If the host must enforce uniqueness on positions, use a move strategy that preserves that invariant at each write.
+The range shift runs while the target row still occupies its original position. A uniqueness constraint on the order column or on the scope and order columns can reject an intermediate update, even when the intended final order would satisfy the constraint. For general reordering, use a schema that permits these intermediate positions. If the Host requires unique dense positions, see the [protected B1 profile](#541-protected-unique-safe-ordering-b1).
 
 - Returns `true` on a successful move, and `true` (as a no-op, no SQL mutation issued beyond the scope lock and the read) when the row is already at the requested/clamped position.
 - Returns `false` when the target row does not exist in the given scope at the moment it is read under the scope lock — **this is not an exception**, and in this common case **no savepoint statement is issued at all**: the absence is detected before any savepoint is opened.
@@ -953,6 +992,48 @@ The range shift runs while the target row still occupies its original position. 
 A scope-aware existence check using a plain read. It excludes soft-deleted rows when configured. After validating the scope it returns `false` immediately for `$id <= 0`.
 
 ---
+
+#### 5.4.1 Protected UNIQUE-safe Ordering B1
+
+B1 is an opt-in contract in the current source. It applies to the three B1 methods on an active `PdoProtectedTransactionCheckout`. Existing raw and protected Ordering methods retain their contracts. The [B1 decision](docs/decisions/DEC-026-protected-unique-ordering-b1.md) assigns the generic ordering operations to the package and business authorization, insert payload, schema, and transaction completion to the Host.
+
+**Eligible profile.** Use two distinct permanent, non-partitioned InnoDB tables named as `schema.table` in trusted configuration. Items have a single-column `PRIMARY KEY (id)` and exactly one additional full-column BTREE unique key. A global list uses `UNIQUE (pos)` and a fixed seeded positive `globalAnchorId`. A scoped list uses `UNIQUE (scope_id, pos)` and a positive, non-null scope ID that identifies its existing anchor row. The anchor has a single-column primary key and no other unique key. An optional single-column foreign key from the scope to that primary key must have matching INT signedness, share the schema, and use `RESTRICT` or `NO ACTION` for both operations. Other inbound and outbound foreign keys are outside B1.
+
+ID, scope, position, and anchor key columns must be `NOT NULL INT`. The allowed values are positive. Signed INT is capped at 2,147,483,647. Unsigned INT requires 64-bit PHP and is capped at 4,294,967,295. Payload columns and ordinary non-unique full-column BTREE indexes are allowed within these conditions. Exclusions include nullable scopes, soft deletes, invisible or generated columns, CHECK constraints, additional unique keys, triggers, automatic changes on UPDATE, temporary shadows, and scope transfers. The Host provisions an anchor at migration or scope creation and keeps its identity stable.
+
+**Deployment receipt.** Pass a reviewed, immutable map from the deployment artifact into `schemaAttestation`. Supply `activeSchemaRevision` independently from the active deployment configuration. These are the fields for receipt version 1.
+
+| Field | Required value |
+| --- | --- |
+| `formatVersion` | Integer `1` |
+| `schemaRevision` | Non-empty identifier of the reviewed deployment, migrations and writer review, equal to `activeSchemaRevision` |
+| `serverVersion` | Exact string returned by `SELECT VERSION()` on the reviewed server |
+| `itemsTable`, `anchorTable` | Exact qualified identifiers from the trusted configuration |
+| `itemsFingerprint`, `anchorFingerprint` | Lowercase SHA-256 of each `SHOW CREATE TABLE` definition. Keep its bytes, including line breaks, and remove only the table-option ` AUTO_INCREMENT=<digits>` immediately after `) ENGINE=InnoDB`. |
+| `dependenciesReviewed` | Boolean `true` after reviewing dependent triggers and foreign keys with sufficient privileges |
+| `writersReviewed` | Boolean `true` after verifying the shared anchor protocol, the trusted catalog, session settings and absence of temporary shadows |
+| `anchorProvisioned` | Boolean `true` after verifying the anchor provisioning and lifecycle |
+
+The package validates the active transaction and session, requires `unique_checks=1` and `foreign_key_checks=1`, reads definitions before and after acquiring metadata locks on both tables, compares structural fingerprints, and validates metadata visible to the runtime account. Use the reviewed runtime SQL mode, quoted SHOW CREATE output and natural PDO column names. Receiving a matching receipt is conditional on the Host routing to the reviewed deployment and rotating the revision at DDL, engine, dependency or writer changes. Runtime inspection cannot prove the absence of dependencies hidden by grants or detect every out-of-protocol writer. Generate the receipt from reviewed deployment metadata, outside the request path.
+
+**Writer protocol and results.** Every writer locks the same anchor first in the transaction, including imports and repairs. Once the anchor is locked, the package reads and checks current positions `1..N` against `maxScopeRows` and `maxPosition`. The Host acquires anchors in a consistent order when doing multiple scopes and keeps each allocation and its registered INSERT on the same checkout. The anchor lock is held until Host completion.
+
+| Operation | Contract |
+| --- | --- |
+| `getNextUniquePositionForAppend()` | Returns `N+1` for immediate use in the Host's registered INSERT. Requires room for the new row and one free staging position. Use one allocation for each inserted row. |
+| `moveUniqueWithinScope()` | Returns `true` after a locally verified move or a verified no-op. Non-no-op moves park the target at `N+1`, shift up by incrementing in descending position order or down by decrementing in ascending order, then finalize and verify before releasing the savepoint. |
+| `deleteUniqueWithinScope()` | Executes one registered DELETE on the reserved checkout and compacts higher positions in ascending order. Returns `true` after count, final ordering and savepoint release are confirmed. Deletion can reclaim capacity without a staging position. |
+| Absent row | Move and delete return `false` for an eligible, dense scope with no matching row. Neither operation then performs DML. |
+
+The registered DELETE has `maxRows: null` and the exact form below, using the configured quoted identifiers. The global form omits the `scope_id` predicate and binding. The package supplies the ID, scope, and locked position. The catalog rejects a missing command or incompatible binding list. Authorize and check lifecycle state in the Host transaction with a compatible lock order. Use B1 only if that authorization can remain valid through the registered DELETE. Domain rules requiring additional predicates, related deletes, or membership changes need a separate contract.
+
+```sql
+DELETE FROM `app`.`playlist_items` WHERE `id` = :id AND `scope_id` = :scope_id AND `pos` = :position
+```
+
+Invalid identifiers, bounds, or target positions raise the corresponding Ordering configuration or operation exception. `OrderingExecutionException::getMeta()['reason']` reports `SCHEMA_UNVERIFIED`, `INELIGIBLE_SCHEMA`, `ANCHOR_MISSING`, `SCOPE_NOT_DENSE`, `SCOPE_ROW_LIMIT`, `NO_STAGING_POSITION`, `MOVE_INVARIANT_FAILED` or `DELETE_INVARIANT_FAILED`. A positive move order beyond `N` is invalid when the target exists. A failed count or local verification cannot return a success result.
+
+For confirmed local failures after mutation, the package undoes and releases the local savepoint only while it can verify continuity. A driver, cursor, savepoint, or continuity failure can fence the whole checkout. The original failure is propagated. Follow `settlement()` and discard on `DISCARD_REQUIRED` without any further SQL. Preserve earlier Host writes only if continuity and local undo were confirmed. The Host controls commit and rollback, and the library does not retry. See the [Basic and Professional workflows](docs/guides/USAGE_GUIDE.md#protected-unique-safe-ordering-b1).
 
 ## 6. Exceptions reference
 

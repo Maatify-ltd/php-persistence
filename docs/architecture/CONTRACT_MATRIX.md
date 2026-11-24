@@ -2,6 +2,8 @@
 
 Status: design contract for WU-4 and later. WU-6 implemented the Transaction rows (T-07, T-08, T-20 to T-26) exactly as mapped below; the reflection test required by §6.9 is `tests/Regression/TransactionPublicApiRegressionTest.php`. WU-7 implemented the Pagination rows (T-04 to T-06, T-13 to T-19) exactly as mapped below, including the T-17 `paginate()` return-type delta and the T-14 `PageResult` → `PageResultDTO` rename; the reflection test required by §6.9 is `tests/Regression/Pagination/PaginationPublicApiRegressionTest.php`. WU-8 implemented the Ordering rows (T-02, T-03, T-10 to T-12) exactly as mapped below, with T-12 (`OperationSavepoint`) merged into the Transaction-owned `@internal` `SavepointScope` rather than copied as a second helper (DEC-011); the reflection test required by §6.9 is `tests/Regression/Ordering/OrderingPublicApiRegressionTest.php`. Behavior is in [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md); decisions are in [DECISIONS_INDEX.md](../decisions/DECISIONS_INDEX.md).
 
+B1 adds an independent opt-in configuration and three methods on `ProtectedScopedOrderingManager`. The legacy rows below preserve their signatures, defaults and SQL. See the [B1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1).
+
 ## 1. Sources and how to reproduce
 
 | Label | Reference | Observed on 2026-10-27 |

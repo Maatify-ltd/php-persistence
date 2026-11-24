@@ -36,6 +36,7 @@ $examples = [
     'verified_transaction_usage.php',
     'pagination_keyset_usage.php',
     'ordering_basic_usage.php',
+    'ordering_unique_usage.php',
 ];
 
 $requestedCell = null;

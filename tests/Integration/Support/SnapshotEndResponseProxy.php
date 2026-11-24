@@ -42,6 +42,8 @@ $port = getenv('PHP_PERSISTENCE_IT_PORT');
 $target = $argv[1] ?? '';
 $stage = $argv[2] ?? '';
 $fixtureTable = $argv[3] ?? '';
+$b1Phases = ['precheck', 'park', 'shift', 'finalize', 'delete', 'compact', 'verify', 'undo'];
+$b1Fault = $stage === 'b1-invalid-statement' || $stage === 'b1-empty-update';
 if ($host === false || $port === false || !in_array($target, [
     'START TRANSACTION READ ONLY',
     'START TRANSACTION READ WRITE',
@@ -57,8 +59,9 @@ if ($host === false || $port === false || !in_array($target, [
     'RELEASE SAVEPOINT maatify_wub22_proof',
 ], true) || !in_array($stage, [
     'after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020',
-    'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql',
+    'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql', 'b1-invalid-statement', 'b1-empty-update',
 ], true)
+    || ($b1Fault && !in_array($fixtureTable, $b1Phases, true))
     || ($stage === 'protected-tail-churn' && preg_match('/\Ait_ordering_scoped_[0-9a-f]{12}\z/', $fixtureTable) !== 1)
 ) {
     throw new InvalidArgumentException('Missing relay target.');
@@ -86,6 +89,8 @@ try {
             $awaitingTargetResponse = false;
             $savepointSent = false;
             $orderingErrorSent = false;
+            $b1Updates = 0;
+            $b1Delete = false;
             $tailReads = 0;
             $targetPayload = "\x03" . $target;
             // mysqlnd pads native commit() and rollBack() with one trailing space.
@@ -135,6 +140,33 @@ try {
                         break;
                     }
                 }
+                if ($b1Fault && $peer === $client && $sequence === 0 && str_starts_with($payload, "\x03")) {
+                    $sql = substr($payload, 1);
+                    $phase = null;
+                    if (str_starts_with($sql, 'SHOW CREATE TABLE ')) {
+                        $phase = 'precheck';
+                    } elseif (str_starts_with($sql, 'SAVEPOINT maatify_persistence_sp_')) {
+                        $savepointSent = true;
+                    } elseif ($savepointSent && str_starts_with($sql, 'DELETE FROM ')) {
+                        $phase = 'delete';
+                        $b1Delete = true;
+                    } elseif ($savepointSent && str_starts_with($sql, 'UPDATE ')) {
+                        $phase = $b1Delete ? 'compact' : (['park', 'shift', 'finalize'][$b1Updates++] ?? null);
+                    } elseif ($savepointSent && str_contains($sql, ' AS row_position FROM ')) {
+                        $phase = 'verify';
+                    } elseif (str_starts_with($sql, 'ROLLBACK TO SAVEPOINT ')) {
+                        $phase = 'undo';
+                    }
+                    if ($phase === 'shift' && $fixtureTable === 'undo' || $phase === $fixtureTable) {
+                        $empty = $stage === 'b1-empty-update' || ($phase === 'shift' && $fixtureTable === 'undo');
+                        $payload = $empty
+                            ? "\x03" . preg_replace('/ WHERE .*?(?= ORDER BY|$)/', ' WHERE 1=0', $sql, 1)
+                            : "\x03SIGNAL SQLSTATE 'HY000' SET MYSQL_ERRNO = 30001, MESSAGE_TEXT = 'B1 fixture failure'";
+                        $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
+                        echo "B1 PHASE {$phase}\n";
+                        fflush(STDOUT);
+                    }
+                }
                 if ($stage === 'protected-tail-churn' && $peer === $client && $sequence === 0
                     && str_starts_with($payload, "\x03SELECT `display_order`")
                     && str_contains($payload, 'FROM `' . $fixtureTable . '`')
@@ -165,7 +197,7 @@ try {
                     }
                     $header = substr(pack('V', strlen($payload)), 0, 3) . $header[3];
                 }
-                if ($peer === $client && $sequence === 0
+                if (!$b1Fault && $peer === $client && $sequence === 0
                     && ($payload === $targetPayload || ($nativeCompletion && $payload === $targetPayload . ' ')
                         || (in_array($target, ['SAVEPOINT', 'ROLLBACK TO SAVEPOINT', 'RELEASE SAVEPOINT'], true)
                             && preg_match('/\A' . preg_quote($targetPayload, '/') . ' maatify_persistence_sp_[0-9a-f]{32}\z/', $payload) === 1))
