@@ -13,6 +13,11 @@ final readonly class UniqueOrderingConfig
     public ScopedOrderingConfig $anchor;
 
     /**
+     * Qualifies a global list with a fixed positive anchor ID or a scoped list
+     * whose positive scope ID identifies its anchor. Identifiers must come
+     * from trusted deployment configuration. The position ceiling bounds SQL
+     * integers and the staging slot; the row ceiling bounds scope traversal.
+     *
      * @param array<string, mixed> $schemaAttestation Versioned, separately reviewed deployment receipt.
      * @param string $activeSchemaRevision Current deployment revision from independent Host configuration.
      * @throws InvalidOrderingConfigurationException For an invalid ordering profile or bound.

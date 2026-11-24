@@ -14,11 +14,13 @@ use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum;
+use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionReasonEnum;
 use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use PDO;
 use Pdo\Mysql;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 
 final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 {
@@ -211,6 +213,68 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame(0, $this->observer->exec($ddl));
     }
 
+    public function testLockingReadUsesCurrentStateOrFencesMariaDbStaleSnapshot(): void
+    {
+        $this->createProfile(true, false);
+        $config = $this->config();
+        $early = $this->checkout();
+        self::assertSame(1, $this->append($early, $config, 1));
+        $early->commit();
+        $early->returnForHost();
+
+        $mariaDb = self::engine() === 'mariadb';
+        $relay = $this->relay('after', 'snapshot-read');
+        try {
+            $stale = $this->checkout(
+                'REPEATABLE READ',
+                sessionSetup: $mariaDb ? ['SET SESSION innodb_snapshot_isolation = ON'] : [],
+                relayPort: $this->relayPort($relay),
+            );
+            self::assertSame([['n' => 1]], $stale->runRegisteredCommand('snapshot'));
+
+            $writer = $this->checkout();
+            self::assertSame(2, $this->append($writer, $config, 2));
+            $writer->commit();
+            $writer->returnForHost();
+
+            $allocate = fn(): int => $this->manager->getNextUniquePositionForAppend($stale, $config, 7);
+            if ($mariaDb) {
+                $failure = self::failureOf($allocate);
+                self::assertSame(1020, self::driverCode($failure));
+                self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $stale->settlement()?->disposition);
+                self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $stale->settlement()->reason);
+            } else {
+                self::assertSame(3, $allocate());
+                $stale->rollBack();
+                $stale->returnForHost();
+            }
+        } finally {
+            $relay->stop();
+        }
+        self::assertSame([1, 2], $this->orderedIds(7));
+    }
+
+    public function testNoOpAndAbsentTargetDoNotOpenASavepoint(): void
+    {
+        $this->createProfile(false, false);
+        $this->seedFaultProfile();
+        $config = $this->config();
+        $relay = PartnerProcess::start([
+            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'SAVEPOINT', 'before',
+        ]);
+        try {
+            $checkout = $this->checkout(relayPort: $this->relayPort($relay));
+            self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $config, null, 1, 1));
+            self::assertFalse($this->manager->moveUniqueWithinScope($checkout, $config, null, 99, 1));
+            self::assertFalse($this->manager->deleteUniqueWithinScope($checkout, $config, null, 99, 'delete'));
+            $checkout->commit();
+            $checkout->returnForHost();
+        } finally {
+            $relay->stop();
+        }
+        self::assertSame([1, 2, 3], $this->orderedIds(null));
+    }
+
     public function testRegisteredDeleteRejectsArbitraryPredicatesAndWrongBindingContract(): void
     {
         $this->createProfile(false, false);
@@ -370,11 +434,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         };
         // A separate worker owns the contending session, as a real Host
         // worker would. Its exit also closes any driver-held resources.
-        $contender = PartnerProcess::start([
-            PHP_BINARY, __DIR__ . '/UniqueOrderingContender.php',
-            $this->items, $this->anchor, $isolation, $pair,
-            json_encode($config->schemaAttestation, JSON_THROW_ON_ERROR),
-        ]);
+        $contender = $this->contender($config, $pair, $isolation);
         try {
             self::assertSame('1205 DISCARD_REQUIRED', $contender->readLine(12.0));
         } finally {
@@ -404,6 +464,91 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             'move-append' => [1, 2, 3],
             default => [2, 1],
         }, $this->orderedIds(7));
+    }
+
+    #[TestWith([true, 'READ COMMITTED'])]
+    #[TestWith([false, 'REPEATABLE READ'])]
+    public function testWaitingFirstAppendUsesPostCompletionState(bool $commit, string $isolation): void
+    {
+        $this->createProfile(true, false);
+        $config = $this->config();
+        $first = $this->checkout($isolation);
+        self::assertSame(1, $this->append($first, $config, 1));
+        $second = $this->contender($config, 'wait', $isolation);
+        try {
+            $this->waitForAnchorRead($second);
+            self::assertSame([], $this->orderedIds(7));
+            if ($commit) {
+                $first->commit();
+            } else {
+                $first->rollBack();
+            }
+            $first->returnForHost();
+            self::assertSame($commit ? 'INSERTED 2' : 'INSERTED 1', $second->readLine(12.0));
+        } finally {
+            $second->stop();
+        }
+        self::assertSame($commit ? [1, 99] : [99], $this->orderedIds(7));
+    }
+
+    public function testARealAnchorDeadlockFencesTheLighterTransaction(): void
+    {
+        $this->createProfile(true, false);
+        $config = $this->config();
+        $first = $this->checkout();
+        foreach (range(1, 10) as $id) {
+            self::assertSame($id, $this->append($first, $config, $id));
+        }
+        // Reverse anchor acquisition is deliberate in this failure fixture.
+        $second = $this->contender($config, 'deadlock', 'READ COMMITTED');
+        try {
+            $this->waitForAnchorRead($second);
+            self::assertSame(1, $this->manager->getNextUniquePositionForAppend($first, $config, 8));
+            self::assertSame('1213 DISCARD_REQUIRED', $second->readLine(12.0));
+            $first->commit();
+            $first->returnForHost();
+        } finally {
+            $second->stop();
+        }
+        self::assertSame(range(1, 10), $this->orderedIds(7));
+        self::assertSame([], $this->orderedIds(8));
+    }
+
+    private function contender(UniqueOrderingConfig $config, string $pair, string $isolation): PartnerProcess
+    {
+        return PartnerProcess::start([
+            PHP_BINARY, __DIR__ . '/UniqueOrderingContender.php',
+            $this->items, $this->anchor, $isolation, $pair,
+            json_encode($config->schemaAttestation, JSON_THROW_ON_ERROR),
+        ]);
+    }
+
+    private function waitForAnchorRead(PartnerProcess $writer): void
+    {
+        $ready = $writer->readLine(12.0);
+        self::assertMatchesRegularExpression('/\AREADY [1-9][0-9]*\z/', $ready);
+        $threadId = (int) substr($ready, 6);
+        $writer->writeLine('START');
+        $deadline = microtime(true) + 5.0;
+        do {
+            $result = $this->observer->query('SHOW FULL PROCESSLIST');
+            self::assertNotFalse($result);
+            $sessions = $result->fetchAll(PDO::FETCH_ASSOC);
+            $result->closeCursor();
+            foreach ($sessions as $session) {
+                self::assertIsArray($session);
+                $id = $session['Id'] ?? null;
+                $sql = $session['Info'] ?? null;
+                if (($id === $threadId || $id === (string) $threadId)
+                    && is_string($sql) && str_contains($sql, self::quoted($this->anchor)) && str_ends_with($sql, 'FOR UPDATE')
+                ) {
+                    return;
+                }
+            }
+            usleep(10_000);
+        } while (microtime(true) < $deadline);
+
+        self::fail('The contender did not reach the anchor locking read.');
     }
 
     private function createProfile(bool $scoped, bool $unsigned, string $extra = ''): void
@@ -503,6 +648,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
                 ? "INSERT INTO $table (id, scope_id, pos) VALUES (:id, :scope_id, :position)"
                 : "INSERT INTO $table (id, pos) VALUES (:id, :position)", $params),
             'delete' => new ProtectedTransactionCommandPlan($delete, $params),
+            'snapshot' => new ProtectedTransactionCommandPlan("SELECT COUNT(*) AS n FROM $table", [], 1),
             'mark' => new ProtectedTransactionCommandPlan("UPDATE $table SET label = 'pending' WHERE id = :id", ['id']),
             'other-delete' => new ProtectedTransactionCommandPlan($delete . ' AND label IS NULL', $params),
             'wrong-bindings' => new ProtectedTransactionCommandPlan($delete, ['id']),

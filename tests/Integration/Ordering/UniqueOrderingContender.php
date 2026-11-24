@@ -46,9 +46,25 @@ $pdo = new PDO(
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
 );
 $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL ' . $isolation);
-$pdo->exec('SET SESSION innodb_lock_wait_timeout = 1');
+$coordinated = in_array($pair, ['wait', 'deadlock'], true);
+$pdo->exec('SET SESSION innodb_lock_wait_timeout = ' . ($coordinated ? '12' : '1'));
+$identity = $pdo->query('SELECT CONNECTION_ID()');
+$threadId = $identity === false ? false : $identity->fetchColumn();
+if (!is_int($threadId) && !is_string($threadId)) {
+    throw new RuntimeException('Unable to identify contender session.');
+}
+unset($identity);
 $quote = chr(96);
 $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([
+    'anchor' => new ProtectedTransactionCommandPlan(
+        'SELECT id FROM ' . $config->anchor->quotedTable() . ' WHERE id = :scope FOR UPDATE',
+        ['scope'],
+        maxRows: 1,
+    ),
+    'insert' => new ProtectedTransactionCommandPlan(
+        'INSERT INTO ' . $config->ordering->quotedTable() . ' (id, scope_id, pos) VALUES (99, 7, :position)',
+        ['position'],
+    ),
     'delete' => new ProtectedTransactionCommandPlan(
         'DELETE FROM ' . $config->ordering->quotedTable()
             . " WHERE {$quote}id{$quote} = :id AND {$quote}scope_id{$quote} = :scope_id AND {$quote}pos{$quote} = :position",
@@ -58,6 +74,27 @@ $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new Protected
 unset($pdo);
 $checkout->begin();
 $manager = new ProtectedScopedOrderingManager();
+if ($pair === 'deadlock') {
+    $checkout->runRegisteredCommand('anchor', ['scope' => 8]);
+}
+if ($coordinated) {
+    echo "READY $threadId\n";
+    fflush(STDOUT);
+    if (trim((string) fgets(STDIN)) !== 'START') {
+        throw new RuntimeException('The waiter was not released.');
+    }
+}
+if ($pair === 'wait') {
+    $position = $manager->getNextUniquePositionForAppend($checkout, $config, 7);
+    if ($checkout->runRegisteredCommand('insert', ['position' => $position]) !== 1) {
+        throw new RuntimeException('The waiter did not insert its row.');
+    }
+    $checkout->commit();
+    $checkout->returnForHost();
+    echo "INSERTED $position\n";
+    exit(0);
+}
+$expected = $pair === 'deadlock' ? 1213 : 1205;
 try {
     match ($pair) {
         'move', 'delete-move' => $manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1),
@@ -66,7 +103,7 @@ try {
     };
     throw new RuntimeException('The writer crossed a locked anchor.');
 } catch (PDOException $failure) {
-    if (!in_array($failure->errorInfo[1] ?? null, [1205, '1205'], true)
+    if (!in_array($failure->errorInfo[1] ?? null, [$expected, (string) $expected], true)
         || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED
     ) {
         throw $failure;
@@ -78,4 +115,4 @@ try {
 } catch (ProtectedTransactionException) {
     $checkout->discardForHost();
 }
-echo "1205 DISCARD_REQUIRED\n";
+echo "$expected DISCARD_REQUIRED\n";
