@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/integration-residue-shadow.php';
+
 /**
  * Functions of the Integration orchestration (see integration.php).
  * Kept apart from the entry point so the regression suite can exercise them without Docker.
@@ -444,6 +446,31 @@ function reportTransactionResidue(PDO $admin, array $transactions, string $appli
 }
 
 /**
+ * @param list<array{id: string, state: string, started: string, thread: int}> $transactions
+ * @param callable(): array{state: string, transactions: list<array<string, mixed>>} $observe
+ * @param callable(string, bool): void $emit
+ */
+function finishIntegrationResidueCheck(int $pass, int $tables, array $transactions, callable $observe, callable $emit): int
+{
+    $openTransactions = count($transactions);
+    $emit('RESIDUE-CHECK pass=' . $pass . ' tables=' . $tables . ' openTransactions=' . $openTransactions, false);
+    if ($tables === 0 && $openTransactions === 0) {
+        return 0;
+    }
+
+    try {
+        $shadow = json_encode($observe(), JSON_THROW_ON_ERROR);
+    } catch (Throwable) {
+        // An observer failure cannot hide the original failing snapshot.
+        $shadow = json_encode(IntegrationResidueShadow::unknown($transactions, 'OBSERVATION_FAILED'), JSON_THROW_ON_ERROR);
+    }
+    $emit('RESIDUE-SHADOW ' . $shadow, true);
+    $emit('The suite left database objects or transactions behind.', true);
+
+    return EXIT_TEST_FAILURE;
+}
+
+/**
  * Starts the service, waits for readiness, runs the suite passes and returns the exit status.
  * The caller owns teardown.
  *
@@ -543,8 +570,7 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
             $admin = connect($suiteEnvironment, 'root', $environment['PP_DB_ROOT_PASSWORD']);
             $residue = (int) scalar($admin, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '" . $environment['PP_DB_DATABASE'] . "'");
             $transactions = readTransactionResidue($admin);
-            $openTransactions = count($transactions);
-            if ($openTransactions !== 0) {
+            if ($transactions !== []) {
                 reportTransactionResidue($admin, $transactions, $suiteEnvironment['PHP_PERSISTENCE_IT_USER'], $suiteEnvironment['PHP_PERSISTENCE_IT_DATABASE']);
             }
         } catch (PDOException $exception) {
@@ -552,11 +578,17 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
 
             return EXIT_INFRASTRUCTURE;
         }
-        echo 'RESIDUE-CHECK pass=' . $pass . ' tables=' . $residue . ' openTransactions=' . $openTransactions . "\n";
-        if ($residue !== 0 || $openTransactions !== 0) {
-            fwrite(STDERR, "The suite left database objects or transactions behind.\n");
-
-            return EXIT_TEST_FAILURE;
+        $residueResult = finishIntegrationResidueCheck(
+            $pass,
+            $residue,
+            $transactions,
+            static fn(): array => IntegrationResidueShadow::observe($admin, $cell['engine'], $transactions),
+            static function (string $line, bool $error): void {
+                fwrite($error ? STDERR : STDOUT, $line . "\n");
+            },
+        );
+        if ($residueResult !== 0) {
+            return $residueResult;
         }
     }
 
