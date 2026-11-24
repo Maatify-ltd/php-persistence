@@ -219,10 +219,21 @@ REGEX;
             || ($key['REFERENCED_TABLE_NAME'] ?? null) !== $anchor['table']
             || ($key['REFERENCED_COLUMN_NAME'] ?? null) !== $this->config->anchor->idColumn
             || $items['schema'] !== $anchor['schema']
-            || !in_array($key['UPDATE_RULE'] ?? null, ['RESTRICT', 'NO ACTION'], true)
-            || !in_array($key['DELETE_RULE'] ?? null, ['RESTRICT', 'NO ACTION'], true)
         ) {
-            self::ineligible('B1 permits only the restricted, same-schema scope-to-anchor foreign key.');
+            self::ineligible('B1 permits only the same-schema scope-to-anchor foreign key.');
+        }
+
+        // Some grants expose the FK columns without exposing its actions.
+        // A deployment receipt does not substitute for required visible metadata.
+        $updateRule = $key['UPDATE_RULE'] ?? null;
+        $deleteRule = $key['DELETE_RULE'] ?? null;
+        if (!is_string($updateRule) || !is_string($deleteRule)) {
+            self::unverified();
+        }
+        if (!in_array($updateRule, ['RESTRICT', 'NO ACTION'], true)
+            || !in_array($deleteRule, ['RESTRICT', 'NO ACTION'], true)
+        ) {
+            self::ineligible('B1 requires restricted update and delete actions on the scope foreign key.');
         }
     }
 

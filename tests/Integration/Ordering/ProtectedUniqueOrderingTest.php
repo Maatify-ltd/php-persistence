@@ -430,17 +430,38 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         }
     }
 
-    public function testLimitedAccountCanUseReviewedScopeToAnchorForeignKey(): void
+    public function testLimitedAccountRequiresVisibleRulesForReviewedScopeToAnchorForeignKey(): void
     {
         $this->createProfile(true, false);
         [$user, $password] = $this->createRestrictedAccount();
         $this->observer->exec('INSERT INTO ' . self::quoted($this->items) . ' (id, scope_id, pos) VALUES (1, 7, 1), (2, 7, 2)');
-        $checkout = $this->checkout(connection: $this->fixtureConnection($user, $password));
-        self::assertSame(3, $this->manager->getNextUniquePositionForAppend($checkout, $this->config(), 7));
-        self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $this->config(), 7, 2, 1));
+        [$schema, $table] = explode('.', $this->items);
+        $rulesSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = '$schema'"
+            . " AND TABLE_NAME = '$table' AND UPDATE_RULE = 'RESTRICT' AND DELETE_RULE = 'RESTRICT'";
+        $admin = $this->fixtureAdmin;
+        self::assertNotNull($admin);
+        self::assertSame('1', $this->scalar($admin, $rulesSql));
+
+        $limited = $this->fixtureConnection($user, $password);
+        $rulesVisible = $this->scalar($limited, $rulesSql);
+        $checkout = $this->checkout(connection: $limited);
+        unset($limited);
+        $config = $this->config();
+        if ($rulesVisible === '0') {
+            $this->reject('SCHEMA_UNVERIFIED', fn() => $this->manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1));
+            self::assertNull($checkout->settlement());
+            $checkout->commit();
+            $checkout->returnForHost();
+            self::assertSame([1, 2], $this->orderedIds(7));
+
+            return;
+        }
+
+        self::assertSame('1', $rulesVisible);
+        self::assertSame(3, $this->manager->getNextUniquePositionForAppend($checkout, $config, 7));
+        self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1));
         $checkout->commit();
         $checkout->returnForHost();
-
         self::assertSame([2, 1], $this->orderedIds(7));
     }
 
