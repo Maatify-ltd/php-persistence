@@ -63,6 +63,8 @@ Install the exact release candidate from Packagist:
 composer require maatify/php-persistence:1.0.0-rc.2
 ```
 
+For a clean project, follow the [installed RC.2 quickstart](docs/guides/USAGE_GUIDE.md#run-the-published-rc2-examples-from-a-clean-install) to run all three Basic examples with its own Composer autoloader and disposable fixtures. The [current-source verification](docs/guides/USAGE_GUIDE.md#verify-unreleased-source-in-a-clean-consumer) installs an exact Git candidate in separate Composer roots.
+
 See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md) for release and support details.
 
 ## Usage
@@ -116,7 +118,7 @@ The complete, verified inventory — every constructor, named parameter, default
 
 - **Caller-owned vs. package-owned transactions:** every runner and `moveWithinScope()` participates in an already-active transaction without ever beginning, committing, or finally rolling it back; it owns a transaction only when none was already active. The two transaction runners can opt into replay on that path. Ordering does not enable replay. See [Package Reference §4 and §7](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#4-ownership-vocabulary).
 - **Pagination runs the counts and optional data query separately.** With `PdoPaginator`, the caller controls snapshot consistency through its transaction, isolation, and SQL read semantics. A `READ COMMITTED` transaction can observe concurrent commits between statements. In the optional C1 path, the Host delegates one eligible read connection for a single snapshot page and receives its terminal disposition. See [Package Reference §5.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#53-pdopaginatorpaginate) and [§5.3.1](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination).
-- **MariaDB `innodb_snapshot_isolation=ON`** can make a locking Ordering read fail with driver error `1020` after the server has already rolled back the caller's whole transaction. This is a documented hazard, not a handled case: no retry, no savepoint recovery, and no setting change is attempted. See [Package Reference §7.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard).
+- **MariaDB `innodb_snapshot_isolation=ON`** can make a raw locking Ordering read fail with driver error `1020` after the server has already rolled back the caller's whole transaction. The Host handles the raw transaction failure. The [optional protected path](docs/guides/USAGE_GUIDE.md#protected-ordering-and-domain-constraints) fences a lost transaction. See [Package Reference §7.3](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#73-mariadb-innodb_snapshot_isolation-hazard).
 - Deadlock replay is opt-in, bounded to 3 retries after the initial attempt, and applies only to a package-owned transaction under the exact SQLSTATE `40001`/driver-code `1213` signature.
 
 ## Exception and Error Propagation

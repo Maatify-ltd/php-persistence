@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Runs the Composer consumer and coexistence verification on two fresh MySQL services.
+ * Runs Composer consumer and coexistence verification on two fresh services for the selected cell.
  */
 require __DIR__ . '/integration-support.php';
 
@@ -153,9 +153,23 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     if (! mkdir($exampleDirectory, 0700)) {
         throw new RuntimeException('Cannot create consumer example directory');
     }
-    $examples = ['pagination_snapshot_usage.php', 'pagination_keyset_usage.php', 'verified_transaction_usage.php', 'pagination_static_sort_usage.php', 'pagination_dynamic_sort_usage.php'];
+    $examples = [
+        'transaction_basic_usage.php',
+        'pagination_basic_usage.php',
+        'ordering_basic_usage.php',
+        'pagination_snapshot_usage.php',
+        'pagination_keyset_usage.php',
+        'verified_transaction_usage.php',
+        'pagination_static_sort_usage.php',
+        'pagination_dynamic_sort_usage.php',
+    ];
     foreach (['_bootstrap.php', ...$examples] as $example) {
-        if (! copy($installedPath . '/examples/' . $example, $exampleDirectory . '/' . $example)) {
+        $relativePath = '/examples/' . $example;
+        $archivedDigest = hash_file('sha256', $workspace . '/candidate' . $relativePath);
+        if ($archivedDigest === false || $archivedDigest !== hash_file('sha256', $installedPath . $relativePath)) {
+            throw new RuntimeException('Installed example differs from the candidate archive: ' . $example);
+        }
+        if (! copy($installedPath . $relativePath, $exampleDirectory . '/' . $example)) {
             throw new RuntimeException('Cannot copy the installed example: ' . $example);
         }
     }
@@ -167,6 +181,7 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         }
     }
     foreach ($examples as $example) {
+        echo "--- installed example: $example\n";
         $status = passthrough([PHP_BINARY, $exampleDirectory . '/' . $example], $environment, $directory, boxed(120));
         if ($status !== 0) {
             return $status;
@@ -209,6 +224,11 @@ function verifyConsumer(string $root, string $candidateRef, string $candidateTre
         OrchestrationBudget::$deadline = $deadline;
         $archive = $workspace . '/candidate.tar';
         consumerCommand(['git', 'archive', '--format=tar', '--output=' . $archive, $candidateRef], $root);
+        $archiveDigest = hash_file('sha256', $archive);
+        if ($archiveDigest === false) {
+            throw new RuntimeException('Cannot hash the candidate archive');
+        }
+        echo "CONSUMER-ARCHIVE candidate={$candidateRef} tree={$candidateTree} sha256={$archiveDigest}\n";
         if (!mkdir($workspace . '/candidate', 0700)) {
             throw new RuntimeException('Cannot create candidate artifact directory');
         }
