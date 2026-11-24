@@ -20,6 +20,7 @@ require_once dirname(__DIR__, 3) . '/scripts/integration-support.php';
  * @phpstan-import-type Residue from IntegrationResidueShadow
  * @phpstan-import-type Binding from IntegrationResidueShadow
  * @phpstan-import-type Result from IntegrationResidueShadow
+ * @phpstan-import-type ObservedEvent from IntegrationResidueShadow
  */
 final class IntegrationResidueShadowTest extends IntegrationTestCase
 {
@@ -36,6 +37,7 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
         $contender->exec('SET SESSION innodb_lock_wait_timeout = 1');
         $process = (int) $this->scalar($owner, 'SELECT CONNECTION_ID()');
         $readerProcess = (int) $this->scalar($reader, 'SELECT CONNECTION_ID()');
+        $contenderProcess = (int) $this->scalar($contender, 'SELECT CONNECTION_ID()');
         $instrumentation = self::engine() === 'mysql' ? $this->transactionEventSettings($observer) : null;
 
         try {
@@ -91,10 +93,16 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
             self::assertSame('UNKNOWN', $otherActive['state']);
             self::assertTrue($reader->rollBack());
 
-            // Preserve the real pre-end snapshot to exercise the stale
-            // classification even if the server cache refreshes immediately.
-            // The historical residue decision must still consume that row.
-            $stale = IntegrationResidueShadow::observe($observer, 'mysql', [$row], $bindings);
+            // The controlled proof covers all three owned actors. On a
+            // shared harness service other threads can have no transaction
+            // event, so a global observation cannot assert the same coverage.
+            $participants = [$process, $readerProcess, $contenderProcess];
+            $before = $this->controlledEvents($observer, $participants);
+            self::assertSame('0', $this->scalar($observer, 'SELECT COUNT(*) FROM performance_schema.data_locks'));
+            $after = $this->controlledEvents($observer, $participants);
+            // Supply the real pre-end row so timing of the cache refresh does
+            // not decide whether the test reaches the failing residue gate.
+            $stale = IntegrationResidueShadow::classify([$row], $before, $after, [], [], $bindings);
             $this->assertOriginalGate($stale, [$row], 'STALE_CONFIRMED');
             $unbound = IntegrationResidueShadow::observe($observer, 'mysql', [$row]);
             $this->assertOriginalGate($unbound, [$row], 'UNKNOWN');
@@ -167,6 +175,39 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
         // Only the fixture controls this session and its single active event.
         return ['transaction' => $row['id'], 'started' => $row['started'], 'thread' => $thread, 'event' => $event,
             'endAcknowledged' => false, 'independentlyChecked' => false];
+    }
+
+    /**
+     * @param list<int> $participants
+     * @return array<int, ObservedEvent>
+     */
+    private function controlledEvents(PDO $observer, array $participants): array
+    {
+        $statement = $observer->query('SELECT t.PROCESSLIST_ID, t.THREAD_ID, t.INSTRUMENTED, e.EVENT_ID, e.STATE, e.END_EVENT_ID'
+            . ' FROM performance_schema.threads t JOIN performance_schema.events_transactions_current e ON e.THREAD_ID=t.THREAD_ID'
+            . ' WHERE t.PROCESSLIST_ID IN (' . implode(',', $participants) . ') ORDER BY t.PROCESSLIST_ID');
+        self::assertNotFalse($statement);
+        $events = [];
+        try {
+            while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+                self::assertIsNumeric($row['PROCESSLIST_ID']);
+                self::assertIsNumeric($row['THREAD_ID']);
+                self::assertIsNumeric($row['EVENT_ID']);
+                self::assertIsNumeric($row['END_EVENT_ID']);
+                self::assertIsString($row['STATE']);
+                self::assertContains($row['STATE'], ['COMMITTED', 'ROLLED BACK']);
+                self::assertSame('YES', $row['INSTRUMENTED']);
+                $events[(int) $row['PROCESSLIST_ID']] = [
+                    'thread' => (string) $row['THREAD_ID'], 'instrumented' => true,
+                    'event' => (string) $row['EVENT_ID'], 'state' => $row['STATE'], 'end' => (string) $row['END_EVENT_ID'],
+                ];
+            }
+        } finally {
+            $statement->closeCursor();
+        }
+        self::assertCount(count($participants), $events);
+
+        return $events;
     }
 
     /** @return array{instrument: string, consumers: array<string, string>} */

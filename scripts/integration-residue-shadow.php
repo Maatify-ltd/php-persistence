@@ -11,7 +11,7 @@ declare(strict_types=1);
  * @phpstan-type Lock array{thread: string, transaction: string}
  * @phpstan-type Writer array{id: string, process: int, started: string}
  * @phpstan-type Binding array{transaction: string, started: string, thread: string, event: string, endAcknowledged: bool, independentlyChecked: bool}
- * @phpstan-type Observation array{id: string, process: int, thread: ?string, event: ?string, state: 'LIVE'|'STALE_CONFIRMED'|'UNKNOWN', reason: string}
+ * @phpstan-type Observation array{id: string, process: int, thread: ?string, event: ?string, eventState: ?string, endEvent: ?string, state: 'LIVE'|'STALE_CONFIRMED'|'UNKNOWN', reason: string}
  * @phpstan-type Result array{state: 'LIVE'|'STALE_CONFIRMED'|'UNKNOWN', transactions: list<Observation>}
  */
 final class IntegrationResidueShadow
@@ -65,8 +65,7 @@ final class IntegrationResidueShadow
         // snapshot prevents confirming stale as an aggregate observation.
         $allEnded = $before === $after && $locks === [];
         foreach ($after as $event) {
-            $allEnded = $allEnded && $event['instrumented'] && $event['state'] !== 'ACTIVE'
-                && ($event['event'] === null || self::ended($event));
+            $allEnded = $allEnded && $event['instrumented'] && self::ended($event);
         }
 
         foreach ($transactions as $row) {
@@ -75,7 +74,7 @@ final class IntegrationResidueShadow
             $state = 'UNKNOWN';
             $reason = 'EVENT_UNAVAILABLE';
 
-            if ($event !== null && $event['event'] !== null && $event['instrumented']) {
+            if ($event !== null && $event['event'] !== null && $event['event'] !== '0' && $event['instrumented']) {
                 $binding = $bindings[$process] ?? null;
                 $sameEvent = $binding !== null && $binding['transaction'] === $row['id'] && $binding['started'] === $row['started']
                     && $binding['thread'] === $event['thread'] && $binding['event'] === $event['event'];
@@ -105,6 +104,8 @@ final class IntegrationResidueShadow
                 'process' => $process,
                 'thread' => $event['thread'] ?? null,
                 'event' => $event['event'] ?? null,
+                'eventState' => $event['state'] ?? null,
+                'endEvent' => $event['end'] ?? null,
                 'state' => $state,
                 'reason' => $reason,
             ];
@@ -123,7 +124,9 @@ final class IntegrationResidueShadow
     /** @param ObservedEvent $event */
     private static function ended(array $event): bool
     {
-        return in_array($event['state'], ['ROLLED BACK', 'COMMITTED'], true) && $event['end'] !== null;
+        return in_array($event['state'], ['ROLLED BACK', 'COMMITTED'], true)
+            && $event['event'] !== null && $event['event'] !== '0'
+            && $event['end'] !== null && $event['end'] !== '0';
     }
 
     /**
@@ -156,7 +159,7 @@ final class IntegrationResidueShadow
             'transactions' => array_map(
                 static fn(array $row): array => [
                     'id' => $row['id'], 'process' => $row['thread'], 'thread' => null,
-                    'event' => null, 'state' => 'UNKNOWN', 'reason' => $reason,
+                    'event' => null, 'eventState' => null, 'endEvent' => null, 'state' => 'UNKNOWN', 'reason' => $reason,
                 ],
                 $transactions,
             ),

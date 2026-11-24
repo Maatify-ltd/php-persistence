@@ -72,6 +72,8 @@ final class IntegrationResidueShadowTest extends TestCase
         yield 'transaction ended during observation' => [[12 => self::event()], $ended, [12 => self::binding(true)], 'UNKNOWN'];
         $otherActive = $ended + [13 => self::event(thread: '23')];
         yield 'another active event without a lock' => [$otherActive, $otherActive, [12 => self::binding(true)], 'UNKNOWN'];
+        $otherUnobserved = $ended + [13 => ['thread' => '23', 'instrumented' => true, 'event' => null, 'state' => null, 'end' => null]];
+        yield 'another thread without an observable event' => [$otherUnobserved, $otherUnobserved, [12 => self::binding(true)], 'UNKNOWN'];
         $unobserved = $ended;
         $unobserved[12]['instrumented'] = false;
         yield 'thread instrumentation disabled' => [$unobserved, $unobserved, [12 => self::binding(true)], 'UNKNOWN'];
