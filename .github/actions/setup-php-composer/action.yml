@@ -1,24 +1,60 @@
 name: Set up PHP and Composer
 description: >-
-  Installs the requested PHP minor with pdo_mysql and a deterministic Composer 2.10.3
+  Installs the requested PHP minor (8.4, 8.5 or 8.6) with pdo_mysql, pcntl and posix, proves that
+  the CLI is a real stable build of that minor, and installs a deterministic Composer 2.10.3
   (pinned version, SHA-256 verified). Composer 2.10 is the first release with the
   dependency-policy model (config.policy) required by the pinned CI Workflow Standard.
 inputs:
   php-version:
-    description: PHP minor to install (for example 8.4 or 8.5)
+    description: PHP minor to install (8.4, 8.5 or 8.6)
     required: true
 runs:
   using: composite
   steps:
+    # Two pins on purpose (least change). 8.4 and 8.5 stay on the qualified setup-php 2.40.0 release.
+    # 2.40.0 installs `8.6` as a PHP 8.6.0-dev nightly (its unix.sh nightly_versions is 8.[6-9]), so 8.6 alone uses
+    # shivammathur/setup-php main@2001cd31, which is 43 commits ahead of 2.40.0 (nightly_versions 8.[7-9], PHP 8.6
+    # marked stable, an ES-module rebuild of the bundled action, and changed Linux apt and download helpers).
+    # Review condition: when a tagged setup-php release that contains 2001cd31 exists, move every minor to
+    # that release's full commit SHA and delete this split. The next step proves the PHP build either way.
     - name: Set up PHP ${{ inputs.php-version }}
+      if: inputs.php-version != '8.6'
       # shivammathur/setup-php 2.40.0
       uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
       with:
         php-version: ${{ inputs.php-version }}
-        extensions: pdo, pdo_mysql, mbstring, tokenizer, ctype, json
+        extensions: pdo, pdo_mysql, mbstring, tokenizer, ctype, json, pcntl, posix
         tools: none
         coverage: none
         ini-values: error_reporting=-1, display_errors=On
+    - name: Set up PHP ${{ inputs.php-version }} (stable 8.6 build)
+      if: inputs.php-version == '8.6'
+      # shivammathur/setup-php main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf (untagged; see the comment above)
+      uses: shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: pdo, pdo_mysql, mbstring, tokenizer, ctype, json, pcntl, posix
+        tools: none
+        coverage: none
+        ini-values: error_reporting=-1, display_errors=On
+    - name: Prove a native stable PHP CLI of the requested minor
+      shell: bash
+      env:
+        PHP_MINOR: ${{ inputs.php-version }}
+      run: |
+        set -euo pipefail
+        actual="$(php -r 'echo PHP_VERSION;')"
+        echo "PHP_VERSION=$actual SAPI=$(php -r 'echo PHP_SAPI;') ZTS=$(php -r 'echo PHP_ZTS;') machine=$(uname -m)"
+        case "$actual" in
+          "$PHP_MINOR".[0-9]|"$PHP_MINOR".[0-9][0-9]) ;;
+          *) echo "PHP $actual is not a stable release of the requested minor $PHP_MINOR" >&2; exit 1 ;;
+        esac
+        test "$(php -r 'echo PHP_SAPI;')" = cli
+        test "$(uname -m)" = x86_64
+        loaded="$(php -m)"
+        for extension in PDO pdo_mysql pcntl posix; do
+          printf '%s\n' "$loaded" | grep -x "$extension" > /dev/null || { echo "extension $extension is not loaded" >&2; exit 1; }
+        done
     - name: Install Composer 2.10.3 (pinned, checksum verified)
       shell: bash
       env:
@@ -39,5 +75,5 @@ runs:
       run: |
         set -euo pipefail
         php --version
-        php -m | grep -E '^(PDO|pdo_mysql)$'
+        php -m | grep -E '^(PDO|pdo_mysql|pcntl|posix)$'
         composer --version

@@ -149,7 +149,7 @@ Neither MySQL nor MariaDB has a declared "supported range" today; both are desig
 
 ## Quality Status
 
-CI requires PHPStan at level `max` with zero errors, PER Coding Style 3.1 checks, Unit and Regression suites on PHP 8.4 and 8.5 with latest and lowest compatible dependencies, and real-database Integration and example smoke checks. Integration exercises genuine deadlocks, a deterministic concurrent-writer snapshot test, and stale-snapshot concurrency. See [GitHub Actions](https://github.com/Maatify-ltd/php-persistence/actions/workflows/ci.yml) for results by commit and [CI and Integration](docs/architecture/CI_AND_INTEGRATION.md) for the matrix.
+CI requires PHPStan at level `max` with zero errors, PER Coding Style 3.1 checks, Unit and Regression suites on PHP 8.4, 8.5 and 8.6 with latest and lowest compatible dependencies, and real-database Integration, example smoke and consumer verification checks. PHP CS Fixer runs on PHP 8.4 and 8.5; on PHP 8.6 the PER-CS 3.1 verifier is required instead, because the formatter does not support that minor yet. Integration exercises genuine deadlocks, a deterministic concurrent-writer snapshot test, and stale-snapshot concurrency. See [GitHub Actions](https://github.com/Maatify-ltd/php-persistence/actions/workflows/ci.yml) for results by commit and [CI and Integration](docs/architecture/CI_AND_INTEGRATION.md) for the matrix.
 
 ## Development and Testing
 

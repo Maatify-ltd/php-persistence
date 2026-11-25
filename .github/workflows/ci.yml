@@ -87,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.4", "8.5"]
+        php: ["8.4", "8.5", "8.6"]
         dependencies: [latest, lowest]
     steps:
       # actions/checkout v7.0.1
@@ -110,6 +110,8 @@ jobs:
           composer show --direct
       - name: Platform requirements (nothing ignored)
         run: composer check-platform-reqs
+      - name: PHP syntax on this PHP minor
+        run: composer syntax
       - name: Dependency policy is configured fail-closed
         run: |
           set -euo pipefail
@@ -127,11 +129,18 @@ jobs:
         run: composer audit --no-interaction --abandoned=fail
       - name: Static analysis (PHPStan max)
         run: composer analyse
-      - name: Code style and PER-CS 3.1 checks
+      # PHP CS Fixer 3.95.32 refuses PHP 8.6 (it supports syntax up to 8.5), so the formatter runs in its
+      # supported hosts (8.4 and 8.5). The verdict concerns the repository source, not the PHP minor.
+      # On 8.6 the independent PER-CS 3.1 verifier is required; the formatter is not run there.
+      - name: Code style and PER-CS 3.1 checks (formatter hosts 8.4 and 8.5)
+        if: matrix.php != '8.6'
         run: composer format:check
+      - name: PER-CS 3.1 verifier on PHP 8.6 (formatter is not run on this minor)
+        if: matrix.php == '8.6'
+        run: php scripts/check-per-cs-3-1.php
       - name: Unit suite
         run: composer test:unit
-      - name: Regression suite (includes the PER-CS 3.1 pipe operator fixtures on PHP 8.5)
+      - name: Regression suite (includes the PER-CS 3.1 pipe operator fixtures on PHP 8.5 and later)
         run: composer test:regression
 
   integration:
@@ -153,6 +162,10 @@ jobs:
           - { cell: mariadb-11.8.9, php: "8.4" }
           - { cell: mariadb-12.3.3, php: "8.4" }
           - { cell: mariadb-12.3.3, php: "8.5" }
+          - { cell: mysql-8.0.16, php: "8.6" }
+          - { cell: mysql-9.7.4, php: "8.6" }
+          - { cell: mariadb-10.11.19, php: "8.6" }
+          - { cell: mariadb-12.3.3, php: "8.6" }
     steps:
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -177,13 +190,17 @@ jobs:
           test -z "$(docker volume ls -q --filter 'label=com.docker.compose.project')"
 
   examples-smoke:
-    name: Examples smoke (${{ matrix.cell }})
+    name: Examples smoke (${{ matrix.cell }}) PHP ${{ matrix.php }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        cell: [mysql-8.4.13, mariadb-11.8.9]
+        include:
+          - { cell: mysql-8.4.13, php: "8.4" }
+          - { cell: mariadb-11.8.9, php: "8.4" }
+          - { cell: mysql-8.4.13, php: "8.6" }
+          - { cell: mariadb-11.8.9, php: "8.6" }
     steps:
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -191,7 +208,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-php-composer
         with:
-          php-version: "8.4"
+          php-version: ${{ matrix.php }}
       - name: Resolve dependencies
         run: composer update --prefer-stable --no-progress
       - name: Smoke-execute examples/ against a real disposable database (reuses the Integration Compose definition)
@@ -206,9 +223,13 @@ jobs:
           test -z "$(docker volume ls -q --filter 'label=com.docker.compose.project')"
 
   consumer-verification:
-    name: Consumer verification and coexistence
+    name: Consumer verification and coexistence PHP ${{ matrix.php }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.4", "8.6"]
     steps:
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -217,7 +238,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/setup-php-composer
         with:
-          php-version: "8.4"
+          php-version: ${{ matrix.php }}
       - name: Install and verify external consumer twice on fresh MySQL
         env:
           PP_DB_CELL: mysql-8.4.13

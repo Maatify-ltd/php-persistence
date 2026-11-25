@@ -12,11 +12,12 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Dependency resolution (no committed lock) | `composer update --prefer-stable` (latest) or `composer update --prefer-lowest --prefer-stable` (lowest) | Static checks, Compat |
 | Platform requirements, nothing ignored | `composer check-platform-reqs` | Static checks, Compat |
 | Strict PSR-4 | `composer dump-autoload --optimize --strict-psr` | Static checks |
-| PHP syntax | `composer syntax` | Static checks |
+| PHP syntax | `composer syntax` | Static checks (PHP 8.4), Compat (every PHP minor, including 8.6) |
 | Whitespace | `composer whitespace` | Static checks |
-| Dependency policy audit | `composer audit --no-interaction --abandoned=fail` (Composer 2.10+) | Compat (all four cells) |
+| Dependency policy audit | `composer audit --no-interaction --abandoned=fail` (Composer 2.10+) | Compat (all six cells) |
 | Static analysis | `composer analyse` | Compat |
-| Code style and PER-CS 3.1 | `composer format:check` | Compat |
+| Code style and PER-CS 3.1 | `composer format:check` | Compat on PHP 8.4 and 8.5 (§3.1) |
+| PER-CS 3.1 verifier alone | `php scripts/check-per-cs-3-1.php` | Compat on PHP 8.6 (§3.1) |
 | Unit suite | `composer test:unit` | Compat |
 | Regression suite | `composer test:regression` | Compat |
 | Integration suite (real database) | `composer test:integration` | Integration |
@@ -88,9 +89,9 @@ composer examples:smoke
 PP_DB_CELL=mariadb-11.8.9 composer examples:smoke
 ```
 
-CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4. This smoke matrix is separate from the capability Integration matrix below.
+CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4 and on PHP 8.6. This smoke matrix is separate from the capability Integration matrix below.
 
-[Consumer verification](../guides/CONSUMER_VERIFICATION.md) uses two fresh MySQL lifecycles and separate production Composer roots.
+[Consumer verification](../guides/CONSUMER_VERIFICATION.md) uses two fresh MySQL lifecycles and separate production Composer roots, on PHP 8.4 and PHP 8.6.
 
 ## 3. Test matrix
 
@@ -98,16 +99,16 @@ One parameterized Compose definition (`compose.integration.yaml`) serves every c
 
 | Cell | Tier | Image (tag and index digest) | Platforms | CI | Status |
 |---|---|---|---|---|---|
-| `mysql-8.0.16` | endpoint, oldest | `mysql:8.0.16@sha256:5d11283aee9b73509b737785e0ad79a2d9abf51f4abf3f221702a8add0e36bf2` | `linux/amd64` only | PHP 8.4, 8.5 | minimum ratified by DEC-008; test cell (DEC-013) |
+| `mysql-8.0.16` | endpoint, oldest | `mysql:8.0.16@sha256:5d11283aee9b73509b737785e0ad79a2d9abf51f4abf3f221702a8add0e36bf2` | `linux/amd64` only | PHP 8.4, 8.5, 8.6 | minimum ratified by DEC-008; test cell (DEC-013) |
 | `mysql-8.4.13` | intermediate (LTS line) | `mysql:8.4.13@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69` | amd64, arm64 | PHP 8.4 | ratified test cell (DEC-013) |
-| `mysql-9.7.4` | endpoint, newest | `mysql:9.7.4@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54` | amd64, arm64 | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
+| `mysql-9.7.4` | endpoint, newest | `mysql:9.7.4@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54` | amd64, arm64 | PHP 8.4, 8.5, 8.6 | ratified test cell (DEC-013) |
 | `mysql-26.10.0` | exploratory (Innovation) | `mysql:26.10.0@sha256:f51c9c01c16b0eb5d81bb70ab7e7fcb3b96abc6a54114be3a94e8e569cae7815` | amd64, arm64 | manual dispatch only, not required | exploratory |
-| `mariadb-10.11.19` | endpoint, oldest | `mariadb:10.11.19@sha256:d769e37960821dfdcf096954f6e7ac89f747e116c1bba98e48edd265dfc7deae` | amd64, arm64, ppc64le, s390x | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
+| `mariadb-10.11.19` | endpoint, oldest | `mariadb:10.11.19@sha256:d769e37960821dfdcf096954f6e7ac89f747e116c1bba98e48edd265dfc7deae` | amd64, arm64, ppc64le, s390x | PHP 8.4, 8.5, 8.6 | ratified test cell (DEC-013) |
 | `mariadb-11.4.13` | intermediate (LTS line) | `mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620` | same | PHP 8.4 | ratified test cell (DEC-013) |
 | `mariadb-11.8.9` | intermediate (LTS line) | `mariadb:11.8.9@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd` | same | PHP 8.4 | ratified test cell (DEC-013) |
-| `mariadb-12.3.3` | endpoint, newest | `mariadb:12.3.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9` | same | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
+| `mariadb-12.3.3` | endpoint, newest | `mariadb:12.3.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9` | same | PHP 8.4, 8.5, 8.6 | ratified test cell (DEC-013) |
 
-PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (current patches 8.4.27 and 8.5.12 observed on Docker Hub and php.net). Each engine endpoint runs on both PHP minors; the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5} × {latest, lowest}` dependencies. A passing cell is test evidence for that cell, not a support range; the declared range is not widened by this work unit.
+PHP axis: the oldest supported minor `8.4`, the intermediate minor `8.5` and the latest released minor `8.6` (PHP 8.6.0 stable was released on 2026-11-19). Each engine endpoint runs on all three minors (15 Integration jobs: the 11 earlier cells plus `mysql-8.0.16`, `mysql-9.7.4`, `mariadb-10.11.19` and `mariadb-12.3.3` on PHP 8.6); the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5, 8.6} × {latest, lowest}` dependencies. Examples smoke runs `mysql-8.4.13` and `mariadb-11.8.9` on PHP 8.4 and 8.6, and Consumer verification runs on PHP 8.4 and 8.6. Every job proves a native stable CLI of the requested minor (`PHP_VERSION`, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`); the runners are native `x86_64`, so no emulation substitutes the PHP CLI. A passing cell is test evidence for that cell, not a support range; the declared range (`^8.4`, `platform.php` `8.4.0`) is not widened by this work unit.
 
 ### Image provenance evidence (2026-10-27)
 
@@ -127,6 +128,14 @@ PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (
 | `mariadb-12.3.3` | `12.3.3-MariaDB-ubu2404` | `ON` | raised | sees the latest committed row |
 
 "Raised" means a locking read and an `UPDATE` after an older `REPEATABLE READ` snapshot failed with driver error `1020` when the test set the session variable to `ON`. The tests set the variable only on their own connections of the disposable service. Ordering tests separately observe whole-transaction rollback and the next-statement hazard. Protected-checkout tests assert that a fenced checkout rejects later work.
+
+### 3.1 Code style on PHP 8.6
+
+PHP CS Fixer 3.95.32, the newest stable release at the time of this work, refuses to run on PHP 8.6 because it supports PHP syntax only up to 8.5. The Owner approved separating the formatter host from the library compatibility matrix ([#94 comment](https://github.com/Maatify-ltd/php-persistence/issues/94#issuecomment-7167804049)). `composer format:check` keeps its full meaning locally and runs unchanged on the PHP 8.4 and 8.5 Compat cells. On the PHP 8.6 cells CI runs `php scripts/check-per-cs-3-1.php` as an independent required step. The formatter is not run on PHP 8.6, no unsupported-version override is used, and the code-style verdict concerns the repository source, not the PHP minor. This is not a claim that the formatter ran on PHP 8.6. The decision, its scope and its review condition are recorded in [DEC-028](../decisions/DEC-028-php-cs-fixer-host-separation-for-php-86.md).
+
+### 3.2 Pins of `shivammathur/setup-php`
+
+The qualified release `2.40.0` installs `8.6` as a `PHP 8.6.0-dev` nightly (its `nightly_versions` is `8.[6-9]`), so it cannot qualify the stable minor. The composite action `.github/actions/setup-php-composer` therefore keeps PHP 8.4 and 8.5 on `2.40.0` and uses `main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf` for PHP 8.6 only. That commit is 43 commits ahead of `2.40.0`: it sets `nightly_versions` to `8.[7-9]`, marks PHP 8.6 stable, rebuilds the bundled action as ES modules and changes the Linux apt and download helpers, which is why the other minors were not moved. No tagged release contains it yet. Every job proves the installed build (`PHP_VERSION` of the requested minor, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`). Review condition: when a tagged release that contains the commit exists, move every minor to the full commit SHA of that release and remove the split.
 
 ## 4. Decision record
 

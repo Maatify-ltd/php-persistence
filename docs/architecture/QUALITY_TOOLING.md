@@ -28,7 +28,7 @@ The constraints are caret ranges, not patch pins. Versions actually resolved on 
 
 ## 3. PER Coding Style 3.1 coverage
 
-The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as the baseline and requires the combined verification surface to cover all of it. PHP CS Fixer implements PER Coding Style only up to 3.0: version 3.95.27 lists `@PER-CS3x0` as its newest versioned set (`php-cs-fixer list-sets`), and its upstream repository has no 3.1 set. The formatter therefore verifies the 3.0 baseline, and `scripts/check-per-cs-3-1.php` verifies the eight changes of 3.1 listed in the PHP-FIG [migration document](https://www.php-fig.org/per/coding-style/meta/migration-3.1/) on the token stream:
+The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as the baseline and requires the combined verification surface to cover all of it. PHP CS Fixer implements PER Coding Style only up to 3.0: version 3.95.27 lists `@PER-CS3x0` as its newest versioned set (`php-cs-fixer list-sets`), and its upstream repository has no 3.1 set. PHP CS Fixer 3.95.32 also refuses to run on PHP 8.6, so in CI the formatter runs on PHP 8.4 and 8.5 and the PHP 8.6 cells run the 3.1 verifier alone ([CI_AND_INTEGRATION.md §3.1](./CI_AND_INTEGRATION.md#31-code-style-on-php-86)). The formatter therefore verifies the 3.0 baseline, and `scripts/check-per-cs-3-1.php` verifies the eight changes of 3.1 listed in the PHP-FIG [migration document](https://www.php-fig.org/per/coding-style/meta/migration-3.1/) on the token stream:
 
 | 3.1 change | Verification |
 |---|---|
