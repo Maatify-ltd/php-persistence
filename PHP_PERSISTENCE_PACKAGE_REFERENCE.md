@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions and Ordering, Verified Apply/Discard, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions and Ordering, protected UNIQUE-safe Ordering B1, Verified Apply/Discard, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -71,12 +71,16 @@ src/
 ├── Exception/PhpPersistenceExceptionInterface.php
 ├── Ordering/
 │   ├── Config/ScopedOrderingConfig.php
+│   ├── Config/UniqueOrderingConfig.php
 │   ├── Exception/InvalidOrderingConfigurationException.php
 │   ├── Exception/InvalidOrderingOperationException.php
 │   ├── Exception/OrderingExecutionException.php
 │   ├── Repository/OrderingOperations.php   (@internal)
 │   ├── Repository/ProtectedScopedOrderingManager.php
-│   └── Repository/ScopedOrderingManager.php
+│   ├── Repository/ScopedOrderingManager.php
+│   ├── Repository/UniqueOrderingOperations.php   (@internal)
+│   ├── Repository/UniqueOrderingSchema.php   (@internal)
+│   └── Repository/UniqueOrderingSql.php   (@internal)
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
 │   ├── Config/StaticSortPlan.php
