@@ -333,10 +333,16 @@ function parseOptions(array $arguments): array
  *
  * @param list<string> $compose docker compose prefix including the project and file
  * @param array<string, string> $environment
+ * @param float|null $deadline original absolute deadline when recovering from an interruption
  */
-function teardown(array $compose, string $project, array $environment, string $root): bool
+function teardown(array $compose, string $project, array $environment, string $root, ?float $deadline = null): bool
 {
-    $end = microtime(true) + teardownSeconds();
+    $end = $deadline ?? microtime(true) + teardownSeconds();
+    if ($end <= microtime(true)) {
+        fwrite(STDERR, 'Teardown incomplete for project ' . $project . ": teardown time exhausted\n");
+
+        return false;
+    }
     $left = static fn(): int => max(0, (int) floor($end - microtime(true)));
 
     $down = [...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'];

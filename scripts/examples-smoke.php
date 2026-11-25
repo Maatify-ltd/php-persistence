@@ -18,7 +18,7 @@ declare(strict_types=1);
  * Usage: php scripts/examples-smoke.php [--cell=<key>]
  *   --cell   key of docker/integration-matrix.json (env PP_DB_CELL, default from the matrix)
  *
- * Exit status: 0 success, 1 an example failed, 2 invalid usage or configuration, 3 infrastructure failure.
+ * Exit status: 0 success, 1 an example failed, 2 invalid usage or configuration, 3 infrastructure failure, 130 interrupted.
  */
 
 require __DIR__ . '/integration-support.php';
@@ -206,12 +206,21 @@ if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
 echo '--- examples smoke cell=' . $cellKey . ' image=' . $environment['PP_DB_IMAGE'] . ' project=' . $project . "\n";
 
 $status = EXIT_INFRASTRUCTURE;
+$teardownDeadline = null;
 try {
     $status = runExamples($root, $cellKey, $cell, $environment, $compose, $examples);
 } catch (IntegrationInterrupted) {
     $status = 130;
 } finally {
-    $torndown = teardown($compose, $project, $environment, $root);
+    try {
+        $teardownDeadline = microtime(true) + teardownSeconds();
+        $torndown = teardown($compose, $project, $environment, $root, $teardownDeadline);
+    } catch (IntegrationInterrupted) {
+        // The signal handler ignores further interruptions. Use the original
+        // deadline so restarting verification cannot renew the budget.
+        $torndown = teardown($compose, $project, $environment, $root, $teardownDeadline);
+        $status = $status === 0 ? 130 : $status;
+    }
 }
 
 $overall = $status === 0 && !$torndown ? EXIT_INFRASTRUCTURE : $status;
