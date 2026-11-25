@@ -8,11 +8,7 @@ use PHPUnit\Framework\TestCase;
 
 final class ControlFailingUnitTest extends TestCase
 {
-    public function testControlFailure(): void
-    {
-        $value = 1;
-        if($value === 1){
-            self::fail('CONTROL: a mandatory unit check fails');
-        }
+    public function testControlFailure() : void{
+        self::fail('CONTROL: a mandatory unit check fails');
     }
 }
