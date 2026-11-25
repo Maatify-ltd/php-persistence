@@ -114,21 +114,28 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             } catch (AssertionFailedError $failure) {
                 $diagnostic = $failure;
             }
+            self::assertNotNull($diagnostic, 'Emergency cleanup accepted an incomplete checkout: ' . $missing);
+            self::assertCleanEmergencyDiagnostic($diagnostic, $missing);
+
+            $label = $missing === 'reusable without handoff' ? 'pending' : 'original';
+            $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+            $this->observer->beginTransaction();
+            try {
+                self::assertSame($label, $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
+                self::assertSame([1, 2, 3], $this->orderedIds(null));
+            } finally {
+                $this->observer->rollBack();
+            }
         } finally {
             $relay?->stop();
         }
-        $label = $missing === 'reusable without handoff' ? 'pending' : 'original';
-        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
-        $this->observer->beginTransaction();
-        try {
-            self::assertSame($label, $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
-            self::assertSame([1, 2, 3], $this->orderedIds(null));
-        } finally {
-            $this->observer->rollBack();
-        }
+    }
 
-        self::assertNotNull($diagnostic, 'Emergency cleanup accepted an incomplete checkout: ' . $missing);
+    private static function assertCleanEmergencyDiagnostic(AssertionFailedError $diagnostic, string $missing): void
+    {
         self::assertStringContainsString($missing, $diagnostic->getMessage());
+        self::assertNull($diagnostic->getPrevious(), 'The incomplete checkout must be cleaned successfully.');
+        self::assertStringNotContainsString('emergency cleanup failed', $diagnostic->getMessage());
     }
 
     public function testAnUntouchedCheckoutIsExplicitlyCancelled(): void
@@ -159,7 +166,9 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame([], $this->orderedIds(null));
     }
 
-    public function testEmergencyRollbackFailurePreservesPrimaryAndCleansOtherCheckouts(): void
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function testEmergencyRollbackFailureIsDistinguishedAndCleansOtherCheckouts(bool $preservePrimary): void
     {
         $this->createProfile(false, false);
         $this->seedFaultProfile();
@@ -171,29 +180,52 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $other = $this->checkout();
             self::assertSame(1, $lostAck->runRegisteredCommand('mark', ['id' => 1]));
             self::assertSame(1, $other->runRegisteredCommand('mark', ['id' => 2]));
-            $primary = new RuntimeException('Original fixture failure.');
-            try {
+            $diagnostic = null;
+            if ($preservePrimary) {
+                $primary = new RuntimeException('Original fixture failure.');
                 try {
-                    throw $primary;
-                } finally {
-                    $this->lifecycle->finish($primary);
+                    try {
+                        throw $primary;
+                    } finally {
+                        $this->lifecycle->finish($primary);
+                    }
+                } catch (RuntimeException $observed) {
+                    self::assertSame($primary, $observed);
                 }
-            } catch (RuntimeException $observed) {
-                self::assertSame($primary, $observed);
+            } else {
+                try {
+                    $this->lifecycle->finish();
+                } catch (AssertionFailedError $failure) {
+                    $diagnostic = $failure;
+                }
             }
             self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
             self::assertSame(ProtectedTransactionReasonEnum::ROLLBACK_UNCONFIRMED, $lostAck->settlement()?->reason);
             self::assertSame(ProtectedTransactionReasonEnum::ROLLED_BACK, $other->settlement()?->reason);
+
+            $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+            $this->observer->beginTransaction();
+            try {
+                self::assertSame('original', $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
+                self::assertSame('second', $this->scalar($this->observer, 'SELECT label FROM ' . self::quoted($this->items) . ' WHERE id = 2 FOR UPDATE'));
+            } finally {
+                $this->observer->rollBack();
+            }
+
+            if (!$preservePrimary) {
+                self::assertNotNull($diagnostic);
+                self::assertInstanceOf(PDOException::class, $diagnostic->getPrevious());
+                self::assertStringContainsString('emergency cleanup failed', $diagnostic->getMessage());
+                $rejection = null;
+                try {
+                    self::assertCleanEmergencyDiagnostic($diagnostic, 'active without verified end');
+                } catch (AssertionFailedError $failure) {
+                    $rejection = $failure;
+                }
+                self::assertNotNull($rejection, 'The success control accepted an emergency cleanup failure.');
+            }
         } finally {
             $relay->stop();
-        }
-        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
-        $this->observer->beginTransaction();
-        try {
-            self::assertSame('original', $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
-            self::assertSame('second', $this->scalar($this->observer, 'SELECT label FROM ' . self::quoted($this->items) . ' WHERE id = 2 FOR UPDATE'));
-        } finally {
-            $this->observer->rollBack();
         }
     }
 
