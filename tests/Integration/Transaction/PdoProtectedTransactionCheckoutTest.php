@@ -234,6 +234,18 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             $checkout->runRegisteredCommand('insert');
             self::failureOf(static fn() => $commit ? $checkout->commit() : $checkout->rollBack());
             self::assertSame($report, $relay->readLine(12.0));
+            $observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+            self::assertTrue($observer->beginTransaction());
+            try {
+                // Verify the entire one-row write set after the relay's
+                // server END acknowledgement, even when the client lost it.
+                $statement = $observer->query("SELECT v FROM `$table` WHERE id=1 FOR UPDATE");
+                self::assertNotFalse($statement);
+                self::assertSame($commit ? [10] : [], $statement->fetchAll(PDO::FETCH_COLUMN));
+                self::assertTrue($statement->closeCursor());
+            } finally {
+                self::assertTrue($observer->rollBack());
+            }
             self::assertSame($commit ? [10] : [], $this->values($observer, $table));
             $settlement = $checkout->settlement();
             self::assertSame($reason, $settlement?->reason);

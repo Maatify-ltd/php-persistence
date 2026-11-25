@@ -6,6 +6,11 @@ namespace Maatify\PhpPersistence\Ordering\Repository;
 
 use Closure;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Config\UniqueOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
+use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
+use Maatify\PhpPersistence\Transaction\Exception\ProtectedTransactionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckout;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
 
@@ -87,6 +92,106 @@ final readonly class ProtectedScopedOrderingManager
                 $updatedAtValue,
             ),
         );
+    }
+
+    /**
+     * Reserves the next dense position under the configured anchor. The Host
+     * inserts on the same checkout and owns transaction completion. Pass null
+     * for a global list or the positive anchor ID for a scoped list.
+     *
+     * @throws InvalidOrderingOperationException For a scope ID outside the profile.
+     * @throws OrderingExecutionException If eligibility or append capacity cannot be confirmed.
+     * @throws \PDOException The original driver failure, when the driver throws.
+     */
+    public function getNextUniquePositionForAppend(
+        PdoProtectedTransactionCheckout $checkout,
+        UniqueOrderingConfig $config,
+        ?int $scopeId,
+    ): int {
+        return $this->inUniqueCheckout(
+            $checkout,
+            $config,
+            $scopeId,
+            static fn(UniqueOrderingOperations $operations): int => $operations->next(),
+        );
+    }
+
+    /**
+     * Moves a row within dense positions 1..N under a reserved checkout and
+     * local savepoint. The caller supplies a positive ID and position.
+     * False means the target is absent from an eligible scope. True confirms
+     * local completion or a no-op pending the Host transaction outcome.
+     *
+     * @throws InvalidOrderingOperationException For an invalid identifier or position.
+     * @throws OrderingExecutionException If eligibility, the move or its result cannot be confirmed.
+     * @throws \PDOException The original driver failure, when the driver throws.
+     */
+    public function moveUniqueWithinScope(
+        PdoProtectedTransactionCheckout $checkout,
+        UniqueOrderingConfig $config,
+        ?int $scopeId,
+        int $id,
+        int $newOrder,
+    ): bool {
+        return $this->inUniqueCheckout(
+            $checkout,
+            $config,
+            $scopeId,
+            static fn(UniqueOrderingOperations $operations): bool => $operations->move($id, $newOrder),
+        );
+    }
+
+    /**
+     * Runs a restricted registered DELETE, compacts the scope and confirms
+     * local completion under one reservation. The Host authorizes deletion
+     * and decides commit or rollback. The command ID identifies the exact
+     * affected-row DELETE registered in the checkout. False means an eligible
+     * scope lacks the target. True confirms local completion pending Host commit.
+     *
+     * @throws InvalidOrderingOperationException For an invalid identifier or ineligible DELETE plan.
+     * @throws ProtectedTransactionException For an unregistered command or invalid binding declaration.
+     * @throws OrderingExecutionException If eligibility, the delete or compaction cannot be confirmed.
+     * @throws \PDOException The original driver failure, when the driver throws.
+     */
+    public function deleteUniqueWithinScope(
+        PdoProtectedTransactionCheckout $checkout,
+        UniqueOrderingConfig $config,
+        ?int $scopeId,
+        int $id,
+        string $deleteCommandId,
+    ): bool {
+        return $this->inUniqueCheckout(
+            $checkout,
+            $config,
+            $scopeId,
+            static fn(UniqueOrderingOperations $operations, ProtectedTransactionCommandCatalog $catalog): bool
+                => $operations->delete($id, $catalog->command($deleteCommandId)),
+        );
+    }
+
+    /**
+     * Resolves the selected plan and session inside the existing private reservation.
+     *
+     * @template T of int|bool
+     * @param Closure(UniqueOrderingOperations, ProtectedTransactionCommandCatalog): T $operation
+     * @return T
+     */
+    private function inUniqueCheckout(
+        PdoProtectedTransactionCheckout $checkout,
+        UniqueOrderingConfig $config,
+        ?int $scopeId,
+        Closure $operation,
+    ): int|bool {
+        $reserve = Closure::bind(
+            static fn(): int|bool => $checkout->run(
+                static fn(ProtectedTransactionConnection $receiver): int|bool
+                    => $operation(new UniqueOrderingOperations($receiver, $checkout->activeSession(), $config, $scopeId), $checkout->catalog),
+            ),
+            null,
+            PdoProtectedTransactionCheckout::class,
+        );
+
+        return $reserve();
     }
 
     /**

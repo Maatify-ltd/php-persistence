@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/integration-residue-shadow.php';
+
 /**
  * Functions of the Integration orchestration (see integration.php).
  * Kept apart from the entry point so the regression suite can exercise them without Docker.
@@ -20,9 +22,9 @@ const TIMEOUT_EXIT_STATUS = 124;
 const TERMINATION_GRACE_SECONDS = 5;
 
 /**
- * A catchable signal in consumer verification. It unwinds the workspace before Compose teardown.
+ * A catchable signal that unwinds owned work before Compose teardown.
  */
-final class ConsumerVerificationInterrupted extends Exception {}
+final class IntegrationInterrupted extends Exception {}
 
 /**
  * Positive integer seconds from an environment variable, or the default when it is not set.
@@ -121,17 +123,19 @@ function suiteDeadline(?float $overallDeadline, float $now, int $suiteTimeout, i
  *
  * @param resource $process
  */
-function terminateProcess($process): void
+function terminateProcess($process): bool
 {
     proc_terminate($process);
     $until = microtime(true) + TERMINATION_GRACE_SECONDS;
     while (microtime(true) < $until) {
         if (proc_get_status($process)['running'] === false) {
-            return;
+            return true;
         }
         usleep(100_000);
     }
     proc_terminate($process, 9);
+
+    return !proc_get_status($process)['running'];
 }
 
 /**
@@ -193,7 +197,7 @@ function execute(array $command, array $environment = [], ?string $cwd = null, i
                 }
             }
         }
-    } catch (ConsumerVerificationInterrupted $exception) {
+    } catch (IntegrationInterrupted $exception) {
         terminateProcess($process);
         foreach ($open as $stream) {
             if (is_resource($stream)) {
@@ -209,15 +213,25 @@ function execute(array $command, array $environment = [], ?string $cwd = null, i
 }
 
 /**
+ * @param list<string> $command
+ * @return list<string>
+ */
+function databaseWorkCommand(array $command, int $timeoutSeconds): array
+{
+    return [PHP_BINARY, __DIR__ . '/database-work.php', (string) $timeoutSeconds, ...$command];
+}
+
+/**
  * Runs a command attached to this process's streams and returns its exit status, or
  * TIMEOUT_EXIT_STATUS when it exceeded $timeoutSeconds and was stopped.
  *
  * @param list<string> $command
  * @param array<string, string> $environment
  */
-function passthrough(array $command, array $environment, string $cwd, int $timeoutSeconds): int
+function passthrough(array $command, array $environment, string $cwd, int $timeoutSeconds, bool $databaseWork = false): int
 {
-    $process = proc_open($command, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $cwd, [...getenv(), ...$environment]);
+    $launch = $databaseWork ? databaseWorkCommand($command, $timeoutSeconds) : $command;
+    $process = proc_open($launch, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $cwd, [...getenv(), ...$environment]);
     if (!is_resource($process)) {
         return 127;
     }
@@ -231,18 +245,24 @@ function passthrough(array $command, array $environment, string $cwd, int $timeo
                 return $code === -1 ? $status['exitcode'] : $code;
             }
             if (microtime(true) >= $deadline) {
-                terminateProcess($process);
-                proc_close($process);
+                if (terminateProcess($process) || !$databaseWork) {
+                    proc_close($process);
+                } else {
+                    fwrite(STDERR, "DB-WORK supervisor exit unverified; continuing to teardown.\n");
+                }
                 fwrite(STDERR, $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n");
 
                 return TIMEOUT_EXIT_STATUS;
             }
             usleep(100_000);
         }
-    } catch (ConsumerVerificationInterrupted $exception) {
+    } catch (IntegrationInterrupted $exception) {
         if (is_resource($process)) {
-            terminateProcess($process);
-            proc_close($process);
+            if (terminateProcess($process) || !$databaseWork) {
+                proc_close($process);
+            } else {
+                fwrite(STDERR, "DB-WORK supervisor exit unverified; continuing to teardown.\n");
+            }
         }
 
         throw $exception;
@@ -313,10 +333,16 @@ function parseOptions(array $arguments): array
  *
  * @param list<string> $compose docker compose prefix including the project and file
  * @param array<string, string> $environment
+ * @param float|null $deadline original absolute deadline when recovering from an interruption
  */
-function teardown(array $compose, string $project, array $environment, string $root): bool
+function teardown(array $compose, string $project, array $environment, string $root, ?float $deadline = null): bool
 {
-    $end = microtime(true) + teardownSeconds();
+    $end = $deadline ?? microtime(true) + teardownSeconds();
+    if ($end <= microtime(true)) {
+        fwrite(STDERR, 'Teardown incomplete for project ' . $project . ": teardown time exhausted\n");
+
+        return false;
+    }
     $left = static fn(): int => max(0, (int) floor($end - microtime(true)));
 
     $down = [...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'];
@@ -370,7 +396,7 @@ function globalVariable(PDO $pdo, string $name): string
 /**
  * @param array<string, string> $suiteEnvironment
  */
-function connect(array $suiteEnvironment, string $user, string $password): PDO
+function connect(array $suiteEnvironment, string $user, #[SensitiveParameter] string $password): PDO
 {
     return new PDO(
         'mysql:host=' . $suiteEnvironment['PHP_PERSISTENCE_IT_HOST'] . ';port=' . $suiteEnvironment['PHP_PERSISTENCE_IT_PORT']
@@ -379,6 +405,93 @@ function connect(array $suiteEnvironment, string $user, string $password): PDO
         $password,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5],
     );
+}
+
+/**
+ * @return list<array{id: string, state: string, started: string, thread: int}>
+ */
+function readTransactionResidue(PDO $admin): array
+{
+    $snapshot = $admin->query('SELECT trx_id AS id, trx_state AS state, trx_started AS started,'
+        . ' trx_mysql_thread_id AS thread FROM information_schema.innodb_trx');
+    if ($snapshot === false) {
+        throw new PDOException('Unable to read the server transaction snapshot.');
+    }
+    $transactions = [];
+    while (($row = $snapshot->fetch(PDO::FETCH_ASSOC)) !== false) {
+        if (!is_scalar($row['id'] ?? null) || !is_string($row['state'] ?? null)
+            || !is_string($row['started'] ?? null) || !is_numeric($row['thread'] ?? null)
+        ) {
+            throw new PDOException('Unexpected transaction snapshot shape.');
+        }
+        $transactions[] = ['id' => (string) $row['id'], 'state' => $row['state'], 'started' => $row['started'], 'thread' => (int) $row['thread']];
+    }
+    $snapshot->closeCursor();
+
+    return $transactions;
+}
+
+/**
+ * @param list<array{id: string, state: string, started: string, thread: int}> $transactions
+ */
+function reportTransactionResidue(PDO $admin, array $transactions, string $applicationUser, string $testDatabase): void
+{
+    $sessions = [];
+    try {
+        $processes = $admin->query('SHOW PROCESSLIST');
+        if ($processes !== false) {
+            while (($session = $processes->fetch(PDO::FETCH_ASSOC)) !== false) {
+                if (!is_numeric($session['Id'] ?? null)) {
+                    continue;
+                }
+                $sessions[(int) $session['Id']] = [
+                    'source' => match ($session['User'] ?? null) {
+                        $applicationUser => 'suite',
+                        'root' => 'disposable-admin',
+                        'system user', 'event_scheduler' => 'server',
+                        default => 'other',
+                    },
+                    'command' => $session['Command'] ?? null,
+                    'seconds' => $session['Time'] ?? null,
+                    'testDatabase' => ($session['db'] ?? null) === $testDatabase,
+                ];
+            }
+            $processes->closeCursor();
+        }
+    } catch (PDOException) {
+        // Keep the original InnoDB evidence and the failing gate.
+    }
+    foreach ($transactions as $transaction) {
+        fwrite(STDERR, 'RESIDUE-TRANSACTION ' . json_encode(
+            $transaction + ['session' => $sessions[$transaction['thread']] ?? null],
+            JSON_THROW_ON_ERROR,
+        ) . "\n");
+    }
+}
+
+/**
+ * @param list<array{id: string, state: string, started: string, thread: int}> $transactions
+ * @param callable(): array{state: string, transactions: list<array<string, mixed>>} $observe
+ * @param callable(string, bool): void $emit
+ */
+function finishIntegrationResidueCheck(int $pass, int $tables, array $transactions, callable $observe, callable $emit): int
+{
+    $openTransactions = count($transactions);
+    $emit('RESIDUE-CHECK pass=' . $pass . ' tables=' . $tables . ' openTransactions=' . $openTransactions, false);
+    if ($tables === 0 && $openTransactions === 0) {
+        return 0;
+    }
+
+    try {
+        $shadow = json_encode($observe(), JSON_THROW_ON_ERROR);
+    } catch (Throwable) {
+        // An observer failure cannot hide the original failing snapshot.
+        $shadow = json_encode(IntegrationResidueShadow::unknown($transactions, 'OBSERVATION_FAILED'), JSON_THROW_ON_ERROR);
+    }
+    $emit('RESIDUE-SHADOW ' . $shadow, true);
+    $emit('The suite left database objects or transactions behind.', true);
+
+    return EXIT_TEST_FAILURE;
 }
 
 /**
@@ -466,7 +579,13 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
         }
         echo '--- suite pass ' . $pass . '/' . $options['suitePasses'] . "\n";
         $result = $verification === null
-            ? passthrough($phpunit, $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)))
+            ? passthrough(
+                $phpunit,
+                $suiteEnvironment + ['PHP_PERSISTENCE_IT_ADMIN_PASSWORD' => $environment['PP_DB_ROOT_PASSWORD']],
+                $root,
+                boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)),
+                databaseWork: true,
+            )
             : $verification($suiteEnvironment);
         if ($result !== 0) {
             return $verification === null ? EXIT_TEST_FAILURE : $result;
@@ -475,17 +594,26 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
             // The application user has no PROCESS privilege; the disposable root account inspects the server.
             $admin = connect($suiteEnvironment, 'root', $environment['PP_DB_ROOT_PASSWORD']);
             $residue = (int) scalar($admin, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '" . $environment['PP_DB_DATABASE'] . "'");
-            $openTransactions = (int) scalar($admin, 'SELECT COUNT(*) FROM information_schema.innodb_trx');
+            $transactions = readTransactionResidue($admin);
+            if ($transactions !== []) {
+                reportTransactionResidue($admin, $transactions, $suiteEnvironment['PHP_PERSISTENCE_IT_USER'], $suiteEnvironment['PHP_PERSISTENCE_IT_DATABASE']);
+            }
         } catch (PDOException $exception) {
             fwrite(STDERR, 'Residue check failed: ' . $exception->getMessage() . "\n");
 
             return EXIT_INFRASTRUCTURE;
         }
-        echo 'RESIDUE-CHECK pass=' . $pass . ' tables=' . $residue . ' openTransactions=' . $openTransactions . "\n";
-        if ($residue !== 0 || $openTransactions !== 0) {
-            fwrite(STDERR, "The suite left database objects or transactions behind.\n");
-
-            return EXIT_TEST_FAILURE;
+        $residueResult = finishIntegrationResidueCheck(
+            $pass,
+            $residue,
+            $transactions,
+            static fn(): array => IntegrationResidueShadow::observe($admin, $cell['engine'], $transactions),
+            static function (string $line, bool $error): void {
+                fwrite($error ? STDERR : STDOUT, $line . "\n");
+            },
+        );
+        if ($residueResult !== 0) {
+            return $residueResult;
         }
     }
 
@@ -518,15 +646,11 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
         pcntl_async_signals(true);
         foreach ([SIGINT, SIGTERM] as $signal) {
-            pcntl_signal($signal, static function () use ($compose, $project, $environment, $root, $verification): void {
-                if ($verification !== null) {
-                    pcntl_signal(SIGINT, SIG_IGN);
-                    pcntl_signal(SIGTERM, SIG_IGN);
+            pcntl_signal($signal, static function (): void {
+                pcntl_signal(SIGINT, SIG_IGN);
+                pcntl_signal(SIGTERM, SIG_IGN);
 
-                    throw new ConsumerVerificationInterrupted();
-                }
-                teardown($compose, $project, $environment, $root);
-                exit(130);
+                throw new IntegrationInterrupted();
             });
         }
     }
@@ -536,12 +660,12 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     $status = EXIT_INFRASTRUCTURE;
     try {
         $status = runOnService($root, $cellKey, $cell, $options, $environment, $compose, $verification);
-    } catch (ConsumerVerificationInterrupted) {
+    } catch (IntegrationInterrupted) {
         $status = 130;
     } finally {
         try {
             $torndown = teardown($compose, $project, $environment, $root);
-        } catch (ConsumerVerificationInterrupted) {
+        } catch (IntegrationInterrupted) {
             $torndown = teardown($compose, $project, $environment, $root);
             $status = 130;
         }

@@ -18,7 +18,7 @@ declare(strict_types=1);
  * Usage: php scripts/examples-smoke.php [--cell=<key>]
  *   --cell   key of docker/integration-matrix.json (env PP_DB_CELL, default from the matrix)
  *
- * Exit status: 0 success, 1 an example failed, 2 invalid usage or configuration, 3 infrastructure failure.
+ * Exit status: 0 success, 1 an example failed, 2 invalid usage or configuration, 3 infrastructure failure, 130 interrupted.
  */
 
 require __DIR__ . '/integration-support.php';
@@ -36,6 +36,7 @@ $examples = [
     'verified_transaction_usage.php',
     'pagination_keyset_usage.php',
     'ordering_basic_usage.php',
+    'ordering_unique_usage.php',
 ];
 
 $requestedCell = null;
@@ -148,7 +149,7 @@ function runExamples(string $root, string $cellKey, array $cell, array $environm
             return EXIT_INFRASTRUCTURE;
         }
         echo '--- examples/' . $exampleFile . "\n";
-        $exampleStatus = passthrough([PHP_BINARY, $root . '/examples/' . $exampleFile], $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)));
+        $exampleStatus = passthrough([PHP_BINARY, $root . '/examples/' . $exampleFile], $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)), databaseWork: true);
         if ($exampleStatus !== 0) {
             fwrite(STDERR, 'examples/' . $exampleFile . ' exited with status ' . $exampleStatus . "\n");
 
@@ -193,9 +194,11 @@ $compose = ['docker', 'compose', '--project-name', $project, '--file', $root . '
 if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
     pcntl_async_signals(true);
     foreach ([SIGINT, SIGTERM] as $signal) {
-        pcntl_signal($signal, static function () use ($compose, $project, $environment, $root): void {
-            teardown($compose, $project, $environment, $root);
-            exit(130);
+        pcntl_signal($signal, static function (): void {
+            pcntl_signal(SIGINT, SIG_IGN);
+            pcntl_signal(SIGTERM, SIG_IGN);
+
+            throw new IntegrationInterrupted();
         });
     }
 }
@@ -203,10 +206,21 @@ if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
 echo '--- examples smoke cell=' . $cellKey . ' image=' . $environment['PP_DB_IMAGE'] . ' project=' . $project . "\n";
 
 $status = EXIT_INFRASTRUCTURE;
+$teardownDeadline = null;
 try {
     $status = runExamples($root, $cellKey, $cell, $environment, $compose, $examples);
+} catch (IntegrationInterrupted) {
+    $status = 130;
 } finally {
-    $torndown = teardown($compose, $project, $environment, $root);
+    try {
+        $teardownDeadline = microtime(true) + teardownSeconds();
+        $torndown = teardown($compose, $project, $environment, $root, $teardownDeadline);
+    } catch (IntegrationInterrupted) {
+        // The signal handler ignores further interruptions. Use the original
+        // deadline so restarting verification cannot renew the budget.
+        $torndown = teardown($compose, $project, $environment, $root, $teardownDeadline);
+        $status = $status === 0 ? 130 : $status;
+    }
 }
 
 $overall = $status === 0 && !$torndown ? EXIT_INFRASTRUCTURE : $status;

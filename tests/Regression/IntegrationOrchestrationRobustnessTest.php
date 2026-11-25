@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Regression;
 
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -143,6 +144,83 @@ final class IntegrationOrchestrationRobustnessTest extends TestCase
         self::assertIsString($calls);
         self::assertMatchesRegularExpression('/compose .* up --detach --wait/', $calls);
         self::assertMatchesRegularExpression('/compose .* down --volumes --remove-orphans/', $calls, 'teardown ran after the failure');
+    }
+
+    #[TestWith(['INT', 'down', false])]
+    #[TestWith(['TERM', 'volume', false])]
+    #[TestWith(['TERM', 'volume', true])]
+    public function testExamplesTeardownCompletesVerificationAfterInterruption(string $signal, string $phase, bool $remainingVolume): void
+    {
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $stub = $directory . '/docker';
+        $log = $directory . '/calls.log';
+        $this->cleanup = [$stub, $log, $directory . '/interrupted', $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            stub_dir=$(dirname "$0")
+            case " $* " in
+              *" up "*) echo 'test startup failure' >&2; exit 1 ;;
+              *" down "*) phase=down ;;
+              *" ps -aq "*) phase=ps ;;
+              *" volume ls -q "*) phase=volume ;;
+              *" network ls -q "*) phase=network ;;
+              *) exit 0 ;;
+            esac
+            echo "$phase" >> "$stub_dir/calls.log"
+            if [ "$phase" = "$PP_TEST_INTERRUPT_PHASE" ] && [ ! -f "$stub_dir/interrupted" ]; then
+                touch "$stub_dir/interrupted"
+                sleep 0.1
+                kill "-$PP_TEST_INTERRUPT_SIGNAL" "$PPID"
+                exec sleep 10
+            fi
+            if [ "$phase" = volume ] && [ "$PP_TEST_REMAINING_VOLUME" = yes ]; then
+                echo 'leftover-volume'
+            fi
+            exit 0
+            SH);
+        chmod($stub, 0755);
+
+        $environment = [
+            'PATH' => $directory . ':/usr/bin:/bin',
+            'PP_TEARDOWN_TIMEOUT_SECONDS' => '10',
+            'PP_TEST_INTERRUPT_PHASE' => $phase,
+            'PP_TEST_INTERRUPT_SIGNAL' => $signal,
+            'PP_TEST_REMAINING_VOLUME' => $remainingVolume ? 'yes' : 'no',
+        ];
+        [$status, $out, $err] = self::runWithDeadline(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/examples-smoke.php', '--cell=mysql-8.4.13'],
+            $environment,
+        );
+
+        self::assertSame(3, $status, $out . $err);
+        self::assertStringContainsString('test startup failure', $err);
+        self::assertStringContainsString('EXAMPLES SMOKE FAILED cell=mysql-8.4.13 status=3', $out);
+        self::assertStringNotContainsString('Uncaught', $err);
+
+        $calls = file_get_contents($log);
+        self::assertIsString($calls);
+        self::assertSame($phase === 'down' ? "down\ndown\nps\nvolume\nnetwork\n" : "down\nps\nvolume\ndown\nps\nvolume\nnetwork\n", $calls);
+        if ($remainingVolume) {
+            self::assertStringContainsString('Teardown incomplete', $err);
+            self::assertStringContainsString('volume ls -q', $err);
+            self::assertStringNotContainsString('TEARDOWN VERIFIED', $out);
+        } else {
+            self::assertSame(1, substr_count($out, 'TEARDOWN VERIFIED'));
+        }
+    }
+
+    public function testTeardownDoesNotStartNewCommandsWhenTheOriginalDeadlineExpired(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $child = 'require ' . var_export($support, true) . ';'
+            . 'echo json_encode(teardown(["/bin/sh", "-c", "echo should-not-run"], "smoke-test", [], "/tmp", microtime(true) - 1));';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child]);
+
+        self::assertSame(0, $status, $err);
+        self::assertSame('false', $out);
+        self::assertStringContainsString('teardown time exhausted', $err);
     }
 
     public function testTeardownResidueTurnsAnOtherwiseSuccessfulRunIntoAnInfrastructureFailure(): void

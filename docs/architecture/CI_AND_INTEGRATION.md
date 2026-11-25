@@ -37,7 +37,7 @@ validate prerequisites (docker, compose, daemon, ext-pdo_mysql, vendor)
 → docker compose up --wait on compose.integration.yaml (unique project, loopback dynamic port)
 → service health check, then a PDO probe loop with a deadline
 → verify SELECT VERSION() against the cell
-→ run the Integration suite
+→ run the Integration suite in its own process group and verify its workers have exited
 → residue check: no tables in the schema, no open InnoDB transaction
 → run the suite again on the same service (repeatability)
 → docker compose down --volumes --remove-orphans, always, then verify that no container, volume or network of the project remains
@@ -60,6 +60,14 @@ The required Integration step gives Composer 1560 seconds so the runner's 1500-s
 Options: `--cell=<key>` (or `PP_DB_CELL`), `--fresh-runs=<n>` independent lifecycles from a fresh service, `--suite-passes=<n>` suite executions per lifecycle. A cell that is not in the matrix is rejected; there is no free-form image, `latest` or floating tag. Exit status: `0` success, `1` test failure, `2` invalid usage or configuration, `3` infrastructure failure (missing prerequisite, unhealthy service, identity mismatch, teardown residue). Nothing is skipped silently: a missing prerequisite or a missing `PHP_PERSISTENCE_IT_*` variable fails.
 
 The PHP runner stays on the host PHP so the PHP matrix is truthful; only the database runs in Docker. Credentials are random per run, scoped to a disposable service and never reused. Baseline CI needs no repository secrets.
+
+### Database worker ownership and fixture cleanup
+
+[DEC-027](../decisions/DEC-027-database-test-work-ownership.md) applies to the PHPUnit Integration command, each database example and the installed consumer workloads that receive disposable database credentials. The supervisor starts a separate POSIX session and grants its controlled process group permission to launch only after observing that group. The controller reaps the direct process, leaves the group, and retains its PID while the supervisor checks for remaining members. A zero exit with an unfinished or unobservable group fails before emergency termination. Timeout and interruption also fail before cleanup. Cleanup uses bounded group signals and a nonblocking reap. An emergency termination never converts a failure into permission to sample.
+
+This harness uses PHP CLI `pcntl` and `posix` on Linux and macOS. Docker/Composer setup commands outside database work retain their own deadlines. The owned scripts and their partners and proxies are trusted to stay in the assigned group. This boundary does not contain a program that deliberately changes group or session. Group completion certifies process ownership only. An intentionally interrupted fixture verifies its own server-side outcome through an END acknowledgement or independent locks and data for its affected rows.
+
+The Shadow server-control fixture deliberately reads the InnoDB transaction cache while it owns live actors. It verifies their termination, restores instrumentation, removes the table and releases its connections. It then leaves one fixed quiet period of at least 200 ms measured on a monotonic clock, local to that fixture. The rule is qualified for the seven required pinned engine profiles in §3, whose exact upstream sources refresh the cache after more than 100 ms of read inactivity. The fixture fails explicitly for an unqualified profile, including the exploratory cell. The suite has no concurrent cache reader during the fixture's interval. Health probes send a ping. No delay or follow-up sample is added to the runner. The first immediate sample after successful work remains strict: any tables or transactions fail the gate and Shadow remains diagnostic.
 
 ### Environment
 

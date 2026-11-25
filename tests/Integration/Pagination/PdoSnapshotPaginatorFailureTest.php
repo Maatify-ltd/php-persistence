@@ -79,7 +79,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
         [$checkout, , $operation] = $source->checkout();
         $primary = new RuntimeException('fetch failed with unread wire rows');
@@ -105,7 +104,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame('6', $this->scalar($available, 'SELECT COUNT(*) FROM ' . $table));
             $source->settle($next, null);
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -222,7 +221,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             }
         };
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
         [$checkout, $pdo, $operation] = $source->checkout();
         try {
@@ -242,7 +240,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             $source->settle($checkout, $operation->connectionOutcome());
             self::assertFalse($source->canCheckout());
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -283,7 +281,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertFalse($source->canCheckout(), 'a stale result cannot release the next checkout even with its current sequence');
             $source->settle($next, null);
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -302,7 +300,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $closeAttempts = 0;
         $closeFailure = new RuntimeException('cursor close failed');
         $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SnapshotCursorStatement::class, [
@@ -342,7 +339,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame('cursor-release', $outcome->diagnostic);
             self::assertFalse($source->canCheckout());
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -359,7 +356,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $query = $this->descriptor($table);
         $reader->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulate);
         $invalid = new PdoPaginationQueryDescriptor(
@@ -378,7 +374,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
             self::assertFalse($reader->inTransaction());
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -387,7 +383,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
         [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('page failure');
@@ -404,7 +399,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame($primary, $escaped);
             self::assertFalse($source->canCheckout());
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -432,7 +427,6 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             }
         };
         $reader->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        $session = $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $source = new SnapshotHostCheckout($reader);
         [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('original mapper error');
@@ -450,7 +444,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame('rollback', $outcome->diagnostic);
             self::assertFalse($source->canCheckout());
         } finally {
-            $this->killFixtureTransaction($seed, $reader, $session);
+            self::endFixtureTransaction($reader);
         }
     }
 
@@ -570,12 +564,14 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         return $pdo;
     }
 
-    private function killFixtureTransaction(PDO $observer, PDO $reader, string $session): void
+    private static function endFixtureTransaction(PDO $reader): void
     {
         if ($reader->inTransaction()) {
-            self::assertMatchesRegularExpression('/\A[0-9]+\z/', $session);
-            $observer->exec('KILL CONNECTION ' . $session);
+            // The fixture owns this PDO after disposition has been asserted.
+            // The driver's rollBack bypasses the injected SQL-control failure.
+            self::assertTrue($reader->rollBack());
         }
+        self::assertFalse($reader->inTransaction());
     }
 
     private static function failure(Closure $call): Throwable
