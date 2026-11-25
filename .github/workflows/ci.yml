@@ -110,6 +110,8 @@ jobs:
           composer show --direct
       - name: Platform requirements (nothing ignored)
         run: composer check-platform-reqs
+      - name: PHP syntax on this PHP minor
+        run: composer syntax
       - name: Dependency policy is configured fail-closed
         run: |
           set -euo pipefail

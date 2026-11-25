@@ -11,10 +11,25 @@ inputs:
 runs:
   using: composite
   steps:
+    # Two pins on purpose (least change). 8.4 and 8.5 stay on the qualified setup-php 2.40.0 release.
+    # 2.40.0 installs `8.6` as a PHP 8.6.0-dev nightly (its unix.sh nightly_versions is 8.[6-9]), so 8.6 alone uses
+    # shivammathur/setup-php main@2001cd31, which is 43 commits ahead of 2.40.0 (nightly_versions 8.[7-9], PHP 8.6
+    # marked stable, an ES-module rebuild of the bundled action, and changed Linux apt and download helpers).
+    # Review condition: when a tagged setup-php release that contains 2001cd31 exists, move every minor to
+    # that release's full commit SHA and delete this split. The next step proves the PHP build either way.
     - name: Set up PHP ${{ inputs.php-version }}
-      # shivammathur/setup-php main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf ("Mark PHP 8.6 as stable").
-      # The pinned 2.40.0 release (eb7c497e) installs `8.6` as a PHP 8.6.0-dev nightly, so it cannot qualify
-      # the stable minor; there is no tagged release after 2.40.0 yet. The next step proves the build.
+      if: inputs.php-version != '8.6'
+      # shivammathur/setup-php 2.40.0
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: pdo, pdo_mysql, mbstring, tokenizer, ctype, json, pcntl, posix
+        tools: none
+        coverage: none
+        ini-values: error_reporting=-1, display_errors=On
+    - name: Set up PHP ${{ inputs.php-version }} (stable 8.6 build)
+      if: inputs.php-version == '8.6'
+      # shivammathur/setup-php main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf (untagged; see the comment above)
       uses: shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf
       with:
         php-version: ${{ inputs.php-version }}

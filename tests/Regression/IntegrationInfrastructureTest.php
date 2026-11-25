@@ -167,12 +167,26 @@ final class IntegrationInfrastructureTest extends TestCase
     {
         $action = self::read('.github/actions/setup-php-composer/action.yml');
 
-        self::assertStringContainsString('shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf', $action);
-        self::assertStringNotContainsString('eb7c497e18156a6bbabfef1d3a82760b9eda3962', $action, '2.40.0 installs 8.6 as a nightly build');
-        self::assertStringContainsString('pcntl, posix', $action);
+        self::assertSame(1, substr_count($action, "      if: inputs.php-version != '8.6'\n      # shivammathur/setup-php 2.40.0\n      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962\n"), '8.4 and 8.5 stay on the qualified 2.40.0 release');
+        self::assertSame(1, substr_count($action, "      if: inputs.php-version == '8.6'\n"), 'only 8.6 uses the second pin');
+        self::assertStringContainsString('uses: shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf', $action);
+        self::assertSame(2, substr_count($action, 'uses: shivammathur/setup-php@'), 'exactly two pins');
+        self::assertStringContainsString('Review condition: when a tagged setup-php release that contains 2001cd31 exists', $action);
+        self::assertStringContainsString('43 commits ahead of 2.40.0', $action);
+        self::assertSame(2, substr_count($action, 'pcntl, posix'));
         self::assertStringContainsString('is not a stable release of the requested minor', $action);
         self::assertStringContainsString('test "$(uname -m)" = x86_64', $action);
         self::assertStringContainsString('for extension in PDO pdo_mysql pcntl posix', $action);
+    }
+
+    public function testPhpSyntaxIsARequiredCheckOnEveryCompatMinor(): void
+    {
+        $workflow = self::read('.github/workflows/ci.yml');
+        $compat = substr($workflow, (int) strpos($workflow, "\n  compat:\n"), (int) strpos($workflow, "\n  integration:\n") - (int) strpos($workflow, "\n  compat:\n"));
+
+        self::assertStringContainsString("      - name: PHP syntax on this PHP minor\n        run: composer syntax\n", $compat, 'composer syntax runs on 8.4, 8.5 and 8.6');
+        self::assertStringNotContainsString("PHP syntax on this PHP minor\n        if:", $compat);
+        self::assertStringContainsString("      - name: PHP syntax\n        run: composer syntax\n", $workflow, 'the Static checks job keeps the minimum-minor syntax check');
     }
 
     public function testRatifiedBoundaryRecordMatchesTheMatrix(): void

@@ -12,7 +12,7 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Dependency resolution (no committed lock) | `composer update --prefer-stable` (latest) or `composer update --prefer-lowest --prefer-stable` (lowest) | Static checks, Compat |
 | Platform requirements, nothing ignored | `composer check-platform-reqs` | Static checks, Compat |
 | Strict PSR-4 | `composer dump-autoload --optimize --strict-psr` | Static checks |
-| PHP syntax | `composer syntax` | Static checks |
+| PHP syntax | `composer syntax` | Static checks (PHP 8.4), Compat (every PHP minor, including 8.6) |
 | Whitespace | `composer whitespace` | Static checks |
 | Dependency policy audit | `composer audit --no-interaction --abandoned=fail` (Composer 2.10+) | Compat (all six cells) |
 | Static analysis | `composer analyse` | Compat |
@@ -131,7 +131,11 @@ PHP axis: the oldest supported minor `8.4`, the intermediate minor `8.5` and the
 
 ### 3.1 Code style on PHP 8.6
 
-PHP CS Fixer 3.95.32, the newest stable release at the time of this work, refuses to run on PHP 8.6 because it supports PHP syntax only up to 8.5. The Owner approved separating the formatter host from the library compatibility matrix ([#94 comment](https://github.com/Maatify-ltd/php-persistence/issues/94#issuecomment-7167804049)). `composer format:check` keeps its full meaning locally and runs unchanged on the PHP 8.4 and 8.5 Compat cells. On the PHP 8.6 cells CI runs `php scripts/check-per-cs-3-1.php` as an independent required step. The formatter is not run on PHP 8.6, no unsupported-version override is used, and the code-style verdict concerns the repository source, not the PHP minor. This is not a claim that the formatter ran on PHP 8.6.
+PHP CS Fixer 3.95.32, the newest stable release at the time of this work, refuses to run on PHP 8.6 because it supports PHP syntax only up to 8.5. The Owner approved separating the formatter host from the library compatibility matrix ([#94 comment](https://github.com/Maatify-ltd/php-persistence/issues/94#issuecomment-7167804049)). `composer format:check` keeps its full meaning locally and runs unchanged on the PHP 8.4 and 8.5 Compat cells. On the PHP 8.6 cells CI runs `php scripts/check-per-cs-3-1.php` as an independent required step. The formatter is not run on PHP 8.6, no unsupported-version override is used, and the code-style verdict concerns the repository source, not the PHP minor. This is not a claim that the formatter ran on PHP 8.6. The decision, its scope and its review condition are recorded in [DEC-028](../decisions/DEC-028-php-cs-fixer-host-separation-for-php-86.md).
+
+### 3.2 Pins of `shivammathur/setup-php`
+
+The qualified release `2.40.0` installs `8.6` as a `PHP 8.6.0-dev` nightly (its `nightly_versions` is `8.[6-9]`), so it cannot qualify the stable minor. The composite action `.github/actions/setup-php-composer` therefore keeps PHP 8.4 and 8.5 on `2.40.0` and uses `main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf` for PHP 8.6 only. That commit is 43 commits ahead of `2.40.0`: it sets `nightly_versions` to `8.[7-9]`, marks PHP 8.6 stable, rebuilds the bundled action as ES modules and changes the Linux apt and download helpers, which is why the other minors were not moved. No tagged release contains it yet. Every job proves the installed build (`PHP_VERSION` of the requested minor, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`). Review condition: when a tagged release that contains the commit exists, move every minor to the full commit SHA of that release and remove the split.
 
 ## 4. Decision record
 
