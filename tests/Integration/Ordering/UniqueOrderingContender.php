@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Config\UniqueOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
+use Maatify\PhpPersistence\Tests\Integration\Ordering\B1CheckoutLifecycle;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum;
@@ -72,47 +73,57 @@ $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new Protected
     ),
 ]));
 unset($pdo);
-$checkout->begin();
-$manager = new ProtectedScopedOrderingManager();
-if ($pair === 'deadlock') {
-    $checkout->runRegisteredCommand('anchor', ['scope' => 8]);
-}
-if ($coordinated) {
-    echo "READY $threadId\n";
-    fflush(STDOUT);
-    if (trim((string) fgets(STDIN)) !== 'START') {
-        throw new RuntimeException('The waiter was not released.');
-    }
-}
-if ($pair === 'wait') {
-    $position = $manager->getNextUniquePositionForAppend($checkout, $config, 7);
-    if ($checkout->runRegisteredCommand('insert', ['position' => $position]) !== 1) {
-        throw new RuntimeException('The waiter did not insert its row.');
-    }
-    $checkout->commit();
-    $checkout->returnForHost();
-    echo "INSERTED $position\n";
-    exit(0);
-}
-$expected = $pair === 'deadlock' ? 1213 : 1205;
+$lifecycle = new B1CheckoutLifecycle();
+$lifecycle->track($checkout);
+$primary = null;
 try {
-    match ($pair) {
-        'move', 'delete-move' => $manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1),
-        'delete' => $manager->deleteUniqueWithinScope($checkout, $config, 7, 2, 'delete'),
-        default => $manager->getNextUniquePositionForAppend($checkout, $config, 7),
-    };
-    throw new RuntimeException('The writer crossed a locked anchor.');
-} catch (PDOException $failure) {
-    if (!in_array($failure->errorInfo[1] ?? null, [$expected, (string) $expected], true)
-        || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED
-    ) {
-        throw $failure;
+    $lifecycle->begin($checkout);
+    $manager = new ProtectedScopedOrderingManager();
+    if ($pair === 'deadlock') {
+        $checkout->runRegisteredCommand('anchor', ['scope' => 8]);
     }
+    if ($coordinated) {
+        echo "READY $threadId\n";
+        fflush(STDOUT);
+        if (trim((string) fgets(STDIN)) !== 'START') {
+            throw new RuntimeException('The waiter was not released.');
+        }
+    }
+    if ($pair === 'wait') {
+        $position = $manager->getNextUniquePositionForAppend($checkout, $config, 7);
+        if ($checkout->runRegisteredCommand('insert', ['position' => $position]) !== 1) {
+            throw new RuntimeException('The waiter did not insert its row.');
+        }
+        $lifecycle->commit($checkout);
+        $result = "INSERTED $position\n";
+    } else {
+        $expected = $pair === 'deadlock' ? 1213 : 1205;
+        try {
+            match ($pair) {
+                'move', 'delete-move' => $manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1),
+                'delete' => $manager->deleteUniqueWithinScope($checkout, $config, 7, 2, 'delete'),
+                default => $manager->getNextUniquePositionForAppend($checkout, $config, 7),
+            };
+            throw new RuntimeException('The writer crossed a locked anchor.');
+        } catch (PDOException $failure) {
+            if (!in_array($failure->errorInfo[1] ?? null, [$expected, (string) $expected], true)
+                || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED
+            ) {
+                throw $failure;
+            }
+        }
+        try {
+            $checkout->commit();
+            throw new RuntimeException('The fenced checkout accepted a commit request.');
+        } catch (ProtectedTransactionException) {
+            $lifecycle->discard($checkout);
+        }
+        $result = "$expected DISCARD_REQUIRED\n";
+    }
+} catch (Throwable $failure) {
+    $primary = $failure;
+    throw $failure;
+} finally {
+    $lifecycle->finish($primary);
 }
-try {
-    $checkout->commit();
-    throw new RuntimeException('The timed-out checkout accepted another command.');
-} catch (ProtectedTransactionException) {
-    $checkout->discardForHost();
-}
-echo "$expected DISCARD_REQUIRED\n";
+echo $result;

@@ -21,9 +21,12 @@ use Maatify\PhpPersistence\Transaction\Repository\PdoProtectedTransactionCheckou
 use PDO;
 use PDOException;
 use Pdo\Mysql;
+use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\TestWith;
+use RuntimeException;
 use SensitiveParameter;
+use Throwable;
 
 final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 {
@@ -36,12 +39,12 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private ?PDO $fixtureAdmin = null;
     private ?string $restrictedAccount = null;
     private ?string $dependencySchema = null;
-    /** @var list<PdoProtectedTransactionCheckout> */
-    private array $checkouts = [];
+    private B1CheckoutLifecycle $lifecycle;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->lifecycle = new B1CheckoutLifecycle();
         $this->observer = $this->connect();
         $this->observer->exec('SET SESSION lock_wait_timeout = 4');
         $this->items = self::setting('DATABASE') . '.b1_items_' . bin2hex(random_bytes(6));
@@ -51,26 +54,147 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
-        foreach ($this->checkouts as $checkout) {
-            if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
-                $checkout->discardForHost();
-            } elseif ($checkout->settlement() === null) {
-                $checkout->rollBack();
-                $checkout->returnForHost();
-            }
-        }
-        $this->checkouts = [];
+        $actions = [$this->lifecycle->finish(...)];
         if ($this->fixtureAdmin !== null) {
+            $admin = $this->fixtureAdmin;
             if ($this->dependencySchema !== null) {
-                $this->fixtureAdmin->exec('DROP DATABASE IF EXISTS ' . $this->dependencySchema);
+                $actions[] = fn() => $admin->exec('DROP DATABASE IF EXISTS ' . $this->dependencySchema);
             }
             if ($this->restrictedAccount !== null) {
-                $this->fixtureAdmin->exec('DROP USER IF EXISTS ' . $this->restrictedAccount);
+                $actions[] = fn() => $admin->exec('DROP USER IF EXISTS ' . $this->restrictedAccount);
             }
         }
-        $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->items));
-        $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->anchor));
-        parent::tearDown();
+        if (isset($this->observer, $this->items, $this->anchor)) {
+            $actions[] = fn() => $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->items));
+            $actions[] = fn() => $this->observer->exec('DROP TABLE IF EXISTS ' . self::quoted($this->anchor));
+        }
+        $actions[] = parent::tearDown(...);
+
+        // PHPUnit retains a failure from the test body over a teardown failure.
+        $firstFailure = null;
+        foreach ($actions as $cleanup) {
+            try {
+                $cleanup();
+            } catch (Throwable $failure) {
+                $firstFailure ??= $failure;
+            }
+        }
+        if ($firstFailure !== null) {
+            throw $firstFailure;
+        }
+    }
+
+    #[TestWith(['active'])]
+    #[TestWith(['reusable without handoff'])]
+    #[TestWith(['discard required without discard'])]
+    public function testIncompleteCheckoutFailsEvenWhenEmergencyCleanupSucceeds(string $missing): void
+    {
+        $this->createProfile(false, false);
+        $this->seedFaultProfile();
+        $config = $this->config();
+        $relay = $missing === 'discard required without discard' ? $this->relay('after', 'after') : null;
+        try {
+            $checkout = $this->checkout(relayPort: $relay === null ? null : $this->relayPort($relay));
+            self::assertSame(1, $checkout->runRegisteredCommand('mark', ['id' => 1]));
+
+            if ($missing === 'reusable without handoff') {
+                $checkout->commit();
+                self::assertSame(ProtectedTransactionDispositionEnum::REUSABLE, $checkout->settlement()?->disposition);
+            } elseif ($relay !== null) {
+                self::failureOf(fn() => $this->manager->moveUniqueWithinScope($checkout, $config, null, 3, 1));
+                self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
+                self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            } else {
+                self::assertNull($checkout->settlement());
+            }
+
+            $diagnostic = null;
+            try {
+                $this->lifecycle->finish();
+            } catch (AssertionFailedError $failure) {
+                $diagnostic = $failure;
+            }
+        } finally {
+            $relay?->stop();
+        }
+        $label = $missing === 'reusable without handoff' ? 'pending' : 'original';
+        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+        $this->observer->beginTransaction();
+        try {
+            self::assertSame($label, $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
+            self::assertSame([1, 2, 3], $this->orderedIds(null));
+        } finally {
+            $this->observer->rollBack();
+        }
+
+        self::assertNotNull($diagnostic, 'Emergency cleanup accepted an incomplete checkout: ' . $missing);
+        self::assertStringContainsString($missing, $diagnostic->getMessage());
+    }
+
+    public function testAnUntouchedCheckoutIsExplicitlyCancelled(): void
+    {
+        $this->createProfile(false, false);
+        $checkout = $this->checkout(begin: false);
+        $this->lifecycle->cancel($checkout);
+        $this->lifecycle->finish();
+        self::assertSame(ProtectedTransactionReasonEnum::CANCELLED_BEFORE_QUALIFICATION, $checkout->settlement()?->reason);
+    }
+
+    public function testUnconfirmedBeginIsExplicitlyDiscarded(): void
+    {
+        $this->createProfile(false, false);
+        $relay = PartnerProcess::start([
+            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'START TRANSACTION READ WRITE', 'after',
+        ]);
+        try {
+            $checkout = $this->checkout(relayPort: $this->relayPort($relay), begin: false);
+            self::failureOf(fn() => $this->lifecycle->begin($checkout));
+            self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
+            self::assertSame(ProtectedTransactionReasonEnum::START_UNCONFIRMED, $checkout->settlement()?->reason);
+            $this->lifecycle->discard($checkout);
+            $this->lifecycle->finish();
+        } finally {
+            $relay->stop();
+        }
+        self::assertSame([], $this->orderedIds(null));
+    }
+
+    public function testEmergencyRollbackFailurePreservesPrimaryAndCleansOtherCheckouts(): void
+    {
+        $this->createProfile(false, false);
+        $this->seedFaultProfile();
+        $relay = PartnerProcess::start([
+            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'ROLLBACK AND NO CHAIN NO RELEASE', 'after',
+        ]);
+        try {
+            $lostAck = $this->checkout(relayPort: $this->relayPort($relay));
+            $other = $this->checkout();
+            self::assertSame(1, $lostAck->runRegisteredCommand('mark', ['id' => 1]));
+            self::assertSame(1, $other->runRegisteredCommand('mark', ['id' => 2]));
+            $primary = new RuntimeException('Original fixture failure.');
+            try {
+                try {
+                    throw $primary;
+                } finally {
+                    $this->lifecycle->finish($primary);
+                }
+            } catch (RuntimeException $observed) {
+                self::assertSame($primary, $observed);
+            }
+            self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
+            self::assertSame(ProtectedTransactionReasonEnum::ROLLBACK_UNCONFIRMED, $lostAck->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::ROLLED_BACK, $other->settlement()?->reason);
+        } finally {
+            $relay->stop();
+        }
+        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+        $this->observer->beginTransaction();
+        try {
+            self::assertSame('original', $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
+            self::assertSame('second', $this->scalar($this->observer, 'SELECT label FROM ' . self::quoted($this->items) . ' WHERE id = 2 FOR UPDATE'));
+        } finally {
+            $this->observer->rollBack();
+        }
     }
 
     /** @return iterable<string, array{bool, bool, string, bool}> */
@@ -98,8 +222,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $this->insert($checkout, $otherScope, 8, 1);
         }
         self::assertSame([], $this->orderedIds($this->scope));
-        $checkout->commit();
-        $checkout->returnForHost();
+        $this->lifecycle->commit($checkout);
         self::assertSame(range($id, $id + 3), $this->orderedIds($this->scope));
 
         $checkout = $this->checkout($isolation, $foundRows);
@@ -114,8 +237,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertTrue($this->manager->deleteUniqueWithinScope($checkout, $config, $this->scope, $id, 'delete')); // last
         self::assertTrue($this->manager->deleteUniqueWithinScope($checkout, $config, $this->scope, $id + 1, 'delete')); // only
         self::assertSame(1, $this->append($checkout, $config, $id));
-        $checkout->commit();
-        $checkout->returnForHost();
+        $this->lifecycle->commit($checkout);
         self::assertSame([$id], $this->orderedIds($this->scope));
         if ($otherScope !== null) {
             self::assertSame([8], $this->orderedIds($otherScope));
@@ -138,8 +260,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->reject('NO_STAGING_POSITION', fn() => $this->manager->moveUniqueWithinScope($checkout, $config, null, 1, 1));
         self::assertTrue($this->manager->deleteUniqueWithinScope($checkout, $config, null, 1, 'delete'));
         self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $config, null, 2, 2));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
         self::assertSame([], $this->orderedIds(null));
     }
 
@@ -160,8 +281,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $checkout = $this->checkout();
         $config = $this->config();
         $this->reject('INELIGIBLE_SCHEMA', fn() => $this->append($checkout, $config, 1));
-        $checkout->commit();
-        $checkout->returnForHost();
+        $this->lifecycle->commit($checkout);
         self::assertSame([], $this->orderedIds(null));
     }
 
@@ -176,21 +296,18 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $this->reject('SCHEMA_UNVERIFIED', fn() => $this->append($checkout, $unverified, 2));
         }
         $this->reject('ANCHOR_MISSING', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $config, 99));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
 
         $this->observer->exec('INSERT INTO ' . self::quoted($this->items) . ' (id, scope_id, pos) VALUES (2, 7, 2)');
         $checkout = $this->checkout();
         $this->reject('SCOPE_NOT_DENSE', fn() => $this->manager->deleteUniqueWithinScope($checkout, $config, 7, 2, 'delete'));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
         self::assertSame([2], $this->orderedIds(7));
 
         $this->observer->exec('ALTER TABLE ' . self::quoted($this->items) . ' ADD COLUMN drift INT DEFAULT NULL');
         $checkout = $this->checkout();
         $this->reject('SCHEMA_UNVERIFIED', fn() => $this->append($checkout, $config, 3));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
     }
 
     public function testTemporaryShadowAndDisabledChecksAreRejected(): void
@@ -202,14 +319,12 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             "CREATE TEMPORARY TABLE $table (id INT NOT NULL PRIMARY KEY, pos INT NOT NULL, UNIQUE (pos)) ENGINE=InnoDB",
         ]);
         $this->reject('INELIGIBLE_SCHEMA', fn() => $this->append($checkout, $config, 1));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
 
         foreach (['unique_checks', 'foreign_key_checks'] as $setting) {
             $checkout = $this->checkout(sessionSetup: ["SET SESSION $setting = 0"]);
             $this->reject('SCHEMA_UNVERIFIED', fn() => $this->append($checkout, $config, 1));
-            $checkout->rollBack();
-            $checkout->returnForHost();
+            $this->lifecycle->rollBack($checkout);
         }
         self::assertSame([], $this->orderedIds(null));
     }
@@ -222,8 +337,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->observer->exec('SET SESSION lock_wait_timeout = 1');
         $ddl = 'ALTER TABLE ' . self::quoted($this->items) . ' ADD COLUMN reviewed_change INT';
         self::assertSame(1205, self::driverCode(self::failureOf(fn() => $this->observer->exec($ddl))));
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
         self::assertSame(0, $this->observer->exec($ddl));
     }
 
@@ -233,8 +347,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $config = $this->config();
         $early = $this->checkout();
         self::assertSame(1, $this->append($early, $config, 1));
-        $early->commit();
-        $early->returnForHost();
+        $this->lifecycle->commit($early);
 
         $mariaDb = self::engine() === 'mariadb';
         $relay = $this->relay('after', 'snapshot-read');
@@ -248,8 +361,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 
             $writer = $this->checkout();
             self::assertSame(2, $this->append($writer, $config, 2));
-            $writer->commit();
-            $writer->returnForHost();
+            $this->lifecycle->commit($writer);
 
             $allocate = fn(): int => $this->manager->getNextUniquePositionForAppend($stale, $config, 7);
             if ($mariaDb) {
@@ -257,10 +369,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
                 self::assertSame(1020, self::driverCode($failure));
                 self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $stale->settlement()?->disposition);
                 self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $stale->settlement()->reason);
+                $this->lifecycle->discard($stale);
             } else {
                 self::assertSame(3, $allocate());
-                $stale->rollBack();
-                $stale->returnForHost();
+                $this->lifecycle->rollBack($stale);
             }
         } finally {
             $relay->stop();
@@ -281,8 +393,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $config, null, 1, 1));
             self::assertFalse($this->manager->moveUniqueWithinScope($checkout, $config, null, 99, 1));
             self::assertFalse($this->manager->deleteUniqueWithinScope($checkout, $config, null, 99, 'delete'));
-            $checkout->commit();
-            $checkout->returnForHost();
+            $this->lifecycle->commit($checkout);
         } finally {
             $relay->stop();
         }
@@ -307,8 +418,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         } catch (ProtectedTransactionException) {
             self::assertNull($checkout->settlement());
         }
-        $checkout->commit();
-        $checkout->returnForHost();
+        $this->lifecycle->commit($checkout);
         self::assertSame([8], $this->orderedIds(null));
     }
 
@@ -352,13 +462,17 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             };
             self::assertSame($expected, $relay->readLine(12.0));
             self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
-            $this->expectException(ProtectedTransactionException::class);
-            $checkout->commit();
+            try {
+                $checkout->commit();
+                self::fail('A fenced checkout accepted the commit request.');
+            } catch (ProtectedTransactionException) {
+                $this->lifecycle->discard($checkout);
+            }
         } finally {
             $relay->stop();
-            self::assertSame([1, 2, 3], $this->orderedIds(null));
-            self::assertSame('original', $this->scalar($this->observer, $this->markerSql()));
         }
+        self::assertSame([1, 2, 3], $this->orderedIds(null));
+        self::assertSame('original', $this->scalar($this->observer, $this->markerSql()));
     }
 
     public function testConfirmedLocalUndoPreservesHostMarkerAndDenseOrder(): void
@@ -373,8 +487,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $this->reject('DELETE_INVARIANT_FAILED', fn() => $this->manager->deleteUniqueWithinScope($checkout, $config, null, 1, 'delete'));
             self::assertSame('B1 PHASE compact', $relay->readLine(12.0));
             self::assertNull($checkout->settlement());
-            $checkout->commit();
-            $checkout->returnForHost();
+            $this->lifecycle->commit($checkout);
         } finally {
             $relay->stop();
         }
@@ -416,8 +529,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             }
         }
         self::assertSame('original', $this->scalar($this->observer, $this->markerSql()));
-        $checkout->discardForHost();
-        self::assertSame($checkout, array_pop($this->checkouts));
+        $this->lifecycle->discard($checkout);
 
         // Synchronize with server-side disconnect/rollback by taking the marker lock.
         $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
@@ -450,8 +562,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         if ($rulesVisible === '0') {
             $this->reject('SCHEMA_UNVERIFIED', fn() => $this->manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1));
             self::assertNull($checkout->settlement());
-            $checkout->commit();
-            $checkout->returnForHost();
+            $this->lifecycle->commit($checkout);
             self::assertSame([1, 2], $this->orderedIds(7));
 
             return;
@@ -460,8 +571,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame('1', $rulesVisible);
         self::assertSame(3, $this->manager->getNextUniquePositionForAppend($checkout, $config, 7));
         self::assertTrue($this->manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1));
-        $checkout->commit();
-        $checkout->returnForHost();
+        $this->lifecycle->commit($checkout);
         self::assertSame([2, 1], $this->orderedIds(7));
     }
 
@@ -513,8 +623,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             self::assertSame('1', $seenByLimitedAccount);
             $this->reject('INELIGIBLE_SCHEMA', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $assertedReview, null));
         }
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
         $admin->exec($reveal . ' TO ' . $this->restrictedAccount);
 
         $visible = $this->fixtureConnection($user, $password);
@@ -523,8 +632,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         unset($visible);
         $this->reject('INELIGIBLE_SCHEMA', fn() => $this->manager->getNextUniquePositionForAppend($checkout, $assertedReview, null));
         self::assertNull($checkout->settlement());
-        $checkout->rollBack();
-        $checkout->returnForHost();
+        $this->lifecycle->rollBack($checkout);
         self::assertSame([], $this->orderedIds(null));
     }
 
@@ -602,8 +710,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         if ($pair !== 'append') {
             self::assertSame(1, $this->append($first, $config, 1));
             self::assertSame(2, $this->append($first, $config, 2));
-            $first->commit();
-            $first->returnForHost();
+            $this->lifecycle->commit($first);
             $first = $this->checkout($isolation);
         }
         $move = fn(PdoProtectedTransactionCheckout $checkout): bool => $this->manager->moveUniqueWithinScope($checkout, $config, 7, 2, 1);
@@ -629,11 +736,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         }
         self::assertSame($pair === 'append' ? [] : [1, 2], $this->orderedIds(7));
         if ($commit) {
-            $first->commit();
+            $this->lifecycle->commit($first);
         } else {
-            $first->rollBack();
+            $this->lifecycle->rollBack($first);
         }
-        $first->returnForHost();
         $after = $this->checkout($isolation);
         self::assertSame(match ($pair) {
             'append' => $commit ? 2 : 1,
@@ -642,8 +748,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             'move-append' => 3,
             default => true,
         }, $operation($after));
-        $after->commit();
-        $after->returnForHost();
+        $this->lifecycle->commit($after);
         self::assertSame(match ($pair) {
             'append' => $commit ? [1, 3] : [3],
             'delete' => [1],
@@ -666,11 +771,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $this->waitForAnchorRead($second);
             self::assertSame([], $this->orderedIds(7));
             if ($commit) {
-                $first->commit();
+                $this->lifecycle->commit($first);
             } else {
-                $first->rollBack();
+                $this->lifecycle->rollBack($first);
             }
-            $first->returnForHost();
             self::assertSame($commit ? 'INSERTED 2' : 'INSERTED 1', $second->readLine(12.0));
         } finally {
             $second->stop();
@@ -692,8 +796,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             $this->waitForAnchorRead($second);
             self::assertSame(1, $this->manager->getNextUniquePositionForAppend($first, $config, 8));
             self::assertSame('1213 DISCARD_REQUIRED', $second->readLine(12.0));
-            $first->commit();
-            $first->returnForHost();
+            $this->lifecycle->commit($first);
         } finally {
             $second->stop();
         }
@@ -817,6 +920,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         ?string $relayPort = null,
         ?PDO $connection = null,
         ?array $cursorFault = null,
+        bool $begin = true,
     ): PdoProtectedTransactionCheckout {
         $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -849,14 +953,16 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             'other-delete' => new ProtectedTransactionCommandPlan($delete . ' AND label IS NULL', $params),
             'wrong-bindings' => new ProtectedTransactionCommandPlan($delete, ['id']),
         ]));
-        $this->checkouts[] = $checkout;
+        $this->lifecycle->track($checkout);
         if ($cursorFault !== null) {
             // Test seam: install a statement wrapper after the real checkout
             // accepts the default statement class, then release the PDO alias.
             self::assertTrue($pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [FaultInjectingCursorStatement::class, $cursorFault]));
         }
         unset($pdo, $connection);
-        $checkout->begin();
+        if ($begin) {
+            $this->lifecycle->begin($checkout);
+        }
 
         return $checkout;
     }
