@@ -127,9 +127,52 @@ final class IntegrationInfrastructureTest extends TestCase
                 if ($cell['tier'] === $tier) {
                     self::assertStringContainsString('{ cell: ' . $key . ', php: "8.4" }', $workflow);
                     self::assertStringContainsString('{ cell: ' . $key . ', php: "8.5" }', $workflow);
+                    self::assertStringContainsString('{ cell: ' . $key . ', php: "8.6" }', $workflow);
                 }
             }
         }
+    }
+
+    public function testPhp86IsQualifiedInEveryRequiredBoundaryWithoutRemovingEarlierMinors(): void
+    {
+        $workflow = self::read('.github/workflows/ci.yml');
+
+        self::assertStringContainsString('php: ["8.4", "8.5", "8.6"]', $workflow, 'Compat covers the minimum, the intermediate and the latest minor');
+        $integration = substr($workflow, (int) strpos($workflow, "\n  integration:\n"), (int) strpos($workflow, "\n  examples-smoke:\n") - (int) strpos($workflow, "\n  integration:\n"));
+        self::assertSame(15, preg_match_all('/^          - \\{ cell: [a-z0-9.-]+, php: "8\\.[456]" \\}$/m', $integration), 'Integration keeps the 11 existing cells and adds four PHP 8.6 cells');
+        self::assertSame(4, preg_match_all('/php: "8\\.6" \\}$/m', $integration));
+        foreach (['mysql-8.4.13', 'mariadb-11.8.9'] as $cell) {
+            self::assertStringContainsString('{ cell: ' . $cell . ', php: "8.4" }', $workflow);
+            self::assertStringContainsString('{ cell: ' . $cell . ', php: "8.6" }', $workflow);
+        }
+        self::assertStringContainsString('php: ["8.4", "8.6"]', $workflow, 'Consumer verification runs on the minimum and the latest minor');
+        self::assertSame(0, preg_match('/php-version: "8\.[0-9]"/', substr($workflow, (int) strpos($workflow, '  examples-smoke:'), (int) strpos($workflow, '  release-artifact:') - (int) strpos($workflow, '  examples-smoke:'))), 'smoke and consumer jobs take the PHP minor from their matrix');
+    }
+
+    public function testFormatterRunsOnlyOnItsSupportedHostsAndTheVerifierIsRequiredOnPhp86(): void
+    {
+        $workflow = self::read('.github/workflows/ci.yml');
+
+        self::assertStringContainsString("        if: matrix.php != '8.6'\n        run: composer format:check\n", $workflow);
+        self::assertStringContainsString("        if: matrix.php == '8.6'\n        run: php scripts/check-per-cs-3-1.php\n", $workflow);
+        self::assertSame(1, substr_count($workflow, 'composer format:check'), 'the full local command keeps its meaning');
+        self::assertStringNotContainsString('allow-unsupported-php-version', $workflow);
+        self::assertStringNotContainsString('PHP_CS_FIXER_IGNORE_ENV', $workflow);
+        self::assertStringNotContainsString('setUnsupportedPhpVersionAllowed', self::read('.php-cs-fixer.php'));
+        self::assertStringContainsString('"php-cs-fixer fix --dry-run --diff"', self::read('composer.json'));
+        self::assertStringContainsString('"@php scripts/check-per-cs-3-1.php"', self::read('composer.json'));
+    }
+
+    public function testSetupActionProvesANativeStableCliAndTheHarnessExtensions(): void
+    {
+        $action = self::read('.github/actions/setup-php-composer/action.yml');
+
+        self::assertStringContainsString('shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf', $action);
+        self::assertStringNotContainsString('eb7c497e18156a6bbabfef1d3a82760b9eda3962', $action, '2.40.0 installs 8.6 as a nightly build');
+        self::assertStringContainsString('pcntl, posix', $action);
+        self::assertStringContainsString('is not a stable release of the requested minor', $action);
+        self::assertStringContainsString('test "$(uname -m)" = x86_64', $action);
+        self::assertStringContainsString('for extension in PDO pdo_mysql pcntl posix', $action);
     }
 
     public function testRatifiedBoundaryRecordMatchesTheMatrix(): void
