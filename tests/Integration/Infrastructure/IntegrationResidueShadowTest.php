@@ -28,10 +28,24 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
     #[TestWith([true])]
     public function testServerControlsKeepOriginalGate(bool $commit): void
     {
+        $this->exerciseServerControls($commit);
+
+        // This fixture deliberately reads the transaction cache with live actors.
+        // All its sessions and instrumentation have been released now. No
+        // other test runs in parallel with this fixture on this service.
+        $deadline = hrtime(true) + 200_000_000;
+        while (($left = $deadline - hrtime(true)) > 0) {
+            time_nanosleep(0, $left);
+        }
+    }
+
+    private function exerciseServerControls(bool $commit): void
+    {
         $observer = $this->session('root', self::setting('ADMIN_PASSWORD'));
+        $this->requireQualifiedCacheProfile($observer);
         $owner = $this->session(self::setting('USER'), self::setting('PASSWORD'));
         $reader = $this->session(self::setting('USER'), self::setting('PASSWORD'));
-        $contender = $this->connect();
+        $contender = $this->session(self::setting('USER'), self::setting('PASSWORD'));
         $table = $this->createTable($contender, 'shadow');
         $contender->exec("INSERT INTO `$table` VALUES (1, 0)");
         $contender->exec('SET SESSION innodb_lock_wait_timeout = 1');
@@ -64,6 +78,8 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
                 $shadow = IntegrationResidueShadow::observe($observer, self::engine(), [$row]);
                 self::assertSame('ENGINE_PROFILE_UNQUALIFIED', $shadow['transactions'][0]['reason']);
                 $this->assertOriginalGate($shadow, [$row], 'UNKNOWN');
+                self::assertTrue($commit ? $owner->commit() : $owner->rollBack());
+                $this->assertWriterEnded($contender, $table, $commit);
 
                 return;
             }
@@ -80,12 +96,7 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
             $this->assertOriginalGate($readOnly, [$readerRow], 'LIVE');
 
             self::assertTrue($commit ? $owner->commit() : $owner->rollBack());
-            $contender->beginTransaction();
-            try {
-                self::assertSame($commit ? '1' : '0', $this->scalar($contender, "SELECT v FROM `$table` WHERE id=1 FOR UPDATE NOWAIT"));
-            } finally {
-                $contender->rollBack();
-            }
+            $this->assertWriterEnded($contender, $table, $commit);
             $writerBinding['endAcknowledged'] = true;
             $writerBinding['independentlyChecked'] = true;
             $bindings = [$process => $writerBinding];
@@ -125,25 +136,55 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
             $disabled = IntegrationResidueShadow::observe($observer, 'mysql', [$row], $bindings);
             self::assertSame('TRANSACTION_INSTRUMENTATION_UNAVAILABLE', $disabled['transactions'][0]['reason']);
         } finally {
-            foreach ([$owner, $reader] as $session) {
-                if ($session?->inTransaction()) {
-                    $session->rollBack();
+            try {
+                foreach ([$owner, $reader] as $session) {
+                    if ($session?->inTransaction()) {
+                        self::assertTrue($session->rollBack(), 'Failed to roll back a fixture session.');
+                    }
                 }
+            } finally {
+                if ($instrumentation !== null) {
+                    $this->restoreTransactionEvents($observer, $instrumentation);
+                }
+                $contender->exec('SET SESSION lock_wait_timeout = 2');
+                self::assertNotFalse($contender->exec("DROP TABLE `$table`"));
             }
-            if ($instrumentation !== null) {
-                $this->restoreTransactionEvents($observer, $instrumentation);
-            }
+        }
+    }
+
+    private function requireQualifiedCacheProfile(PDO $observer): void
+    {
+        $pattern = match (self::setting('CELL')) {
+            'mysql-8.0.16' => '/^8\.0\.16$/D',
+            'mysql-8.4.13' => '/^8\.4\.13$/D',
+            'mysql-9.7.4' => '/^9\.7\.4$/D',
+            'mariadb-10.11.19' => '/^10\.11\.19-MariaDB(?:-[a-z0-9]+)*$/D',
+            'mariadb-11.4.13' => '/^11\.4\.13-MariaDB(?:-[a-z0-9]+)*$/D',
+            'mariadb-11.8.9' => '/^11\.8\.9-MariaDB(?:-[a-z0-9]+)*$/D',
+            'mariadb-12.3.3' => '/^12\.3\.3-MariaDB(?:-[a-z0-9]+)*$/D',
+            default => self::fail('The fixture has no qualified cache interval for this database profile.'),
+        };
+        self::assertMatchesRegularExpression($pattern, $this->scalar($observer, 'SELECT VERSION()'));
+    }
+
+    private function assertWriterEnded(PDO $contender, string $table, bool $commit): void
+    {
+        self::assertTrue($contender->beginTransaction());
+        try {
+            self::assertSame($commit ? '1' : '0', $this->scalar($contender, "SELECT v FROM `$table` WHERE id=1 FOR UPDATE"));
+        } finally {
+            self::assertTrue($contender->rollBack());
         }
     }
 
     private function expectLockFailure(PDO $contender, string $table, string $suffix, int $expected): void
     {
-        $contender->beginTransaction();
+        self::assertTrue($contender->beginTransaction());
         try {
             $failure = self::failureOf(fn() => $this->scalar($contender, "SELECT v FROM `$table` WHERE id=1 FOR UPDATE" . $suffix));
             self::assertSame($expected, self::driverCode($failure));
         } finally {
-            $contender->rollBack();
+            self::assertTrue($contender->rollBack());
         }
     }
 

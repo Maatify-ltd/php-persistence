@@ -118,14 +118,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             self::assertCleanEmergencyDiagnostic($diagnostic, $missing);
 
             $label = $missing === 'reusable without handoff' ? 'pending' : 'original';
-            $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
-            $this->observer->beginTransaction();
-            try {
-                self::assertSame($label, $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
-                self::assertSame([1, 2, 3], $this->orderedIds(null));
-            } finally {
-                $this->observer->rollBack();
-            }
+            $this->assertFaultProfileAfterEnd($label);
         } finally {
             $relay?->stop();
         }
@@ -563,15 +556,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame('original', $this->scalar($this->observer, $this->markerSql()));
         $this->lifecycle->discard($checkout);
 
-        // Synchronize with server-side disconnect/rollback by taking the marker lock.
-        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
-        $this->observer->beginTransaction();
-        try {
-            self::assertSame('original', $this->scalar($this->observer, $this->markerSql() . ' FOR UPDATE'));
-            self::assertSame([1, 2, 3], $this->orderedIds(null));
-        } finally {
-            $this->observer->rollBack();
-        }
+        $this->assertFaultProfileAfterEnd('original');
     }
 
     public function testLimitedAccountRequiresVisibleRulesForReviewedScopeToAnchorForeignKey(): void
@@ -714,6 +699,22 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private function seedFaultProfile(): void
     {
         $this->observer->exec('INSERT INTO ' . self::quoted($this->items) . " (id, pos, label) VALUES (1, 1, 'original'), (2, 2, 'second'), (3, 3, 'third')");
+    }
+
+    private function assertFaultProfileAfterEnd(string $firstLabel): void
+    {
+        // Lock every row affected by the fault fixture and verify the original
+        // positions and labels through an independent checkpoint.
+        $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
+        self::assertTrue($this->observer->beginTransaction());
+        try {
+            $result = $this->observer->query('SELECT id, pos, label FROM ' . self::quoted($this->items) . ' ORDER BY pos FOR UPDATE');
+            self::assertNotFalse($result);
+            self::assertSame([[1, 1, $firstLabel], [2, 2, 'second'], [3, 3, 'third']], $result->fetchAll(PDO::FETCH_NUM));
+            self::assertTrue($result->closeCursor());
+        } finally {
+            self::assertTrue($this->observer->rollBack());
+        }
     }
 
     private function markerSql(): string

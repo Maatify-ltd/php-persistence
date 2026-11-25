@@ -144,7 +144,7 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     }
     echo "CONSUMER-INSTALL scenario={$scenario} candidate={$candidateRef} tree={$candidateTree} legacy={$legacyRef}\n";
 
-    $status = passthrough([PHP_BINARY, $directory . '/consumer.php', $scenario], $environment, $directory, boxed(120));
+    $status = passthrough([PHP_BINARY, $directory . '/consumer.php', $scenario], $environment, $directory, boxed(120), databaseWork: true);
     if ($status !== 0) {
         return $status;
     }
@@ -176,14 +176,14 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     }
 
     foreach (['keyset-api.php', 'host-snapshot-api.php', 'protected-transaction-api.php'] as $publicApiScenario) {
-        $status = passthrough([PHP_BINARY, $directory . '/' . $publicApiScenario], $environment, $directory, boxed(120));
+        $status = passthrough([PHP_BINARY, $directory . '/' . $publicApiScenario], $environment, $directory, boxed(120), databaseWork: true);
         if ($status !== 0) {
             return $status;
         }
     }
     foreach ($examples as $example) {
         echo "--- installed example: $example\n";
-        $status = passthrough([PHP_BINARY, $exampleDirectory . '/' . $example], $environment, $directory, boxed(120));
+        $status = passthrough([PHP_BINARY, $exampleDirectory . '/' . $example], $environment, $directory, boxed(120), databaseWork: true);
         if ($status !== 0) {
             return $status;
         }
@@ -258,10 +258,10 @@ function verifyConsumer(string $root, string $candidateRef, string $candidateTre
     } finally {
         OrchestrationBudget::$deadline = $overallDeadline;
         try {
-            if (!cleanupConsumerWorkspace($workspace)) {
+            if (!cleanupConsumerWorkspace($workspace) && $status === 0) {
                 $status = EXIT_INFRASTRUCTURE;
             }
-        } catch (ConsumerVerificationInterrupted $interruption) {
+        } catch (IntegrationInterrupted $interruption) {
             cleanupConsumerWorkspace($workspace);
 
             throw $interruption;

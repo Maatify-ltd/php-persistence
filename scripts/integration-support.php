@@ -22,9 +22,9 @@ const TIMEOUT_EXIT_STATUS = 124;
 const TERMINATION_GRACE_SECONDS = 5;
 
 /**
- * A catchable signal in consumer verification. It unwinds the workspace before Compose teardown.
+ * A catchable signal that unwinds owned work before Compose teardown.
  */
-final class ConsumerVerificationInterrupted extends Exception {}
+final class IntegrationInterrupted extends Exception {}
 
 /**
  * Positive integer seconds from an environment variable, or the default when it is not set.
@@ -123,17 +123,19 @@ function suiteDeadline(?float $overallDeadline, float $now, int $suiteTimeout, i
  *
  * @param resource $process
  */
-function terminateProcess($process): void
+function terminateProcess($process): bool
 {
     proc_terminate($process);
     $until = microtime(true) + TERMINATION_GRACE_SECONDS;
     while (microtime(true) < $until) {
         if (proc_get_status($process)['running'] === false) {
-            return;
+            return true;
         }
         usleep(100_000);
     }
     proc_terminate($process, 9);
+
+    return !proc_get_status($process)['running'];
 }
 
 /**
@@ -195,7 +197,7 @@ function execute(array $command, array $environment = [], ?string $cwd = null, i
                 }
             }
         }
-    } catch (ConsumerVerificationInterrupted $exception) {
+    } catch (IntegrationInterrupted $exception) {
         terminateProcess($process);
         foreach ($open as $stream) {
             if (is_resource($stream)) {
@@ -211,15 +213,25 @@ function execute(array $command, array $environment = [], ?string $cwd = null, i
 }
 
 /**
+ * @param list<string> $command
+ * @return list<string>
+ */
+function databaseWorkCommand(array $command, int $timeoutSeconds): array
+{
+    return [PHP_BINARY, __DIR__ . '/database-work.php', (string) $timeoutSeconds, ...$command];
+}
+
+/**
  * Runs a command attached to this process's streams and returns its exit status, or
  * TIMEOUT_EXIT_STATUS when it exceeded $timeoutSeconds and was stopped.
  *
  * @param list<string> $command
  * @param array<string, string> $environment
  */
-function passthrough(array $command, array $environment, string $cwd, int $timeoutSeconds): int
+function passthrough(array $command, array $environment, string $cwd, int $timeoutSeconds, bool $databaseWork = false): int
 {
-    $process = proc_open($command, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $cwd, [...getenv(), ...$environment]);
+    $launch = $databaseWork ? databaseWorkCommand($command, $timeoutSeconds) : $command;
+    $process = proc_open($launch, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $cwd, [...getenv(), ...$environment]);
     if (!is_resource($process)) {
         return 127;
     }
@@ -233,18 +245,24 @@ function passthrough(array $command, array $environment, string $cwd, int $timeo
                 return $code === -1 ? $status['exitcode'] : $code;
             }
             if (microtime(true) >= $deadline) {
-                terminateProcess($process);
-                proc_close($process);
+                if (terminateProcess($process) || !$databaseWork) {
+                    proc_close($process);
+                } else {
+                    fwrite(STDERR, "DB-WORK supervisor exit unverified; continuing to teardown.\n");
+                }
                 fwrite(STDERR, $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n");
 
                 return TIMEOUT_EXIT_STATUS;
             }
             usleep(100_000);
         }
-    } catch (ConsumerVerificationInterrupted $exception) {
+    } catch (IntegrationInterrupted $exception) {
         if (is_resource($process)) {
-            terminateProcess($process);
-            proc_close($process);
+            if (terminateProcess($process) || !$databaseWork) {
+                proc_close($process);
+            } else {
+                fwrite(STDERR, "DB-WORK supervisor exit unverified; continuing to teardown.\n");
+            }
         }
 
         throw $exception;
@@ -560,6 +578,7 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
                 $suiteEnvironment + ['PHP_PERSISTENCE_IT_ADMIN_PASSWORD' => $environment['PP_DB_ROOT_PASSWORD']],
                 $root,
                 boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)),
+                databaseWork: true,
             )
             : $verification($suiteEnvironment);
         if ($result !== 0) {
@@ -621,15 +640,11 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
         pcntl_async_signals(true);
         foreach ([SIGINT, SIGTERM] as $signal) {
-            pcntl_signal($signal, static function () use ($compose, $project, $environment, $root, $verification): void {
-                if ($verification !== null) {
-                    pcntl_signal(SIGINT, SIG_IGN);
-                    pcntl_signal(SIGTERM, SIG_IGN);
+            pcntl_signal($signal, static function (): void {
+                pcntl_signal(SIGINT, SIG_IGN);
+                pcntl_signal(SIGTERM, SIG_IGN);
 
-                    throw new ConsumerVerificationInterrupted();
-                }
-                teardown($compose, $project, $environment, $root);
-                exit(130);
+                throw new IntegrationInterrupted();
             });
         }
     }
@@ -639,12 +654,12 @@ function lifecycle(string $root, string $cellKey, array $cell, array $options, i
     $status = EXIT_INFRASTRUCTURE;
     try {
         $status = runOnService($root, $cellKey, $cell, $options, $environment, $compose, $verification);
-    } catch (ConsumerVerificationInterrupted) {
+    } catch (IntegrationInterrupted) {
         $status = 130;
     } finally {
         try {
             $torndown = teardown($compose, $project, $environment, $root);
-        } catch (ConsumerVerificationInterrupted) {
+        } catch (IntegrationInterrupted) {
             $torndown = teardown($compose, $project, $environment, $root);
             $status = 130;
         }

@@ -149,7 +149,7 @@ function runExamples(string $root, string $cellKey, array $cell, array $environm
             return EXIT_INFRASTRUCTURE;
         }
         echo '--- examples/' . $exampleFile . "\n";
-        $exampleStatus = passthrough([PHP_BINARY, $root . '/examples/' . $exampleFile], $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)));
+        $exampleStatus = passthrough([PHP_BINARY, $root . '/examples/' . $exampleFile], $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)), databaseWork: true);
         if ($exampleStatus !== 0) {
             fwrite(STDERR, 'examples/' . $exampleFile . ' exited with status ' . $exampleStatus . "\n");
 
@@ -194,9 +194,11 @@ $compose = ['docker', 'compose', '--project-name', $project, '--file', $root . '
 if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
     pcntl_async_signals(true);
     foreach ([SIGINT, SIGTERM] as $signal) {
-        pcntl_signal($signal, static function () use ($compose, $project, $environment, $root): void {
-            teardown($compose, $project, $environment, $root);
-            exit(130);
+        pcntl_signal($signal, static function (): void {
+            pcntl_signal(SIGINT, SIG_IGN);
+            pcntl_signal(SIGTERM, SIG_IGN);
+
+            throw new IntegrationInterrupted();
         });
     }
 }
@@ -206,6 +208,8 @@ echo '--- examples smoke cell=' . $cellKey . ' image=' . $environment['PP_DB_IMA
 $status = EXIT_INFRASTRUCTURE;
 try {
     $status = runExamples($root, $cellKey, $cell, $environment, $compose, $examples);
+} catch (IntegrationInterrupted) {
+    $status = 130;
 } finally {
     $torndown = teardown($compose, $project, $environment, $root);
 }
