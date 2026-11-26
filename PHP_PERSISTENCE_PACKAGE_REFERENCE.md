@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
 
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions and Ordering, Verified Apply/Discard, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions and Ordering, protected UNIQUE-safe Ordering B1, Verified Apply/Discard, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -71,12 +71,16 @@ src/
 ├── Exception/PhpPersistenceExceptionInterface.php
 ├── Ordering/
 │   ├── Config/ScopedOrderingConfig.php
+│   ├── Config/UniqueOrderingConfig.php
 │   ├── Exception/InvalidOrderingConfigurationException.php
 │   ├── Exception/InvalidOrderingOperationException.php
 │   ├── Exception/OrderingExecutionException.php
 │   ├── Repository/OrderingOperations.php   (@internal)
 │   ├── Repository/ProtectedScopedOrderingManager.php
-│   └── Repository/ScopedOrderingManager.php
+│   ├── Repository/ScopedOrderingManager.php
+│   ├── Repository/UniqueOrderingOperations.php   (@internal)
+│   ├── Repository/UniqueOrderingSchema.php   (@internal)
+│   └── Repository/UniqueOrderingSql.php   (@internal)
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
 │   ├── Config/StaticSortPlan.php
@@ -116,7 +120,7 @@ src/
 │   ├── Exception/SnapshotPaginationException.php
 │   ├── Repository/HostSnapshotConnection.php   (@internal)
 │   ├── Repository/HostSnapshotPageReader.php   (@internal)
-│   ├── Repository/KeysetCursor.php             (@internal)
+│   ├── Repository/KeysetCursor.php   (@internal)
 │   ├── Repository/PdoHostSnapshotCheckout.php
 │   ├── Repository/PdoHostSnapshotPaginator.php
 │   ├── Repository/PdoHostSnapshotSource.php
@@ -124,27 +128,38 @@ src/
 │   ├── Repository/PdoPaginationExecution.php   (@internal)
 │   ├── Repository/PdoPaginator.php
 │   ├── Repository/PdoSnapshotPaginator.php
-│   ├── Repository/SnapshotReadResources.php    (@internal)
+│   ├── Repository/SnapshotReadResources.php   (@internal)
 │   ├── ValueObject/ResolvedDynamicSort.php   (@internal)
+│   ├── ValueObject/SortIdentifier.php   (@internal)
 │   └── ValueObject/SortWhitelist.php
 └── Transaction/
     ├── Criteria/ProtectedTransactionCommandCatalog.php
     ├── Criteria/ProtectedTransactionCommandPlan.php
     ├── DTO/ProtectedTransactionSettlementDTO.php
+    ├── DTO/VerifiedTransactionDecisionDTO.php
+    ├── DTO/VerifiedTransactionSettlementDTO.php
     ├── Enum/ProtectedTransactionDispositionEnum.php
     ├── Enum/ProtectedTransactionReasonEnum.php
+    ├── Enum/VerifiedTransactionOutcomeEnum.php
+    ├── Enum/VerifiedTransactionReasonEnum.php
     ├── Exception/InvalidTransactionConfigurationException.php
     ├── Exception/ProtectedTransactionException.php
     ├── Exception/TransactionExecutionException.php
-    ├── Repository/TransactionRunnerInterface.php
-    ├── Repository/SavepointTransactionRunnerInterface.php
-    ├── Repository/PdoTransactionRunner.php
-    ├── Repository/PdoProtectedTransactionCheckout.php
-    ├── Repository/ProtectedTransactionConnection.php   (@internal)
-    ├── Repository/ProtectedTransactionStatement.php    (@internal)
-    ├── Repository/PdoSavepointTransactionRunner.php
     ├── Repository/OwnedTransactionExecutor.php   (@internal)
-    └── Repository/SavepointScope.php             (@internal)
+    ├── Repository/PdoProtectedTransactionCheckout.php
+    ├── Repository/PdoSavepointTransactionRunner.php
+    ├── Repository/PdoTransactionRunner.php
+    ├── Repository/PdoVerifiedTransactionCheckout.php
+    ├── Repository/ProtectedTransactionCommandExecutor.php   (@internal)
+    ├── Repository/ProtectedTransactionConnection.php   (@internal)
+    ├── Repository/ProtectedTransactionDriver.php   (@internal)
+    ├── Repository/ProtectedTransactionStatement.php   (@internal)
+    ├── Repository/SavepointScope.php   (@internal)
+    ├── Repository/SavepointTransactionRunnerInterface.php
+    ├── Repository/TransactionConnectionClaim.php   (@internal)
+    ├── Repository/TransactionRunnerInterface.php
+    ├── Repository/VerifiedTransactionCommandScope.php   (@internal)
+    └── Repository/VerifiedTransactionCommandsInterface.php
 ```
 
 Root PSR-4 namespace: `Maatify\PhpPersistence\` → `src/` ([DEC-004](docs/decisions/DEC-004-package-identity-namespace-and-exception-marker.md)). `@internal` classes are loadable (PHP enforces no visibility on a class itself) but are **not** part of the public contract or SemVer; see §3.5.
@@ -765,8 +780,10 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Pagination\Exception\HostSnapshotRowLimitExceededException`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Ordering\Repository\OrderingOperations`** — shared Ordering SQL and validation behind both managers.
+- **`Ordering\Repository\UniqueOrderingOperations`**, **`UniqueOrderingSchema`** and **`UniqueOrderingSql`** — the B1 implementation: dense-ordering commands, the schema and anchor eligibility checks, and the SQL it issues. They are not entry points; B1 is used through `Config\UniqueOrderingConfig` and the three `ProtectedScopedOrderingManager` methods in §5.4.1. The `UniqueOrderingConfig::$anchor` property holds a `ScopedOrderingConfig` for the anchor, which validates the identifiers and provides safely quoted identifiers through its accessors. It is public in PHP visibility but is marked `@internal` and is not part of the public contract.
 - **`Transaction\Repository\ProtectedTransactionConnection`** and **`ProtectedTransactionStatement`** — scoped driver receivers. Ordering reaches the private checkout reservation inside the package. The checkout exposes no callback entry point. Receivers expire at the end of the reservation and provide no raw-resource accessor.
 - **Transaction Repository internals for exclusive write checkouts** — TransactionConnectionClaim, ProtectedTransactionDriver, ProtectedTransactionCommandExecutor and VerifiedTransactionCommandScope share claims, implement driver controls and restrict callback authority. These types are package internals and are not attachment or command entry points for consumers.
+- **Members tagged `@internal` in public classes** — beyond those named above (for example in the Protected and Host-snapshot catalogs, plans, attempts, grants and settlement DTO constructors), the `@internal` tag in the source docblock is authoritative. A public class does not make its `@internal` members part of the contract.
 - **`Transaction\Repository\SavepointScope`** — the shared `SAVEPOINT`/`RELEASE SAVEPOINT`/`ROLLBACK TO SAVEPOINT` helper used by `PdoSavepointTransactionRunner` and the movement operations of both Ordering managers (per [DEC-011](docs/decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)). Savepoint names use the format `maatify_persistence_sp_<32 lowercase hex characters>`.
 
 ---

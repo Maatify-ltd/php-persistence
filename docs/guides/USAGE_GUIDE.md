@@ -57,7 +57,7 @@ php examples/ordering_basic_usage.php
 
 Each command ends with `OK`. Transaction commits invoice 1 and rolls back the second insert. Pagination shows page 2 with 15 of 25 rows matching and a maximum of 10 rows per page. Ordering appends at position 4 in the seeded scope, moves row 3 to the first position, and verifies an outer rollback. Discard the disposable database when finished.
 
-RC.2 contains the three Basic examples. C1, B, Keyset, static and dynamic Offset sorting, Protected Host checkout and Ordering, Verified Apply/Discard and the raw Ordering tail-read budget belong to unreleased source. See the [RC.2 Package Reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+RC.2 contains the three Basic examples. C1, B, Keyset, static and dynamic Offset sorting, Protected Host checkout and Ordering, protected UNIQUE-safe Ordering B1, Verified Apply/Discard and the raw Ordering tail-read budget belong to unreleased source. See the [RC.2 Package Reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
 
 ## Verify unreleased source in a clean consumer
 

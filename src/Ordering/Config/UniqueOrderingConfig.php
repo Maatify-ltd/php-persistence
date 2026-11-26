@@ -9,7 +9,7 @@ use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingConfigurationExcept
 /** Trusted deployment configuration for protected dense UNIQUE ordering. */
 final readonly class UniqueOrderingConfig
 {
-    /** @internal Reuses validated, quoted anchor identifiers. */
+    /** @internal Holds the anchor configuration, which validates identifiers and quotes them through its accessors. */
     public ScopedOrderingConfig $anchor;
 
     /**
