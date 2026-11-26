@@ -8,13 +8,25 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 
-/** One trusted Host-registered SQL command. */
+/**
+ * Registers one trusted SQL command and declares its bindings, result mode
+ * and effect on the page-authorization generation. The Host owns the SQL
+ * semantics and must declare a preserving effect only for a command that
+ * cannot change the session or current transaction.
+ */
 final readonly class HostSnapshotCommandPlan
 {
     /** @var list<string> @internal */
     public array $parameterNames;
 
-    /** @param array<array-key, mixed> $parameterNames */
+    /**
+     * Accepts a non-blank, semicolon-free statement and a list of unique bare
+     * binding names. Bounded rows require a positive limit and preserve the
+     * associative keys from PDO. Affected-row mode ignores the limit. The
+     * default effect invalidates the generation before the command is sent.
+     *
+     * @param array<array-key, mixed> $parameterNames
+     */
     public function __construct(
         /** @internal */
         public string $sql,

@@ -95,9 +95,11 @@ final readonly class ProtectedScopedOrderingManager
     }
 
     /**
-     * Reserves the next dense position under the configured anchor. The Host
-     * inserts on the same checkout and owns transaction completion. Pass null
-     * for a global list or the positive anchor ID for a scoped list.
+     * Calculates the next dense position under the anchor lock, with room for
+     * one staging position after append. The Host performs the insert on the
+     * same checkout and decides when to end the transaction. Pass null for a
+     * global list or the positive anchor ID for a scoped list. A checkout
+     * without confirmed active authority rejects the operation.
      *
      * @throws InvalidOrderingOperationException For a scope ID outside the profile.
      * @throws OrderingExecutionException If eligibility or append capacity cannot be confirmed.
@@ -117,10 +119,12 @@ final readonly class ProtectedScopedOrderingManager
     }
 
     /**
-     * Moves a row within dense positions 1..N under a reserved checkout and
-     * local savepoint. The caller supplies a positive ID and position.
-     * False means the target is absent from an eligible scope. True confirms
-     * local completion or a no-op pending the Host transaction outcome.
+     * Moves a row within dense positions 1..N under the active checkout.
+     * The caller supplies a positive ID and position. A mutating move uses a
+     * local savepoint and needs a free staging position. False means the
+     * target is absent from an eligible scope. True confirms local completion
+     * or a no-op pending the Host transaction outcome. An unavailable checkout
+     * or unconfirmed active scope rejects the operation.
      *
      * @throws InvalidOrderingOperationException For an invalid identifier or position.
      * @throws OrderingExecutionException If eligibility, the move or its result cannot be confirmed.
@@ -142,11 +146,12 @@ final readonly class ProtectedScopedOrderingManager
     }
 
     /**
-     * Runs a restricted registered DELETE, compacts the scope and confirms
-     * local completion under one reservation. The Host authorizes deletion
-     * and decides commit or rollback. The command ID identifies the exact
-     * affected-row DELETE registered in the checkout. False means an eligible
-     * scope lacks the target. True confirms local completion pending Host commit.
+     * Runs a restricted registered DELETE and compacts the scope in one local
+     * savepoint. The Host authorizes deletion and decides commit or rollback.
+     * The command ID identifies the exact affected-row DELETE registered in the
+     * active checkout. False means an eligible scope lacks the target. True
+     * confirms local completion pending Host commit. An unavailable checkout
+     * or unconfirmed active scope rejects the operation.
      *
      * @throws InvalidOrderingOperationException For an invalid identifier or ineligible DELETE plan.
      * @throws ProtectedTransactionException For an unregistered command or invalid binding declaration.

@@ -10,8 +10,9 @@ use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 
 /**
  * Immutable mapped page and navigation metadata shared by the array and JSON
- * representations. Counts come from separate reads and can differ under
- * concurrent writes.
+ * representations. The DTO validates metadata shape and navigation. The
+ * producing paginator and connection determine read consistency. Total and
+ * filtered counts are not required to have a particular relation.
  *
  * @template T of array<array-key, mixed>|object
  */
@@ -90,6 +91,10 @@ final readonly class PageResultDTO implements JsonSerializable
         }
     }
 
+    /**
+     * Enforces structural metadata and navigation invariants using the filtered
+     * count for pagination, independently of the total count.
+     */
     private function assertValid(): void
     {
         $this->assertData($this->data);

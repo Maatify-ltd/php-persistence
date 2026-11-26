@@ -11,10 +11,15 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum;
 final class HostSnapshotAttemptRecord
 {
     public HostSnapshotPageAttemptStateEnum $state = HostSnapshotPageAttemptStateEnum::NEW;
+    /** Null until this invocation publishes its terminal, connection-free outcome. */
     public ?HostSnapshotPageSettlementDTO $settlement = null;
 
     public function __construct(public ?HostSnapshotPageGrant $grant) {}
 
+    /**
+     * Publishes the outcome and drops the grant reference. For an admitted
+     * attempt, the source completes this step while holding the reservation.
+     */
     public function finish(HostSnapshotPageSettlementDTO $settlement): void
     {
         $this->settlement = $settlement;

@@ -13,7 +13,13 @@ final readonly class HostSnapshotPageReader
 {
     public function __construct(private HostSnapshotConnection $connection) {}
 
-    /** @return PageResultDTO<array<array-key, mixed>|object> */
+    /**
+     * Uses the registered count and data statements to produce one bounded page.
+     * Sets the mapping-phase flag after the data cursor closes, before validating
+     * row keys or invoking the Host's mapper. An empty filtered result skips mapping.
+     *
+     * @return PageResultDTO<array<array-key, mixed>|object>
+     */
     public function read(HostSnapshotGrantRegistration $registered, bool &$mapping): PageResultDTO
     {
         $shape = new PdoPaginationExecution();
@@ -69,7 +75,12 @@ final readonly class HostSnapshotPageReader
         return new PageResultDTO($data, $page, $perPage, $total, $filtered, $pages, $page < $pages, $page > 1, $sortBy, $direction);
     }
 
-    /** @param array<string, string|int|bool|null> $bindings */
+    /**
+     * Accepts a single scalar count from one row and one column. Fetching
+     * positional rows keeps duplicate aliases from hiding multiple columns.
+     *
+     * @param array<string, string|int|bool|null> $bindings
+     */
     private function count(string $sql, array $bindings, PdoPaginationExecution $shape): int
     {
         $rows = $this->connection->rows($sql, $bindings, 2, positional: true);

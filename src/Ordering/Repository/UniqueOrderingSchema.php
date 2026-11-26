@@ -12,7 +12,14 @@ final readonly class UniqueOrderingSchema
 {
     public function __construct(private UniqueOrderingSql $sql, private UniqueOrderingConfig $config) {}
 
-    /** @return array{id: int, position: int, anchor: int} Positive integer maxima for the selected profile. */
+    /**
+     * Matches the Host receipt to the current visible schema and checks table,
+     * key and session prerequisites. The reviewed receipt covers deployment
+     * facts the connection cannot see. Required visible facts still need
+     * independent confirmation.
+     *
+     * @return array{id: int, position: int, anchor: int} Positive integer maxima for the selected profile.
+     */
     public function verify(): array
     {
         $receipt = $this->config->schemaAttestation;
@@ -80,7 +87,12 @@ final readonly class UniqueOrderingSchema
         }
     }
 
-    /** @return array{fingerprint: string, foreignKeys: int} */
+    /**
+     * Fingerprints the table structure excluding the changing AUTO_INCREMENT
+     * counter. Counts outgoing foreign keys to detect incomplete metadata.
+     *
+     * @return array{fingerprint: string, foreignKeys: int}
+     */
     private function definition(ScopedOrderingConfig $table): array
     {
         $rows = $this->sql->rows('SHOW CREATE TABLE ' . $table->quotedTable());
@@ -187,6 +199,11 @@ REGEX;
         return $types;
     }
 
+    /**
+     * Reconciles visible outgoing foreign keys with SHOW CREATE. A permitted
+     * same-schema scope-to-anchor key needs visible restricted update and
+     * delete actions. The receipt covers otherwise invisible dependencies.
+     */
     private function checkForeignKeys(ScopedOrderingConfig $table, int $declaredCount): void
     {
         $key = self::coordinates($table);
@@ -245,6 +262,10 @@ REGEX;
         return ['schema' => $schema, 'table' => $name];
     }
 
+    /**
+     * Returns the positive limit of a qualified non-null signed or unsigned
+     * INT column. An unsigned limit requires 64-bit PHP integers.
+     */
     private static function integerLimit(?string $type): int
     {
         if ($type === null || preg_match('/\Aint(?:\([0-9]+\))?( unsigned)?\z/i', $type, $parts) !== 1) {

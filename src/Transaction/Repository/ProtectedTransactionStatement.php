@@ -21,6 +21,10 @@ final class ProtectedTransactionStatement
         private ?PDOStatement $statement,
     ) {}
 
+    /**
+     * Binds a bare placeholder name with its PDO type. A driver failure
+     * is latched before the error escapes.
+     */
     public function bind(string $name, int|string|bool|null $value): void
     {
         $statement = $this->driver();
@@ -39,7 +43,13 @@ final class ProtectedTransactionStatement
         }
     }
 
-    /** @param array<array-key, mixed>|null $params */
+    /**
+     * Marks the cursor for cleanup before execution. A successful call returns
+     * true. A failing driver result latches and throws an error. Null uses the
+     * values bound on the statement.
+     *
+     * @param array<array-key, mixed>|null $params
+     */
     public function execute(?array $params = null): bool
     {
         $statement = $this->driver();
@@ -55,7 +65,12 @@ final class ProtectedTransactionStatement
         }
     }
 
-    /** @return array<array-key, mixed>|false */
+    /**
+     * Reads the next associative row. A false result with successful SQLSTATE
+     * means EOF, while a failing statement latches and throws.
+     *
+     * @return array<array-key, mixed>|false
+     */
     public function row(): array|false
     {
         $statement = $this->driver();
@@ -71,6 +86,10 @@ final class ProtectedTransactionStatement
         }
     }
 
+    /**
+     * Reads the zero-based column, preserving a successful false result.
+     * False with a failing SQLSTATE latches and throws a statement error.
+     */
     public function fetchColumn(int $column = 0): mixed
     {
         $statement = $this->driver();
@@ -133,6 +152,10 @@ final class ProtectedTransactionStatement
         }
     }
 
+    /**
+     * Checks the receiver fence before returning the statement. A sealed
+     * statement rejects further bind, execution and fetch calls.
+     */
     private function driver(): PDOStatement
     {
         $this->connection->ensureAvailable();

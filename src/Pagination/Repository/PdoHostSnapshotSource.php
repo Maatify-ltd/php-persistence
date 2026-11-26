@@ -34,15 +34,30 @@ use Throwable;
 use WeakMap;
 use WeakReference;
 
+/**
+ * Holds exclusive, delegated use of one Host-provided PDO for snapshot pagination.
+ * The Host keeps the source alive, routes all connection use through it without
+ * aliases, reconnect, replay, or multiplexing, and directs transaction completion
+ * and the final disposition of the connection.
+ *
+ * At most one checkout is registered at a time. Page grants belong to a qualified
+ * REPEATABLE READ transaction generation. Commands and admitted page attempts
+ * share a reservation so they cannot control the same session concurrently.
+ */
 final class PdoHostSnapshotSource
 {
-    /** @var WeakMap<PDO, true>|null */
+    /**
+     * Prevents attaching the same live PDO a second time, including after handoff.
+     *
+     * @var WeakMap<PDO, true>|null
+     */
     private static ?WeakMap $attached = null;
 
     /** @var WeakReference<PdoHostSnapshotCheckout>|null */
     private ?WeakReference $checkout = null;
     /** @var WeakReference<PdoHostSnapshotCheckout>|null */
     private ?WeakReference $retiredCheckout = null;
+    /** A source-local identity shared with grants without retaining the checkout handle. */
     private ?object $checkoutIdentity = null;
     /** @var WeakMap<HostSnapshotPageGrant, HostSnapshotGrantRegistration> */
     private WeakMap $grants;
@@ -51,8 +66,10 @@ final class PdoHostSnapshotSource
     private State $state = State::IDLE;
     private bool $busy = false;
     private ?string $sessionId = null;
+    /** Identifies the qualified transaction against which the source checks page grants. */
     private ?object $generation = null;
     // Session variables do not reveal a pending one-transaction override.
+    /** Keeps the next-transaction setting unresolved until the source confirms its own begin. */
     private bool $nextTransactionUnconfirmed = true;
 
     private function __construct(
@@ -63,6 +80,12 @@ final class PdoHostSnapshotSource
         $this->attempts = new WeakMap();
     }
 
+    /**
+     * Registers one exclusively delegated, non-persistent pdo_mysql PDO or
+     * Pdo\Mysql with exception mode and the default PDOStatement class. Rejects
+     * a PDO already registered and leaves attributes under Host control. The
+     * idle-session check occurs when the Host requests a checkout.
+     */
     public static function attachExclusive(PDO $pdo, HostSnapshotCatalog $catalog): self
     {
         self::$attached ??= new WeakMap();
@@ -83,6 +106,11 @@ final class PdoHostSnapshotSource
         return new self(new HostSnapshotConnection($pdo), $catalog);
     }
 
+    /**
+     * Issues the only active checkout after confirming a stable, idle session
+     * with autocommit enabled. A failed session check quarantines the source.
+     * The checkout still needs a qualified transaction before authorizing pages.
+     */
     public function checkout(): PdoHostSnapshotCheckout
     {
         if ($this->busy || $this->checkout !== null || $this->state !== State::IDLE) {
@@ -104,6 +132,12 @@ final class PdoHostSnapshotSource
         }
     }
 
+    /**
+     * Permanently retires the source and transfers the same PDO when statement
+     * release is confirmed. An idle disposition requires a known idle session
+     * and a resolved next-transaction setting. Otherwise the Host receives the
+     * PDO for reconciliation. A held reservation or unresolved cursor blocks transfer.
+     */
     public function retireForHost(): HostSnapshotRetirementDTO
     {
         $this->reserveRetirement();
@@ -125,6 +159,12 @@ final class PdoHostSnapshotSource
         }
     }
 
+    /**
+     * Permanently retires the source and drops the library's driver references.
+     * A held reservation rejects the request. This issues no explicit SQL or
+     * transaction command, and dropping the last reference can trigger driver I/O,
+     * rollback or disconnection. It gives no acknowledgement of server outcome.
+     */
     public function discardForHost(): void
     {
         $this->reserveRetirement();
@@ -136,6 +176,7 @@ final class PdoHostSnapshotSource
         }
     }
 
+    /** Takes exclusive use for retirement, including when the source is quarantined. */
     private function reserveRetirement(): void
     {
         if ($this->busy || $this->state === State::RETIRED) {
@@ -144,6 +185,10 @@ final class PdoHostSnapshotSource
         $this->busy = true;
     }
 
+    /**
+     * Invalidates checkout and generation authority while preserving the retired
+     * state for the previous checkout handle.
+     */
     private function markRetired(): void
     {
         $this->retiredCheckout = $this->checkout;
@@ -153,7 +198,7 @@ final class PdoHostSnapshotSource
         $this->state = State::RETIRED;
     }
 
-    /** @internal */
+    /** @internal Reports BUSY under reservation and distinguishes release from retirement. */
     public function checkoutState(PdoHostSnapshotCheckout $checkout): State
     {
         if ($this->retiredCheckout?->get() === $checkout) {
@@ -166,7 +211,11 @@ final class PdoHostSnapshotSource
         return $this->busy ? State::BUSY : $this->state;
     }
 
-    /** @internal */
+    /**
+     * @internal Releases only the registered idle checkout after confirming the
+     * same session and that no next-transaction setting remains unresolved. The
+     * source retains the PDO, and a failed confirmation quarantines it.
+     */
     public function releaseCheckout(PdoHostSnapshotCheckout $checkout): void
     {
         $this->reserve($checkout, State::IDLE);
@@ -185,7 +234,11 @@ final class PdoHostSnapshotSource
         }
     }
 
-    /** @internal */
+    /**
+     * @internal Sets REPEATABLE READ for the next transaction and starts it with
+     * the requested mode on the idle checkout. Records a new generation after
+     * confirming the same active session. Uncertain start quarantines the source.
+     */
     public function beginCheckout(PdoHostSnapshotCheckout $checkout, HostSnapshotAccessModeEnum $mode): void
     {
         $this->reserve($checkout, State::IDLE);
@@ -206,6 +259,11 @@ final class PdoHostSnapshotSource
     }
 
     /**
+     * Runs a registered plan under the shared reservation. An invalidating
+     * command retires the page generation before SQL. A recognized result
+     * overflow remains the reported error even if scope confirmation fails
+     * and quarantines the source.
+     *
      * @internal
      * @param array<array-key, mixed> $bindings
      * @return int|list<array<array-key, mixed>>
@@ -249,7 +307,11 @@ final class PdoHostSnapshotSource
         }
     }
 
-    /** @internal */
+    /**
+     * @internal Invalidates the generation before explicit commit or rollback.
+     * Completion requires the same session to become idle without chaining or
+     * releasing it. Unconfirmed continuity or a pending setting can quarantine it.
+     */
     public function finishCheckout(PdoHostSnapshotCheckout $checkout, bool $commit): void
     {
         $this->reserve($checkout, State::TRANSACTION_ACTIVE, State::TRANSACTION_UNQUALIFIED);
@@ -268,6 +330,10 @@ final class PdoHostSnapshotSource
     }
 
     /**
+     * Registers the query, exact bindings and request against the current checkout
+     * and qualified generation without reading a page. Rechecks both identities
+     * after constructing the registration because autoload may run Host code.
+     *
      * @internal
      * @param array<array-key, mixed> $bindings
      */
@@ -302,12 +368,16 @@ final class PdoHostSnapshotSource
         return $grant;
     }
 
+    /** Confirms that the captured grant context still holds after possible Host reentry. */
     private function canRegisterOn(object $checkoutIdentity, object $generation): bool
     {
         return ! $this->busy && $this->checkoutIdentity === $checkoutIdentity && $this->generation === $generation;
     }
 
-    /** @internal */
+    /**
+     * @internal Creates a fresh invocation and its outcome record for a grant from
+     * this checkout. The grant's generation and consumption are checked on admission.
+     */
     public function newCheckoutAttempt(PdoHostSnapshotCheckout $checkout, HostSnapshotPageGrant $grant): HostSnapshotPageAttempt
     {
         $registered = $this->grants[$grant] ?? null;
@@ -324,6 +394,11 @@ final class PdoHostSnapshotSource
     }
 
     /**
+     * Settles a registered fresh attempt. Admission alone consumes the grant.
+     * An admitted read publishes a terminal outcome before releasing the shared
+     * reservation, and uncertainty quarantines the source. A primary read or
+     * mapper throwable survives subsequent confirmation and cleanup.
+     *
      * @internal
      * @return PageResultDTO<array<array-key, mixed>|object>
      */
@@ -401,12 +476,14 @@ final class PdoHostSnapshotSource
         }
     }
 
+    /** Revokes the generation and prevents further work until the Host disposes of the source. */
     private function quarantine(): void
     {
         $this->generation = null;
         $this->state = State::QUARANTINED;
     }
 
+    /** Takes the shared reservation only for the registered checkout in an allowed state. */
     private function reserve(PdoHostSnapshotCheckout $checkout, State ...$allowed): void
     {
         if ($this->busy || $this->checkout?->get() !== $checkout || ! in_array($this->state, $allowed, true)) {
@@ -415,6 +492,11 @@ final class PdoHostSnapshotSource
         $this->busy = true;
     }
 
+    /**
+     * Checks the recorded session identity and enabled autocommit. A null
+     * expectation skips the activity check. These observations cannot establish
+     * continuity after a command or failure that may have replaced the transaction.
+     */
     private function confirmSession(?bool $active): string
     {
         $observed = $this->connection->inspect();

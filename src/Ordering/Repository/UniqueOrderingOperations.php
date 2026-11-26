@@ -25,6 +25,10 @@ final readonly class UniqueOrderingOperations
     /** @var array<string, int> */
     private array $scopeBindings;
 
+    /**
+     * Binds the reserved connection to the expected session and selected scope.
+     * Global lists take null, and scoped lists take the positive anchor ID.
+     */
     public function __construct(
         private ProtectedTransactionConnection $connection,
         private string $session,
@@ -43,6 +47,11 @@ final readonly class UniqueOrderingOperations
         $this->scopeBindings = $scopeId === null ? [] : ['scope_id' => $scopeId];
     }
 
+    /**
+     * Calculates the append position after locking and validating the dense
+     * list. Leaving a staging slot after append is part of the capacity check.
+     * The Host inserts while that transaction retains the anchor lock.
+     */
     public function next(): int
     {
         $size = count($this->lockScope(null));
@@ -56,6 +65,11 @@ final readonly class UniqueOrderingOperations
         return $size + 1;
     }
 
+    /**
+     * Moves a present row to a position in 1..N. A mutating move needs a free
+     * staging slot and confirms the resulting dense order under a savepoint.
+     * An eligible missing row returns false, and a no-op or local success returns true.
+     */
     public function move(int $id, int $newOrder): bool
     {
         if ($newOrder < 1) {
@@ -95,6 +109,11 @@ final readonly class UniqueOrderingOperations
         return true;
     }
 
+    /**
+     * Checks the exact affected-row DELETE declaration even for an absent row.
+     * Returns false if an eligible scope lacks the row, otherwise confirms
+     * deletion and compaction within the same savepoint before returning true.
+     */
     public function delete(int $id, ProtectedTransactionCommandPlan $command): bool
     {
         $expected = 'DELETE FROM ' . $this->table . ' WHERE ' . $this->idColumn . ' = :id'
@@ -127,7 +146,13 @@ final readonly class UniqueOrderingOperations
         return true;
     }
 
-    /** @return list<int> */
+    /**
+     * Confirms the session and deployment, then locks the existing anchor
+     * before reading the ordered IDs. The anchor coordinates all writers,
+     * including on an empty list, under the Host deployment protocol.
+     *
+     * @return list<int>
+     */
     private function lockScope(?int $id): array
     {
         if ($id !== null && $id < 1) {
@@ -153,7 +178,12 @@ final readonly class UniqueOrderingOperations
         return $this->readScope($bounds['id']);
     }
 
-    /** @return list<int> */
+    /**
+     * Locks and reads a bounded scope in position order. Validates positive
+     * row IDs and contiguous positions from 1 before returning.
+     *
+     * @return list<int>
+     */
     private function readScope(int $idLimit): array
     {
         $rows = $this->sql->rows(
@@ -195,6 +225,9 @@ final readonly class UniqueOrderingOperations
         );
     }
 
+    /**
+     * Shifts toward the free slot in an order that preserves the UNIQUE key.
+     */
     private function shift(bool $increase, int $first, int $last): int
     {
         return $this->sql->update(
@@ -225,7 +258,13 @@ final readonly class UniqueOrderingOperations
         }
     }
 
-    /** @param Closure(): void $operation */
+    /**
+     * Confirms the active session and savepoint release before returning.
+     * On failure, local undo is attempted only while the receiver is usable.
+     * Unconfirmed cleanup is left for settlement and the primary is rethrown.
+     *
+     * @param Closure(): void $operation
+     */
     private function mutate(Closure $operation): void
     {
         $savepoint = SavepointScope::open($this->connection);

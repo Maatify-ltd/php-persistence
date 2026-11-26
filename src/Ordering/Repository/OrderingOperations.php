@@ -18,6 +18,11 @@ use Throwable;
 /** @internal Shared Ordering SQL and validation for raw and exclusively delegated connections. */
 final readonly class OrderingOperations
 {
+    /**
+     * Reads the eligible scope maximum without requesting a locking read, then adds one.
+     * An empty scope starts at 1. A PDO failure reported by return value or an
+     * out-of-range stored or resulting position raises OrderingExecutionException.
+     */
     public function getNextPosition(
         PDO $pdo,
         ScopedOrderingConfig $config,
@@ -245,6 +250,11 @@ final readonly class OrderingOperations
         return true;
     }
 
+    /**
+     * Checks scope eligibility and the soft-delete filter without a locking read.
+     * A non-positive ID or successful miss returns false. A PDO failure reported
+     * by return value raises OrderingExecutionException.
+     */
     public function rowExistsInScope(
         PDO $pdo,
         ScopedOrderingConfig $config,
@@ -386,7 +396,7 @@ final readonly class OrderingOperations
      * current = 5, new = 2
      * rows 2..4 become 3..5.
      *
-     * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
+     * @param int|string|null $scopeValue A scope key for a scoped list. Null selects global ordering or the configured nullable scope.
      */
     private function shiftOrdersUp(
         PDO|ProtectedTransactionConnection $pdo,
@@ -425,7 +435,7 @@ final readonly class OrderingOperations
      * current = 2, new = 5
      * rows 3..5 become 2..4.
      *
-     * @param int|string|null $scopeValue Required when config has a scope column; null for global ordering.
+     * @param int|string|null $scopeValue A scope key for a scoped list. Null selects global ordering or the configured nullable scope.
      */
     private function shiftOrdersDown(
         PDO|ProtectedTransactionConnection $pdo,
@@ -460,7 +470,7 @@ final readonly class OrderingOperations
     /**
      * Updates the target row to its final order value.
      *
-     * @param int|string|null $scopeValue Required when config has a scope column; null for global ordering.
+     * @param int|string|null $scopeValue A scope key for a scoped list. Null selects global ordering or the configured nullable scope.
      */
     private function updateTargetOrder(
         PDO|ProtectedTransactionConnection $pdo,

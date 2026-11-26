@@ -9,7 +9,11 @@ use Maatify\PhpPersistence\Pagination\Config\PaginationConfig;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\InvalidPaginationQueryException;
 
-/** A trusted Host registration of the three statements that make up one page. */
+/**
+ * Registers the total count, filtered count and data statements of one page.
+ * The Host supplies non-locking, side-effect-free InnoDB reads and owns the
+ * correspondence between SQL placeholders and each statement's declared names.
+ */
 final readonly class HostSnapshotPagePlan
 {
     /** @var list<string> */
@@ -22,6 +26,10 @@ final readonly class HostSnapshotPagePlan
     private array $names;
 
     /**
+     * Validates each statement and its list of unique bare parameter names.
+     * A page grant supplies one binding map covering the union of the names.
+     * The mapper receives associative rows after statement resources are closed.
+     *
      * @param array<array-key, mixed> $totalParameterNames
      * @param array<array-key, mixed> $filteredParameterNames
      * @param array<array-key, mixed> $dataParameterNames
@@ -47,6 +55,9 @@ final readonly class HostSnapshotPagePlan
     }
 
     /**
+     * Validates the exact shared binding map and builds the three per-statement
+     * subsets for the registered page.
+     *
      * @internal
      * @param array<array-key, mixed> $bindings
      */

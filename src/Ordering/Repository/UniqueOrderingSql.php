@@ -15,6 +15,9 @@ final readonly class UniqueOrderingSql
     public function __construct(private ProtectedTransactionConnection $connection) {}
 
     /**
+     * Collects rows from a scope or metadata query before sealing its cursor.
+     * Bounds on scope reads belong to the supplied SQL.
+     *
      * @param array<string, int|string> $bindings
      * @return list<array<array-key, mixed>>
      */
@@ -30,13 +33,22 @@ final readonly class UniqueOrderingSql
         });
     }
 
-    /** @param array<string, int|string> $bindings */
+    /**
+     * Captures the affected-row count and seals the statement. The caller
+     * validates the count against the locked scope.
+     *
+     * @param array<string, int|string> $bindings
+     */
     public function update(string $sql, array $bindings): int
     {
         return $this->execute($sql, $bindings, static fn(ProtectedTransactionStatement $statement): int => $statement->rowCount());
     }
 
     /**
+     * Seals the statement before returning its result and removes it from
+     * the receiver. A cleanup failure can fence the receiver, while an
+     * earlier operation throwable keeps precedence.
+     *
      * @template T
      * @param array<string, int|string> $bindings
      * @param callable(ProtectedTransactionStatement): T $result

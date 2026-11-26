@@ -49,6 +49,11 @@ function publishedRead(string $path): string
     return $contents;
 }
 
+/**
+ * Recognizes the exact RC.2 target after case normalization, an optional
+ * v prefix and normalization of an omitted dot before the RC number.
+ * Other versions fail the metadata check.
+ */
 function publishedVersion(mixed $version): bool
 {
     if (!is_string($version)) {
@@ -64,7 +69,13 @@ function publishedVersion(mixed $version): bool
     return preg_replace('/-rc([0-9]+)\z/', '-rc.$1', $version) === PAV_TARGET;
 }
 
-/** @return array<string, string> */
+/**
+ * Returns sorted relative paths and SHA-256 hashes for regular files.
+ * The caller compares installed dist with the qualified archive and
+ * rejects path or byte differences. Unsupported entry types fail.
+ *
+ * @return array<string, string>
+ */
 function publishedInventory(string $directory): array
 {
     if (!is_dir($directory) || is_link($directory)) {
@@ -93,7 +104,13 @@ function publishedInventory(string $directory): array
     return $files;
 }
 
-/** @param array<array-key, mixed> $metadata */
+/**
+ * Requires both GitHub source and zip dist references to name the exact
+ * qualified SHA and expected repository locations. The caller separately
+ * requires a dist installation before comparing the installed inventory.
+ *
+ * @param array<array-key, mixed> $metadata
+ */
 function publishedReference(array $metadata, string $sha): void
 {
     $source = $metadata['source'] ?? null;

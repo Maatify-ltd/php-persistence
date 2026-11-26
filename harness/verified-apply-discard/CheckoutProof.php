@@ -22,6 +22,11 @@ enum Intent
     case DISCARD;
 }
 
+/**
+ * The proof callback's explicit Apply or Discard intent and independent
+ * result payload. The selected intent, rather than payload truthiness,
+ * controls how the fixture resolves the operation.
+ */
 final readonly class Decision
 {
     public function __construct(public Intent $intent, public mixed $value) {}
@@ -59,6 +64,10 @@ final class Window
     }
 
     /**
+     * Runs the proof window once. In Host mode it resolves the local savepoint
+     * and returns the callback payload. In Owned mode it returns the decision
+     * to the fixture so the fixture can resolve the enclosing transaction.
+     *
      * @param Closure(Closure(string, array<string, int>): (int|array)): Decision $work
      * @param ?Closure(string): bool $beforeControl Fixture only: false/throw before dispatch.
      */
@@ -221,10 +230,9 @@ final class Window
 }
 
 /**
- * Experimental parallel entry points. Both paths reserve the same actual owner
- * as existing Protected checkout, so this can test coexistence with a single
- * claim. A separate production type and extraction of the shared core are
- * acceptance work. This fixture does not install an independent WeakMap.
+ * Historical proof fixture for verified Apply and Discard. Both paths use
+ * the Protected checkout claim and private reservation seam to test actual
+ * exclusivity. The production Verified checkout is implemented separately.
  */
 final class ParallelCheckout
 {
@@ -250,13 +258,24 @@ final class ParallelCheckout
         return $this->checkout->runRegisteredCommand($id, $bindings);
     }
 
-    /** @param Closure(Closure(string, array<string, int>): (int|array)): Decision $work */
+    /**
+     * Uses the local savepoint and returns the payload after applying or undoing
+     * the window. The Host still controls the outer transaction.
+     *
+     * @param Closure(Closure(string, array<string, int>): (int|array)): Decision $work
+     */
     public function runInHost(Closure $work, ?Closure $fault = null): mixed
     {
         return $this->window->run($work, beforeControl: $fault);
     }
 
-    /** @param Closure(Closure(string, array<string, int>): (int|array)): Decision $work */
+    /**
+     * Starts and ends the entire fixture transaction according to the explicit
+     * decision before returning its payload. An escaping callback error remains
+     * primary if cleanup also fails.
+     *
+     * @param Closure(Closure(string, array<string, int>): (int|array)): Decision $work
+     */
     public function runOwned(Closure $work): mixed
     {
         $this->checkout->begin();

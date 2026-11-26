@@ -34,6 +34,13 @@ final class PdoSnapshotPaginator
     }
 
     /**
+     * Consumes the one-shot operation before any driver call, including a
+     * later refusal. Requires an idle REPEATABLE READ session with autocommit.
+     * The page is returned only after confirming commit on the same idle
+     * session. On a read or mapper failure, rollback requires confirmed cursor
+     * release and continuity. The original throwable escapes and the terminal
+     * disposition remains available on this instance.
+     *
      * @template TItem of array<array-key, mixed>|object
      *
      * @param callable(array<string, mixed>): TItem $mapper
@@ -105,7 +112,10 @@ final class PdoSnapshotPaginator
         }
     }
 
-    /** Returns the same terminal snapshot without reading the database. */
+    /**
+     * Returns null until this attempt settles, then the same immutable
+     * disposition without asking the database, including after an exception.
+     */
     public function connectionOutcome(): ?SnapshotConnectionOutcomeDTO
     {
         return $this->outcome;
@@ -155,6 +165,10 @@ final class PdoSnapshotPaginator
         return [$session, (bool) $autocommit];
     }
 
+    /**
+     * Requires the known isolation variables to agree on REPEATABLE READ.
+     * These session defaults do not expose a pending one-transaction override.
+     */
     private function hasRepeatableRead(PDO $pdo, SnapshotReadResources $resources): bool
     {
         $rows = $this->rows(
@@ -216,6 +230,10 @@ final class PdoSnapshotPaginator
         return $rows;
     }
 
+    /**
+     * Requires the same active session before sending the explicit end and
+     * the same idle session after acknowledgement.
+     */
     private function finishTransaction(PDO $pdo, SnapshotReadResources $resources, string $session, string $sql): void
     {
         $this->assertSession($pdo, $resources, $session, true);

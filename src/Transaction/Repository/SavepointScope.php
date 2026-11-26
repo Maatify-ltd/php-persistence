@@ -93,7 +93,11 @@ final readonly class SavepointScope
         }
     }
 
-    /** After a Throwable in the window: best-effort ROLLBACK TO and RELEASE. The caller rethrows the original. */
+    /**
+     * On an active connection, attempts local rollback before release. A
+     * failed rollback skips release. A fenced protected receiver declines
+     * further SQL, and the caller rethrows the primary throwable.
+     */
     public function cleanupAfterFailure(): void
     {
         try {
@@ -125,6 +129,11 @@ final readonly class SavepointScope
         $this->tryControlStatement('RELEASE SAVEPOINT ' . $this->name);
     }
 
+    /**
+     * Sends control through the protected receiver when delegated, preserving
+     * its failure latch. Raw PDO reports a false execution result as
+     * TransactionExecutionException. Thrown errors propagate to the caller.
+     */
     private function executeControlStatement(string $sql): void
     {
         if ($this->pdo instanceof ProtectedTransactionConnection) {

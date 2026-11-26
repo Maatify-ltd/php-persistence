@@ -33,7 +33,7 @@ use Throwable;
  *   and savepoints, such as InnoDB. The host owns the table schema.
  *
  * Ordering model:
- * - getNextPosition() returns max(order) + 1 with a plain read and no lock.
+ * - getNextPosition() returns max(order) + 1 without requesting a locking read.
  * - getNextPositionForUpdate() returns max(order) + 1 from the latest committed
  *   state using a locking read inside an active caller-owned PDO transaction.
  * - moveWithinScope() locks the whole ordering scope with SELECT ... FOR UPDATE,
@@ -61,7 +61,7 @@ final readonly class ScopedOrderingManager
      * Soft-deleted rows are ignored when deletedAtColumn is configured.
      *
      * Note:
-     * This method does not start a transaction and does not lock the scope.
+     * This method starts no transaction and requests a plain read.
      * Concurrent inserts need caller-side serialization, such as a lock held by
      * the caller's transaction.
      *

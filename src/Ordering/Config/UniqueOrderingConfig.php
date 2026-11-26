@@ -13,10 +13,15 @@ final readonly class UniqueOrderingConfig
     public ScopedOrderingConfig $anchor;
 
     /**
-     * Qualifies a global list with a fixed positive anchor ID or a scoped list
-     * whose positive scope ID identifies its anchor. Identifiers must come
-     * from trusted deployment configuration. The position ceiling bounds SQL
-     * integers and the staging slot; the row ceiling bounds scope traversal.
+     * Configures a global list with a fixed positive anchor ID or a scoped
+     * list whose positive scope ID identifies its anchor. Construction checks
+     * trusted identifier shapes, distinct schema-qualified items and anchor
+     * tables, and the configured bounds. It rejects nullable scopes and
+     * soft-delete or update-timestamp columns. The positive position ceiling
+     * bounds positions and the staging slot within unsigned INT. The positive
+     * row ceiling caps traversal, stays within the position ceiling and leaves
+     * room for the overflow probe. Each operation verifies the live schema
+     * inside the active checkout.
      *
      * @param array<string, mixed> $schemaAttestation Versioned, separately reviewed deployment receipt.
      * @param string $activeSchemaRevision Current deployment revision from independent Host configuration.

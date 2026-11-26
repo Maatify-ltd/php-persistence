@@ -7,6 +7,7 @@ namespace Maatify\PhpPersistence\Pagination\Criteria;
 /** @internal A source-private grant registration with immutable query inputs. */
 final class HostSnapshotGrantRegistration
 {
+    /** Set when an attempt is admitted under the shared reservation, before database I/O. */
     public bool $consumed = false;
 
     public function __construct(

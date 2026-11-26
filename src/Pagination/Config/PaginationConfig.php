@@ -26,6 +26,12 @@ final readonly class PaginationConfig
 {
     private const PUBLIC_KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*$/';
 
+    /**
+     * Sets reusable size bounds and sort defaults for one query shape. The
+     * default size must lie within positive inclusive bounds. Both sort keys
+     * must match the allowlist exactly. Invalid configurations are rejected
+     * before a request is evaluated.
+     */
     public function __construct(
         public SortWhitelist $sortWhitelist,
         public string $defaultSortBy,

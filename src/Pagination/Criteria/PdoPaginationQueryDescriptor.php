@@ -29,6 +29,12 @@ final readonly class PdoPaginationQueryDescriptor
     private const RESERVED_PREFIX = '__pagination_';
 
     /**
+     * Registers trusted total, filtered and unsorted, unbounded data SQL with
+     * separate maps of bare parameter names. The caller matches those maps to
+     * the SQL placeholders. Pagination owns the reserved placeholder prefix.
+     * Shape checks reject blank or semicolon-containing SQL, reserved names
+     * and unsupported parameter values without parsing the SQL.
+     *
      * @param array<string, string|int|bool|null> $totalParams
      * @param array<string, string|int|bool|null> $filteredCountParams
      * @param array<string, string|int|bool|null> $dataParams
