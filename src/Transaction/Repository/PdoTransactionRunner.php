@@ -55,6 +55,11 @@ final readonly class PdoTransactionRunner implements TransactionRunnerInterface
     }
 
     /**
+     * Returns the callback result after committing a newly owned transaction.
+     * If PDO already reports an active transaction, joins it without creating
+     * a savepoint or directing its outcome. Only owned work is eligible for
+     * the configured deadlock replay.
+     *
      * @template TResult
      *
      * @param callable(): TResult $callback

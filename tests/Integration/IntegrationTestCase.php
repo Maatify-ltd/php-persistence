@@ -12,8 +12,8 @@ use PHPUnit\Framework\TestCase;
  * Base class of the Integration suite. It connects to the disposable database service
  * started by scripts/integration.php and fails (never skips) when the environment is missing.
  *
- * These tests prove properties of the real server and of pdo_mysql that later work units rely on.
- * They exercise no Transaction, Ordering or Pagination capability of this package.
+ * Shared fixtures support real engine and pdo_mysql characterization and
+ * the package's Transaction, Ordering and Pagination integration coverage.
  */
 abstract class IntegrationTestCase extends TestCase
 {
@@ -41,6 +41,10 @@ abstract class IntegrationTestCase extends TestCase
         return self::setting('ENGINE');
     }
 
+    /**
+     * Opens and tracks a connection to the disposable fixture service.
+     * A null password uses the integration environment setting.
+     */
     protected function connect(?string $password = null): PDO
     {
         $options = [
@@ -120,6 +124,11 @@ abstract class IntegrationTestCase extends TestCase
         return is_string($state) ? $state : '';
     }
 
+    /**
+     * Records any transaction leak before rollback, drops the tracked fixture
+     * tables and releases the connection references. Asserts the original leak
+     * after cleanup so a successful rollback cannot hide it.
+     */
     protected function tearDown(): void
     {
         $leaked = false;

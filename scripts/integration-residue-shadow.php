@@ -17,8 +17,11 @@ declare(strict_types=1);
 final class IntegrationResidueShadow
 {
     /**
-     * The runner has no pre-end binding after PHPUnit exits. Controlled tests
-     * can supply one from an owned session with a known transaction lifecycle.
+     * Collects diagnostic evidence only when the MySQL observer has the
+     * required transaction instrumentation. The runner has no pre-end
+     * binding after PHPUnit exits. Controlled tests can supply one from an
+     * owned session with a known lifecycle. An unsupported or incomplete
+     * observation remains UNKNOWN and does not change the residue gate.
      *
      * @param list<Residue> $transactions
      * @param array<int, Binding> $bindings keyed by the controlled processlist ID
@@ -50,6 +53,14 @@ final class IntegrationResidueShadow
     }
 
     /**
+     * Classifies each residue using stable observations and exact identity
+     * evidence. A controlled binding must match the transaction ID, start,
+     * thread and event. Missing identity or instrumentation stays UNKNOWN.
+     * Stale confirmation also needs acknowledged end, independent release
+     * evidence and stable snapshots with no locks or active participants.
+     * LIVE takes precedence in the aggregate, which is stale only when
+     * every residue is confirmed stale.
+     *
      * @param list<Residue> $transactions
      * @param array<int, ObservedEvent> $before keyed by the processlist ID
      * @param array<int, ObservedEvent> $after

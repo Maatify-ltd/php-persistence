@@ -23,6 +23,14 @@ final readonly class KeysetQueryDescriptor
     private const TABLE = '/\A[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\z/';
 
     /**
+     * Registers a non-empty query ID and revision for one trusted table, with
+     * a trusted, non-blank scope predicate and an optional filter that defaults
+     * to no additional filtering. Projection names are unique case-insensitively.
+     * Parameter names are unique by exact spelling, and a query with no
+     * placeholders may declare none. The Host owns predicate semantics and
+     * matches declarations to placeholders. The query ID and revision become
+     * part of continuation context.
+     *
      * @param list<string> $columns Unqualified source columns.
      * @param list<string> $parameterNames Unique ASCII names without a leading colon.
      * @throws InvalidPaginationQueryException For an invalid registration shape.

@@ -117,7 +117,7 @@ final class PdoVerifiedTransactionCheckout
      * and cursor release before returning the result. An invalid command ID
      * or binding is rejected before SQL. A latched failure fences the checkout.
      *
-     * @param array<array-key, mixed> $bindings Exact names without colons, with scalar or null values.
+     * @param array<array-key, mixed> $bindings Exact names without colons, with string, int, bool or null values.
      * @return int|list<array<array-key, mixed>>
      */
     public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
@@ -233,7 +233,8 @@ final class PdoVerifiedTransactionCheckout
     /**
      * Retires the delegation by dropping the PDO reference. The claim remains
      * while the object lives. This issues no explicit database command and
-     * preserves previously recorded terminal evidence.
+     * preserves previously recorded terminal evidence. Releasing the last
+     * reference can trigger driver I/O or rollback without confirming an outcome.
      */
     public function discardForHost(): void
     {
@@ -415,6 +416,11 @@ final class PdoVerifiedTransactionCheckout
         }
     }
 
+    /**
+     * Settles the explicit Host end while reserved. It retains any acknowledged
+     * commit or rollback as transaction evidence even if the later idle-session
+     * check fences the connection from handoff.
+     */
     private function finishHost(bool $commit): void
     {
         $this->requireActive();

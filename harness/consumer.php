@@ -249,6 +249,12 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
     }
 }
 
+/**
+ * Exercises nested legacy and candidate savepoint runners in both directions
+ * on the same PDO. Inner rollback preserves caller and outer work and the
+ * same exception object. The caller retains ownership of the transaction
+ * and ultimately rolls back the combined work.
+ */
 function exerciseSharedConnection(PDO $pdo, bool $legacySource): void
 {
     $table = 'consumer_coexistence';

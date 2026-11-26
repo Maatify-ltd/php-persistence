@@ -6,7 +6,11 @@ namespace Maatify\PhpPersistence\Pagination\Criteria;
 
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 
-/** Trusted Host registration of page and command plans. */
+/**
+ * Trusted Host registrations used for page and command authorization.
+ * Identifiers follow PHP array-key semantics, including decimal strings PHP
+ * normalizes to integer keys.
+ */
 final readonly class HostSnapshotCatalog
 {
     /** @var array<array-key, HostSnapshotPagePlan> */
@@ -16,6 +20,9 @@ final readonly class HostSnapshotCatalog
     private array $hostCommands;
 
     /**
+     * Registers plans by non-empty identifier and rejects entries of the wrong
+     * plan type. The optional command map defaults to no authorized commands.
+     *
      * @param array<array-key, mixed> $pagePlans
      * @param array<array-key, mixed> $hostCommands
      */

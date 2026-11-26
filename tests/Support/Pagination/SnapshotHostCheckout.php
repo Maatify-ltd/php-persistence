@@ -22,7 +22,12 @@ final class SnapshotHostCheckout
 
     public function __construct(private ?PDO $available, private readonly bool $knownClean = true) {}
 
-    /** @return array{int, PDO, PdoSnapshotPaginator} */
+    /**
+     * Moves the available verified PDO out of circulation and returns the
+     * checkout sequence, delegated connection and its one-shot operation.
+     *
+     * @return array{int, PDO, PdoSnapshotPaginator}
+     */
     public function checkout(): array
     {
         if (! $this->knownClean || $this->available === null) {
@@ -37,6 +42,12 @@ final class SnapshotHostCheckout
         return [$this->sequence, $pdo, $this->operation];
     }
 
+    /**
+     * Validates the outstanding checkout and supplied outcome, then drops
+     * the delegated references. A supplied failure is rethrown unchanged.
+     * Otherwise REUSABLE restores availability and UNCHANGED sets aside the
+     * PDO for the Host without authorizing another checkout.
+     */
     public function settle(int $checkout, ?SnapshotConnectionOutcomeDTO $outcome, ?Throwable $failure = null): void
     {
         if ($this->outstanding !== $checkout) {
@@ -61,6 +72,9 @@ final class SnapshotHostCheckout
         }
     }
 
+    /**
+     * Retrieves and clears the connection set aside for the Host, if any.
+     */
     public function takeReturnedConnection(): ?PDO
     {
         $pdo = $this->returnedToHost;

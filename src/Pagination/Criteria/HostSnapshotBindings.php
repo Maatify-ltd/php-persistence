@@ -6,11 +6,15 @@ namespace Maatify\PhpPersistence\Pagination\Criteria;
 
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 
-/** @internal */
+/** @internal Validates catalog parameter names and selects typed values for registered statements. */
 final class HostSnapshotBindings
 {
-    /** @param array<array-key, mixed> $names
-     *  @return list<string>
+    /**
+     * Validates a list of unique bare parameter names in registration order.
+     * A name starts with an ASCII letter or underscore and can then include digits.
+     *
+     * @param array<array-key, mixed> $names
+     * @return list<string>
      */
     public static function names(array $names): array
     {
@@ -29,6 +33,9 @@ final class HostSnapshotBindings
     }
 
     /**
+     * Requires exactly the registered names and accepts only string, int,
+     * bool or null values.
+     *
      * @param list<string> $names
      * @param array<array-key, mixed> $bindings
      * @return array<string, string|int|bool|null>
@@ -43,6 +50,9 @@ final class HostSnapshotBindings
     }
 
     /**
+     * Selects this statement's names from a shared binding map. A requested
+     * null value is present and valid. Extra entries may serve other statements.
+     *
      * @param list<string> $names
      * @param array<array-key, mixed> $bindings
      * @return array<string, string|int|bool|null>

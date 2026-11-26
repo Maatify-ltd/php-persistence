@@ -13,7 +13,11 @@ use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use WeakReference;
 
-/** One opaque invocation with a durable, connection-free settlement. */
+/**
+ * One opaque invocation for a source-authorized page grant. Keep it to inspect
+ * its immutable, connection-free settlement after the paginator returns or
+ * throws, including after the source releases or retires the checkout.
+ */
 final readonly class HostSnapshotPageAttempt
 {
     /** @param WeakReference<PdoHostSnapshotSource> $source */
@@ -33,12 +37,19 @@ final readonly class HostSnapshotPageAttempt
         return $this->record->state;
     }
 
+    /**
+     * Returns null until the attempt is terminal, then the same immutable
+     * outcome even after later invocations or disposal of the source.
+     */
     public function settlement(): ?HostSnapshotPageSettlementDTO
     {
         return $this->record->settlement;
     }
 
     /**
+     * Invokes the attempt once. A missing source settles it as not accepted.
+     * A repeat invocation rejects without replacing the earlier settlement.
+     *
      * @internal
      * @return PageResultDTO<array<array-key, mixed>|object>
      */

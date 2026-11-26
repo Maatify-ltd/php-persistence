@@ -45,6 +45,11 @@ function releaseFile(string $path): string
     return $contents;
 }
 
+/**
+ * Runs the RC.2 verifier's structural checks for Composer identity and
+ * production autoload, exact README and SECURITY target strings, and one
+ * undated CHANGELOG heading. Semantic review of the wording is separate.
+ */
 function verifyReleasePresentation(string $directory, string $target): void
 {
     $manifest = json_decode(releaseFile($directory . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -73,6 +78,11 @@ function verifyReleasePresentation(string $directory, string $target): void
 }
 
 /**
+ * Checks archive inventory against the allowed and required paths, then
+ * compares extracted bytes with the selected commit. Rejects duplicate
+ * paths, unexpected files and private key markers before checking the
+ * RC.2 release presentation. Returns the sorted file list for evidence.
+ *
  * @param non-empty-list<string> $requiredFiles
  * @return list<string>
  */

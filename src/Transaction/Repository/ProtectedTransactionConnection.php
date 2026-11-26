@@ -21,6 +21,10 @@ final class ProtectedTransactionConnection
 
     public function __construct(#[SensitiveParameter] private ?PDO $pdo) {}
 
+    /**
+     * Starts driver work only while the reservation is available. Tracks the
+     * statement for cleanup and latches prepare failures before rethrowing.
+     */
     public function prepare(string $sql): ProtectedTransactionStatement
     {
         $pdo = $this->driver();
@@ -39,6 +43,10 @@ final class ProtectedTransactionConnection
         }
     }
 
+    /**
+     * Requires acknowledgement of trusted control SQL. A failed command is
+     * latched and prevents further work on this receiver.
+     */
     public function control(string $sql): void
     {
         $pdo = $this->driver();
@@ -74,6 +82,10 @@ final class ProtectedTransactionConnection
         $this->driver();
     }
 
+    /**
+     * Enforces the fence before driver use by rethrowing the first latched
+     * failure. A sealed receiver without a driver cannot be reused.
+     */
     private function driver(): PDO
     {
         if ($this->failure !== null) {
@@ -83,7 +95,11 @@ final class ProtectedTransactionConnection
         return $this->pdo ?? throw new ProtectedTransactionException('The protected driver scope is closed.');
     }
 
-    /** Latches the first driver failure for settlement, then throws the immediate error. */
+    /**
+     * Latches the first safety failure and its category for settlement and
+     * fencing. Throws the immediate error to the calling operation. The
+     * checkout preserves any primary throwable already raised by that operation.
+     */
     public function fail(Throwable $error, bool $cursor = false, bool $continuity = false): never
     {
         if ($this->failure === null) {

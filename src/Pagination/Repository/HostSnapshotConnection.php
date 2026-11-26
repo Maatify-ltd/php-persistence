@@ -20,7 +20,12 @@ final class HostSnapshotConnection
 
     public function __construct(private PDO $pdo) {}
 
-    /** @return array{session: string, autocommit: bool, active: bool} */
+    /**
+     * Reads the server session identifier and autocommit flag and samples PDO
+     * activity. The activity flag is an observation, not proof of continuity.
+     *
+     * @return array{session: string, autocommit: bool, active: bool}
+     */
     public function inspect(): array
     {
         $rows = $this->rows('SELECT CONNECTION_ID() AS session_id, @@autocommit AS autocommit', [], 1);
@@ -36,8 +41,12 @@ final class HostSnapshotConnection
         return ['session' => (string) $id, 'autocommit' => (string) $autocommit === '1', 'active' => $this->pdo->inTransaction()];
     }
 
-    /** @param array<string, int|string|bool|null> $bindings
-     *  @return list<array<array-key, mixed>>
+    /**
+     * Reads bounded rows, translating overflow into a pagination execution error.
+     * Positional reads preserve column cardinality for count queries.
+     *
+     * @param array<string, int|string|bool|null> $bindings
+     * @return list<array<array-key, mixed>>
      */
     public function rows(string $sql, array $bindings, int $maxRows, bool $positional = false): array
     {
@@ -52,6 +61,11 @@ final class HostSnapshotConnection
     }
 
     /**
+     * Runs one statement while owning its cursor. A null row limit requests an
+     * affected-row count. A finite limit rejects overflow, preserving the keys of
+     * associative rows unless a positional read was requested. Failed cursor
+     * release keeps the resource outstanding and preserves any earlier failure.
+     *
      * @param array<string, int|string|bool|null> $bindings
      * @return int|list<array<array-key, mixed>>
      */
@@ -116,6 +130,7 @@ final class HostSnapshotConnection
         }
     }
 
+    /** Sends explicit transaction control only after the previous cursor is released. */
     public function control(string $sql): void
     {
         if ($this->statement !== null || $this->pdo->exec($sql) === false) {
@@ -128,11 +143,16 @@ final class HostSnapshotConnection
         return $this->pdo->inTransaction();
     }
 
+    /** Builds the handoff with the same PDO and the disposition determined by the source. */
     public function handoff(HostSnapshotRetirementDispositionEnum $disposition): HostSnapshotRetirementDTO
     {
         return new HostSnapshotRetirementDTO($disposition, $this->pdo);
     }
 
+    /**
+     * Drops the cursor and PDO references without an explicit server acknowledgement.
+     * The driver may perform I/O when it destroys the last reference.
+     */
     public function detach(): void
     {
         try {

@@ -9,6 +9,10 @@ use Maatify\Exceptions\Enum\ErrorCodeEnum;
 use Maatify\Exceptions\Exception\System\SystemMaatifyException;
 use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 
+/**
+ * Reports pagination execution failures detected by the package, including
+ * invalid result rows, counts, mapper values or result metadata.
+ */
 final class PaginationExecutionException extends SystemMaatifyException implements PhpPersistenceExceptionInterface
 {
     protected function defaultErrorCode(): ErrorCodeInterface

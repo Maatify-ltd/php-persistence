@@ -32,7 +32,10 @@ final readonly class PdoPaginationExecution
      * and return an empty first page. A page above the last page resets to one.
      *
      * Leaves the caller's transaction and isolation level intact. PDO and
-     * mapper exceptions propagate unchanged.
+     * mapper exceptions propagate unchanged. C1 supplies a resource tracker
+     * for explicit cursor release before transaction settlement. The raw path
+     * drains results on success and attempts cursor cleanup on a result-reading
+     * or mapper failure, preserving the primary throwable.
      *
      * @throws PaginationExecutionException When a statement fails without throwing
      *                                      or a count, row, or mapped item is invalid.
@@ -120,6 +123,9 @@ final readonly class PdoPaginationExecution
         return new PageResultDTO($data, $page, $perPage, $total, $filtered, $totalPages, $page < $totalPages, $page > 1 && $totalPages > 0, $sortBy, $sortDirection);
     }
 
+    /**
+     * Defaults to 1 for absent, invalid or non-positive requested pages.
+     */
     public function normalizePage(int|string|null $value): int
     {
         $parsed = $this->parseIntegerInput($value);
@@ -127,6 +133,11 @@ final readonly class PdoPaginationExecution
         return $parsed === null || $parsed < 1 ? 1 : $parsed;
     }
 
+    /**
+     * Uses the configured default for absent or invalid input. Numeric text
+     * outside the PHP integer range is invalid. A valid integer outside the
+     * configured page-size bounds is clamped to the nearer bound.
+     */
     public function normalizePerPage(int|string|null $value, PaginationConfig $config): int
     {
         $parsed = $this->parseIntegerInput($value);
@@ -143,6 +154,10 @@ final readonly class PdoPaginationExecution
         return $parsed;
     }
 
+    /**
+     * Trims decimal text and accepts an optional sign. Returns null for
+     * unparseable text or magnitude beyond the signed PHP integer range.
+     */
     private function parseIntegerInput(int|string|null $value): ?int
     {
         if (is_int($value)) {
@@ -170,6 +185,10 @@ final readonly class PdoPaginationExecution
         return (int) (($negative ? '-' : '') . $digits);
     }
 
+    /**
+     * Resolves a trimmed request key to an allowlisted key or the configured
+     * default. The caller separately obtains its quoted SQL identifier.
+     */
     public function resolveSortBy(?string $sortBy, PaginationConfig $config): string
     {
         if ($sortBy === null) {
@@ -183,6 +202,10 @@ final readonly class PdoPaginationExecution
         return $sortBy;
     }
 
+    /**
+     * Accepts ASC or DESC after trim and case normalization. Other values
+     * use the configured direction.
+     */
     public function resolveSortDirection(?string $sortDirection, PaginationConfig $config): SortDirectionEnum
     {
         if ($sortDirection === null) {
@@ -196,7 +219,13 @@ final readonly class PdoPaginationExecution
         };
     }
 
-    /** @param array<string, string|int|bool|null> $params */
+    /**
+     * Reads exactly one row and one column, then validates the count. With a
+     * tracker, C1 owns cursor release. On a raw read failure, attempts release
+     * without replacing the original throwable.
+     *
+     * @param array<string, string|int|bool|null> $params
+     */
     private function executeCount(PDO $pdo, string $sql, array $params, ?SnapshotReadResources $resources): int
     {
         $statement = $this->prepareStatement($pdo, $sql);
@@ -253,6 +282,10 @@ final readonly class PdoPaginationExecution
         }
     }
 
+    /**
+     * Binds a bare placeholder name using the appropriate PDO type. A driver
+     * failure reported as false raises PaginationExecutionException.
+     */
     private function bindValue(PDOStatement $statement, string $key, string|int|bool|null $value): void
     {
         if (! $statement->bindValue(':' . $key, $value, $this->pdoParameterType($value))) {
@@ -270,7 +303,12 @@ final readonly class PdoPaginationExecution
         };
     }
 
-    /** @return array<string, mixed>|false */
+    /**
+     * Recognizes false as EOF only on successful SQLSTATE. Rejects other
+     * failures, non-array rows and non-string associative keys.
+     *
+     * @return array<string, mixed>|false
+     */
     private function fetchAssociativeOrEof(PDOStatement $statement): array|false
     {
         /** @var mixed $row The PDO stub is narrower than what a driver or test double may return. */
@@ -340,6 +378,11 @@ final readonly class PdoPaginationExecution
         return (int) $digits;
     }
 
+    /**
+     * Appends the sort and bound page window to trusted base SQL. Sort
+     * identifiers must already be quoted. Equal quoted identifiers omit the
+     * tie-breaker term.
+     */
     public function buildDataSql(string $dataSql, string $quotedPrimary, SortDirectionEnum $direction, string $quotedTieBreaker, SortDirectionEnum $tieBreakerDirection): string
     {
         $order = $quotedPrimary . ' ' . $direction->value;

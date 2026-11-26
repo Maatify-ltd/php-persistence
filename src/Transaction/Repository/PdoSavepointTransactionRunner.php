@@ -48,6 +48,11 @@ final readonly class PdoSavepointTransactionRunner implements SavepointTransacti
     }
 
     /**
+     * Returns the callback result after releasing an operation-local savepoint
+     * in an existing caller transaction. On failure it attempts local cleanup
+     * and preserves the original throwable. If PDO has no active transaction,
+     * owns it instead and applies the configured deadlock replay policy.
+     *
      * @template TResult
      *
      * @param callable(): TResult $callback

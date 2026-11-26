@@ -287,6 +287,10 @@ final class PdoProtectedTransactionCheckout
         $this->busy = true;
     }
 
+    /**
+     * Returns the locally qualified session ID only while active authority remains.
+     * The caller must still verify the server session and transaction state.
+     */
     private function activeSession(): string
     {
         if ($this->session === null || $this->outcome !== null) {
@@ -301,6 +305,12 @@ final class PdoProtectedTransactionCheckout
         return $this->pdo ?? throw new ProtectedTransactionException('The protected connection is unavailable.');
     }
 
+    /**
+     * Confirms the expected activity and session. The first qualification
+     * accepts the observed identity and records the engine for failure
+     * classification. Later checks match the recorded session without
+     * reclassifying it.
+     */
     private function inspect(bool $active, ?string $expected = null): string
     {
         $session = (new ProtectedTransactionDriver($this->connection()))->inspect($active, $expected);

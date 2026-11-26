@@ -14,6 +14,9 @@ final class SnapshotReadResources
 
     private bool $closeAttempted = false;
 
+    /**
+     * Registers one statement. An unresolved cursor prevents replacing it with a new one.
+     */
     public function track(PDOStatement $statement): void
     {
         if ($this->statement !== null) {
@@ -23,6 +26,10 @@ final class SnapshotReadResources
         $this->statement = $statement;
     }
 
+    /**
+     * Attempts to close the tracked cursor once. A failed close remains
+     * unconfirmed and cannot be retried by a later cleanup step.
+     */
     public function release(): void
     {
         if ($this->statement === null) {

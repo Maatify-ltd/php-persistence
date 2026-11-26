@@ -14,10 +14,15 @@ final readonly class KeysetCursor
     private const KEY_ID = '/\A[A-Za-z0-9_-]{1,32}\z/';
     private const DOMAIN = 'maatify/php-persistence/keyset/v1/';
 
-    /** @var array<string, array{sign: string, context: string}> Derived keys indexed by a non-numeric key ID. */
+    /** @var array<string, array{sign: string, context: string}> Derived keys indexed by colon-prefixed IDs so numeric IDs remain string keys. */
     private array $keyring;
 
-    /** @param list<array{id: string, secret: string}> $keys */
+    /**
+     * Uses the active key for issuing cursors and retains other explicitly
+     * configured keys for verification during Host-managed rotation.
+     *
+     * @param list<array{id: string, secret: string}> $keys
+     */
     public function __construct(private string $activeKeyId, #[SensitiveParameter] array $keys)
     {
         $this->keyring = self::deriveKeys($keys);
@@ -57,6 +62,11 @@ final readonly class KeysetCursor
         return $keyring;
     }
 
+    /**
+     * Signs a v1 cursor for a prevalidated positive row ID and the caller's
+     * bound context. That context includes query identity, scope, SQL shape,
+     * effective limit and typed bindings.
+     */
     public function issue(int $lastId, #[SensitiveParameter] string $contextFrame): string
     {
         $keys = $this->keyring[':' . $this->activeKeyId];
@@ -66,6 +76,11 @@ final readonly class KeysetCursor
         return $envelope . '.' . self::encode(hash_hmac('sha256', $envelope, $keys['sign'], true));
     }
 
+    /**
+     * Requires the v1 envelope, a known key ID, a valid signature and matching
+     * bound context before accepting the canonical positive row ID. An invalid
+     * or out-of-range value raises InvalidKeysetCursorException.
+     */
     public function verify(#[SensitiveParameter] string $cursor, #[SensitiveParameter] string $contextFrame): int
     {
         if (strlen($cursor) > 256
@@ -89,6 +104,11 @@ final readonly class KeysetCursor
         return self::parseId($fields[1]) ?? throw new InvalidKeysetCursorException('Invalid keyset cursor.');
     }
 
+    /**
+     * Accepts positive PHP integers and canonical decimal strings in
+     * 1..PHP_INT_MAX, without a sign or leading zeros. Returns null for other
+     * values before any potentially overflowing conversion.
+     */
     public static function parseId(mixed $value): ?int
     {
         if (is_int($value)) {

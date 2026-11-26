@@ -17,6 +17,9 @@ final class B1CheckoutLifecycle
     /** @var array<int, array{PdoProtectedTransactionCheckout, bool}> Checkout and confirmed begin. */
     private array $pending = [];
 
+    /**
+     * Records an outstanding checkout before any confirmed begin or handoff.
+     */
     public function track(PdoProtectedTransactionCheckout $checkout): void
     {
         $this->pending[spl_object_id($checkout)] = [$checkout, false];
@@ -64,7 +67,12 @@ final class B1CheckoutLifecycle
         Assert::assertSame($settlement, $checkout->settlement());
     }
 
-    /** Releases every unfinished checkout before reporting the states captured at entry. */
+    /**
+     * Records each unfinished checkout's state before attempting emergency
+     * cleanup. If the operation already failed, leaves its primary throwable
+     * to the caller. Otherwise reports the incomplete lifecycle even after
+     * successful cleanup and includes the first cleanup failure when present.
+     */
     public function finish(?Throwable $primary = null): void
     {
         $incomplete = [];

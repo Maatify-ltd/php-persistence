@@ -45,6 +45,11 @@ final class ObservedTailStatement extends PDOStatement
         return $value;
     }
 
+    /**
+     * Notifies the tail-read barrier only after native cursor close succeeds.
+     * A fixture callback can control the returned acknowledgement, and the
+     * process harness waits for CONTINUE on the first two observed reads.
+     */
     public function closeCursor(): bool
     {
         $closed = parent::closeCursor();
