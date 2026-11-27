@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
+- The current source narrows Composer PHP eligibility from RC.2's `^8.4`. PHP 8.4.0–8.4.26 and 8.5.0–8.5.11 can no longer resolve the new package version. The admitted ranges start at 8.4.27 for PHP 8.4 and 8.5.12 for PHP 8.5, with forward eligibility within PHP 8.
+
 - Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The new optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
 
 ## [1.0.0-rc.2] - 2026-11-18

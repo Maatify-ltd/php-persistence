@@ -62,6 +62,8 @@ jobs:
           php-version: "8.4"
       - name: Composer validate --strict
         run: composer validate --strict
+      - name: Verify Composer PHP constraint boundaries
+        run: composer verify:php-constraint
       - name: Resolve dependencies (no committed lock file)
         run: composer update --prefer-stable --no-progress
       - name: Platform requirements (nothing ignored)
@@ -263,11 +265,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: refs/tags/v1.0.0-rc.2
       - uses: ./.github/actions/setup-php-composer
         with:
           php-version: "8.4"
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: refs/tags/v1.0.0-rc.2
+          path: published-rc2
       - name: Verify the immutable RC artifact
+        working-directory: published-rc2
         env:
           ARTIFACT_SHA: 71dc61548e48fd053376db69149a00bc87069b70
         run: |

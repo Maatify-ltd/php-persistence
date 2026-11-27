@@ -9,6 +9,7 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Gate | Local command | CI job |
 |---|---|---|
 | Composer validation | `composer validate --strict` | Static checks |
+| Composer PHP constraint boundaries | `composer verify:php-constraint` | Static checks |
 | Dependency resolution (no committed lock) | `composer update --prefer-stable` (latest) or `composer update --prefer-lowest --prefer-stable` (lowest) | Static checks, Compat |
 | Platform requirements, nothing ignored | `composer check-platform-reqs` | Static checks, Compat |
 | Strict PSR-4 | `composer dump-autoload --optimize --strict-psr` | Static checks |
@@ -23,7 +24,7 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Integration suite (real database) | `composer test:integration` | Integration |
 | Standalone examples (real database) | `composer examples:smoke` | Examples smoke |
 | Consumer verification and coexistence | `composer test:consumer` | Consumer verification and coexistence |
-| Exact-target release archives | [`composer release:verify`](../guides/RELEASE_ARTIFACT_VERIFICATION.md) | Release artifact verification |
+| Published RC.2 release archives | [`composer release:verify`](../guides/RELEASE_ARTIFACT_VERIFICATION.md) | Release artifact verification |
 | Workflow lint | `actionlint` over `.github/workflows` | Workflow lint |
 
 Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, Examples smoke, Consumer verification and coexistence, and Release artifact verification. The exploratory cell is optional.
@@ -108,7 +109,7 @@ One parameterized Compose definition (`compose.integration.yaml`) serves every c
 | `mariadb-11.8.9` | intermediate (LTS line) | `mariadb:11.8.9@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd` | same | PHP 8.4 | ratified test cell (DEC-013) |
 | `mariadb-12.3.3` | endpoint, newest | `mariadb:12.3.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9` | same | PHP 8.4, 8.5, 8.6 | ratified test cell (DEC-013) |
 
-PHP axis: the oldest supported minor `8.4`, the intermediate minor `8.5` and the latest released minor `8.6` (PHP 8.6.0 stable was released on 2026-11-19). Each engine endpoint runs on all three minors (15 Integration jobs: the 11 earlier cells plus `mysql-8.0.16`, `mysql-9.7.4`, `mariadb-10.11.19` and `mariadb-12.3.3` on PHP 8.6); the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5, 8.6} × {latest, lowest}` dependencies. Examples smoke runs `mysql-8.4.13` and `mariadb-11.8.9` on PHP 8.4 and 8.6, and Consumer verification runs on PHP 8.4 and 8.6. Every job proves a native stable CLI of the requested minor (`PHP_VERSION`, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`); the runners are native `x86_64`, so no emulation substitutes the PHP CLI. A passing cell is test evidence for that cell, not a support range; the declared range (`^8.4`, `platform.php` `8.4.0`) is not widened by this work unit.
+PHP axis: the oldest supported minor `8.4`, the intermediate minor `8.5` and the latest released minor `8.6` (PHP 8.6.0 stable was released on 2026-11-19). Each engine endpoint runs on all three minors (15 Integration jobs: the 11 earlier cells plus `mysql-8.0.16`, `mysql-9.7.4`, `mariadb-10.11.19` and `mariadb-12.3.3` on PHP 8.6); the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5, 8.6} × {latest, lowest}` dependencies. Examples smoke runs `mysql-8.4.13` and `mariadb-11.8.9` on PHP 8.4 and 8.6, and Consumer verification runs on PHP 8.4 and 8.6. Every job proves a native stable CLI of the requested minor (`PHP_VERSION`, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`); the runners are native `x86_64`, so no emulation substitutes the PHP CLI. The PHP installation range comes from [`composer.json`](../../composer.json). The matrix supplies execution evidence for the versions run by each cell.
 
 ### Image provenance evidence (2026-10-27)
 
@@ -136,6 +137,12 @@ PHP CS Fixer 3.95.32, the newest stable release at the time of this work, refuse
 ### 3.2 Pins of `shivammathur/setup-php`
 
 The qualified release `2.40.0` installs `8.6` as a `PHP 8.6.0-dev` nightly (its `nightly_versions` is `8.[6-9]`), so it cannot qualify the stable minor. The composite action `.github/actions/setup-php-composer` therefore keeps PHP 8.4 and 8.5 on `2.40.0` and uses `main@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf` for PHP 8.6 only. That commit is 43 commits ahead of `2.40.0`: it sets `nightly_versions` to `8.[7-9]`, marks PHP 8.6 stable, rebuilds the bundled action as ES modules and changes the Linux apt and download helpers, which is why the other minors were not moved. No tagged release contains it yet. Every job proves the installed build (`PHP_VERSION` of the requested minor, `cli`, `x86_64`, `PDO`, `pdo_mysql`, `pcntl`, `posix`). Review condition: when a tagged release that contains the commit exists, move every minor to the full commit SHA of that release and remove the split.
+
+### 3.3 PHP security patch verification
+
+After PHP setup and before Composer or package checks, the shared action records the actual `PHP_VERSION` and `PHP_VERSION_ID`, verifies the requested Stable minor, and fails when the patch level is unknown or below the applicable [Composer Package Standard §15.1.1 floor](../php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md#1511-php-security-patch-floors). The RC.2 release-artifact job runs this action from the workflow checkout before it checks out the immutable tag in `published-rc2` for archive verification.
+
+`composer verify:php-constraint` uses Composer's solver with simulated versions in isolated manifests to verify the declared PHP range. Actual interpreter checks and `composer check-platform-reqs` verify the running platform. For release qualification on PHP 8.6, record the actual Stable interpreter patch, applicable official PHP security advisories and corrected releases for that branch, and its compatibility results under [CI Workflow Standard §7.1](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#71-php-security-patch-floor-verification).
 
 ## 4. Decision record
 
