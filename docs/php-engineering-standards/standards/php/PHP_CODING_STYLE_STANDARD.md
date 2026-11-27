@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-php-coding-style`
-- **Standard Version:** `1.0.1`
+- **Standard Version:** `1.0.2`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Purpose and Canonical Ownership
@@ -92,6 +92,8 @@ Disabling, overriding, or weakening a rule inherited from the selected base rule
 Such an override is valid only when every displaced normative obligation remains mechanically verified elsewhere in the repository-owned verification surface without conflict or coverage gap.
 
 A successful tool exit status does not establish compliance when the configured verification surface omits part of the normative baseline.
+
+For example, a repository can demonstrate the existing replacement coverage by running representative conforming and nonconforming fixtures through the same composed verification command and rule configuration used in CI. Those outcomes provide evidence that the combined command accepts conforming input and rejects violations of the affected obligation. Where a rule interprets comments, representative fixtures may include Unicode or quoting cases. Any fixture-specific review records are test inputs for the existing rule configuration. A shared versioned suite is one optional source of evidence.
 
 When a tool limitation or preset behavior conflicts with the canonical coding-style contract, this Standard remains authoritative. The repository MUST resolve the source shape, tool configuration, or verifier composition without silently weakening normative coverage.
 

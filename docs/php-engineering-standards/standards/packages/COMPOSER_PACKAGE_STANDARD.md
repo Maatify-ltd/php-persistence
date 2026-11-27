@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `5.0.0`
+- **Standard Version:** `8.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document defines the canonical Composer manifest contract represented by `composer.json` for standalone, reusable PHP libraries in the Maatify ecosystem.
@@ -124,7 +124,7 @@ Rules for those fields govern the library repository while it is being developed
 4. Development tools MUST NOT be placed in `require`.
 5. Mandatory runtime dependencies MUST NOT be placed only in `require-dev`. Repository verification of an eligible optional prerequisite follows §16 and MUST NOT replace its consumer-facing disclosure.
 6. Metadata MUST be accurate, current, and non-misleading.
-7. The PHP constraint is a public compatibility promise.
+7. The PHP constraint defines public installation eligibility as specified in §15.1.
 8. The production autoload mapping is part of the public runtime contract.
 9. Composer scripts MUST map to real, maintained commands.
 10. Published versions MUST come from VCS tags; as a **Maatify Internal Policy**, the `version` field MUST NOT be committed.
@@ -149,8 +149,9 @@ Templates in this Standard use the following placeholders:
 - `{ROOT_NAMESPACE}`: The PSR-4 root namespace without the final separator.
 - `{TEST_NAMESPACE}`: The test namespace root without the final separator; normally `{ROOT_NAMESPACE}\Tests`.
 - `{MINIMUM_PHP_VERSION}`: The minimum supported PHP minor, such as `8.4`.
-- `{MINIMUM_PHP_PATCH_VERSION}`: The root development baseline, such as `8.4.0`.
-- `{LICENSE_SPDX}`: The approved SPDX license identifier.
+- `{PHP_REQUIRE_CONSTRAINT}`: The complete `require.php` constraint resolved under §15.1, such as `>=8.4.27 <8.5.0 || >=8.5.12 <9.0.0` for a package with a PHP 8 forward range.
+- `{MINIMUM_PHP_PATCH_VERSION}`: The lowest PHP patch version admitted by `{PHP_REQUIRE_CONSTRAINT}` (the security patch floor of the lowest supported minor under §15.1.1), such as `8.4.27`.
+- `{LICENSE_VALUE}`: The approved Composer license value, including `proprietary` for an approved proprietary license.
 - `{PRIMARY_DOMAIN_KEYWORD}`: The main searchable domain term for the library.
 - `{RUNTIME_EXTENSION_NAME}`: A directly used runtime PHP extension name without the `ext-` prefix.
 - `{RUNTIME_PACKAGE_NAME}`: A direct runtime package in `vendor/package` form.
@@ -391,15 +392,15 @@ Rules:
 The canonical field is:
 
 ```json
-"license": "{LICENSE_SPDX}"
+"license": "{LICENSE_VALUE}"
 ```
 
 Rules:
 
-- The value MUST be a valid approved SPDX identifier or valid Composer license expression.
+- The value MUST be a valid approved SPDX identifier, valid Composer license expression, or Composer’s `proprietary` identifier for an approved proprietary license.
 - It MUST match the repository `LICENSE` file.
-- It MUST match Packagist and GitHub metadata.
-- This Standard does not force one license across all Maatify libraries.
+- For published packages, Packagist license metadata MUST match the package license. GitHub license metadata MUST agree where GitHub identifies a license. GitHub may leave a custom license unclassified.
+- License selection and consumer-facing presentation follow [the Library Presentation Standard](LIBRARY_PRESENTATION_STANDARD.md#25-license-presentation).
 - A license change requires an explicit legal and repository decision.
 
 ---
@@ -548,25 +549,49 @@ A directly used runtime prerequisite MAY be omitted from `require` only through 
 
 ### 15.1 PHP Constraint
 
-The canonical minimum form is:
+The canonical form is:
 
 ```json
-"php": "^{MINIMUM_PHP_VERSION}"
+"php": "{PHP_REQUIRE_CONSTRAINT}"
+```
+
+For a new package supporting PHP 8.4 and 8.5 with forward Composer
+eligibility inside PHP 8, the current floors allow this form:
+
+```json
+"php": ">=8.4.27 <8.5.0 || >=8.5.12 <9.0.0"
 ```
 
 Rules:
 
-- For newly created Maatify PHP libraries/modules governed by the current engineering baseline, the minimum PHP version MUST NOT be lower than PHP 8.4.
-- The canonical new-package Composer constraint is `^8.4` or the equivalent placeholder form resolving to PHP 8.4.
-- The minimum MUST be the oldest PHP minor genuinely supported within the permitted baseline/compatibility policy; it MUST NOT allow new work to move below PHP 8.4.
-- Existing already-published packages MUST retain their currently declared PHP compatibility constraint until an approved compatibility/breaking version boundary permits changing it.
-- Existing packages are NOT required to convert an existing `>=...` constraint to caret syntax merely because the new-package canonical form is now `^8.4`.
-- The constraint is a public compatibility promise.
-- Every released PHP minor included by the constraint MUST be treated according to `CI_WORKFLOW_STANDARD.md`.
-- The minimum MUST NOT be increased merely because a developer uses a newer local PHP version.
-- An upper bound MUST NOT be added without a demonstrated incompatibility.
-- A broad constraint MUST NOT claim versions that are not tested or supportable.
-- README and CI claims MUST match the Composer PHP constraint.
+- For new Maatify PHP libraries and modules, the oldest supported minor MUST be genuinely supported and MUST be PHP 8.4 or later.
+- For each admitted minor with a floor in §15.1.1, the constraint MUST reject every patch below that floor. Use separate ranges where necessary to preserve those exclusions. Forms such as `^8.4`, `^8.4.27`, or `>=8.4` do not satisfy the current floors.
+- A package MAY declare forward Composer eligibility within a supported PHP major. A minor's absence from the floor table MUST NOT, on its own, require an upper bound at that minor. A package MAY retain a narrower range for a demonstrated incompatibility or a documented compatibility scope. Forward eligibility does not cross a PHP major boundary without an explicit package compatibility decision.
+- Composer eligibility is the public install-time range. It does not establish security qualification or tested support for a future minor. Once a forward-eligible minor reaches Stable, any subsequent package release admitting it MUST verify it under the CI Workflow Standard. A package MUST verify a minor before claiming it as supported. A PHP prerelease MUST NOT count as production Stable qualification.
+- Existing published packages MUST retain their declared compatibility until their own approved release boundary authorizes a change. This Standard does not rewrite published artifacts or require any particular constraint syntax.
+- Outside security floors, the minimum MUST NOT be raised merely because a developer uses a newer local interpreter. Any bound MUST reflect the package's documented compatibility scope.
+- README and CI MUST distinguish the Composer eligibility range from the minors verified as supported. The constraint governs PHP interpreter eligibility. Host runtime, SAPI, server, and `php.ini` configuration are outside the Composer manifest contract.
+
+#### 15.1.1 PHP Security Patch Floors
+
+This section is the single canonical source of the per-minor PHP security patch floors for `std-composer-package` and for `std-ci-workflow`, which verifies them. Other Standards and documents MUST reference it and MUST NOT restate a separate minimum.
+
+| PHP minor | Minimum accepted patch | Rejected |
+|---|---|---|
+| 8.4 | 8.4.27 | 8.4.0 through 8.4.26 |
+| 8.5 | 8.5.12 | 8.5.0 through 8.5.11 |
+
+Basis: the official `php.net` security releases PHP 8.4.27 and PHP 8.5.12 published on 21 October 2026. A later advisory that is not accompanied by a released corrected patch does not create a floor and MUST NOT be encoded as one.
+
+A floor changes only by a revision of this Standard backed by an official
+`php.net` release. A minor absent from the table has no canonical numeric
+floor. Its Stable releases may be eligible under §15.1. Before qualifying a
+release on such a minor, verify the actual Stable patch against applicable
+official PHP security advisories and corrected releases for that branch, then
+run the applicable compatibility checks. Record the PHP version and official
+evidence. A higher version number alone does not establish coverage of fixes
+made in an earlier branch. Package evidence does not create or override a
+canonical floor.
 
 ### 15.2 PHP Extensions
 
@@ -814,6 +839,7 @@ Rules:
 Rules:
 
 - `LICENSE`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `composer.json`, the canonical Package Reference, and any consumer-facing Usage Guide, examples, or `llms.txt` required by `LIBRARY_PRESENTATION_STANDARD.md` MUST NOT be excluded from the Composer-distributed artifact.
+- When required by `std-public-contract-evolution` §8.1, the Artifact Root `DEPRECATIONS.md` MUST NOT be excluded from the Composer-distributed artifact.
 - Runtime source MUST NOT be excluded.
 - Secrets and development artifacts MUST NOT enter the archive.
 - Exclusions MUST be reviewed against the actual Composer-distributed package contents.
@@ -1007,12 +1033,13 @@ The canonical form is:
 
 Rules:
 
-- The value SHOULD represent the minimum supported PHP baseline.
-- It MUST NOT be higher than the declared minimum PHP requirement.
-- It MUST NOT be used to hide an incompatibility.
+- The value MUST be the lowest PHP patch version admitted by the declared `require.php` constraint (for example `8.4.27` for a package supporting 8.4 and 8.5 under §15.1.1), so that root dependency resolution emulates the lowest supported, security-patched interpreter.
+- It MUST be a single concrete version. It MUST NOT be a range or a disjunction, and it MUST NOT be below a §15.1.1 floor for a package governed by that section.
+- It MUST NOT be higher than the lowest admitted version, and MUST NOT be used to hide an incompatibility.
+- It is a root dependency-resolution setting only. It is not the consumer-facing eligibility contract, which is `require.php` under §15.1, and it does not select, certify, or configure the PHP executing in any environment.
 - Fake extension entries SHOULD NOT be added.
 - If an extension must be hidden to test portability, that decision belongs to explicit CI configuration.
-- Because the platform setting can emulate a version different from the executing environment, real platform requirements MUST still be verified under `CI_WORKFLOW_STANDARD.md`.
+- Because the platform setting can emulate a version different from the executing environment, real platform requirements and the actual interpreter patch MUST still be verified under `CI_WORKFLOW_STANDARD.md`, including its §7.1.
 - The setting governs root dependency resolution; it does not force a consumer's PHP runtime.
 
 ### 23.4 `allow-plugins`
@@ -1148,7 +1175,7 @@ Rules:
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` are repository contribution/community surfaces; this Standard does not require them in every Composer archive unless a package explicitly makes them consumer documentation.
 - Tests and documentation MAY remain in source distributions.
 - The required file set is determined by the applicable Library Presentation contract; this Standard owns whether those files actually enter the Composer artifact. Every required file MUST be present in the distributed artifact and reflect the same exact Release Artifact Identity as the runtime and manifest.
-- `archive.exclude`, generated archive behavior, VCS-based dist behavior, and `.gitattributes` `export-ignore` MUST be reviewed together where applicable. No particular `.gitattributes` mechanism is mandatory. An exclusion rule MUST NOT defeat the required file set.
+- `archive.exclude`, generated archive behavior, VCS-based dist behavior, and `.gitattributes` `export-ignore` MUST be reviewed together where applicable. No particular `.gitattributes` mechanism is mandatory. An exclusion rule MUST NOT defeat the required file set. When the registry is required under §19.4, verify its root location, contents, and links in the resulting exact-target consumer-delivery artifact under the existing verification gates, including exposed `dist` where applicable. The publication-safety criteria for the registry and its evidence are owned by `std-public-contract-evolution` §11.2.
 - Generated archives MUST be inspected at Release Artifact Verification when custom archive exclusions or export rules exist; checks MUST inspect the resulting artifact, not only the source repository tree.
 - Package installation MUST NOT depend on files ignored by VCS or excluded from the distribution.
 - Composer repository metadata MAY expose a `source` checkout, a `dist` archive, or both for a package version. These are distinct delivery representations and MUST NOT be assumed to contain identical files. The applicable required-file set MUST be present in each representation that the package's approved distribution policy identifies as a consumer-delivery artifact.
@@ -1212,7 +1239,7 @@ This template contains no empty fields and applies when PHP is the only mandator
   ],
   "homepage": "https://github.com/Maatify/{REPOSITORY_SLUG}",
   "type": "library",
-  "license": "{LICENSE_SPDX}",
+  "license": "{LICENSE_VALUE}",
   "authors": [
     {
       "name": "Maatify",
@@ -1230,7 +1257,7 @@ This template contains no empty fields and applies when PHP is the only mandator
     }
   },
   "require": {
-    "php": "^{MINIMUM_PHP_VERSION}"
+    "php": "{PHP_REQUIRE_CONSTRAINT}"
   },
   "config": {
     "optimize-autoloader": true,
@@ -1280,7 +1307,7 @@ Add direct mandatory runtime contracts. A prerequisite omitted from `require` is
   "require": {
     "ext-{RUNTIME_EXTENSION_NAME}": "*",
     "{RUNTIME_PACKAGE_NAME}": "{RUNTIME_PACKAGE_CONSTRAINT}",
-    "php": "^{MINIMUM_PHP_VERSION}"
+    "php": "{PHP_REQUIRE_CONSTRAINT}"
   }
 }
 ```
@@ -1418,7 +1445,9 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] Scripts contain no credentials.
 - [ ] No unsafe lifecycle hooks exist.
 - [ ] `sort-packages` is enabled.
-- [ ] `platform.php` matches the minimum supported baseline.
+- [ ] `platform.php` is a single concrete version equal to the lowest patch admitted by `require.php`, and is not presented as the consumer eligibility contract.
+- [ ] For a new package, `require.php` rejects patches below every applicable §15.1.1 floor. Any forward Composer eligibility follows §15.1 and remains distinct from verified support.
+- [ ] An existing published package's PHP constraint is changed only through its own approved compatibility boundary.
 - [ ] `optimize-autoloader` follows the approved package configuration policy.
 - [ ] Composer plugins are explicitly allowlisted when present.
 - [ ] `config.policy` is used when supported and is not `false`.
@@ -1436,7 +1465,7 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] No credentials, local paths, or private task URLs exist.
 - [ ] `vendor/` is not committed.
 - [ ] As a Maatify Internal Policy, `composer.lock` is not committed.
-- [ ] Package archive rules preserve runtime source and required legal metadata.
+- [ ] Package archive rules preserve runtime source and required legal and consumer files. When required, the delivered `DEPRECATIONS.md` is present and its contents and links pass the existing publication-safety checks (§§19.4 and 26).
 - [ ] `composer validate --strict` succeeds.
 - [ ] Composer metadata matches README, package reference, GitHub metadata, and CI claims.
 - [ ] Latest-compatible dependency verification succeeds in CI.
@@ -1482,7 +1511,31 @@ Official Composer documentation remains authoritative for Composer mechanics. Th
 
 ## Version History
 
+### `8.0.0`
+
+- Issue #209 (`DEC-056`): require Composer archive and VCS distribution to preserve the applicable Artifact Root registry. A previously compliant exclusion could omit it. `NORMATIVE / BREAKING_CONTRACT_CHANGE` (Major).
+- Owner-approved Mutable Candidate `8.0.0` from Frozen Baseline `7.0.0`, artifact blob `25038a44917a3cd387238e38a8c59105c2952488` at completed VALID Upgrade Adoption Commit `1f560795397f24bddcc3d09b982ff93a77f7154e`. [Owner Version Finalization on 2026-11-24](https://github.com/Maatify-ltd/php-engineering-standards/pull/210#issuecomment-7127402843).
+
 ### `5.0.0`
 
-- Frozen baseline `4.1.0`, exact artifact blob `d020e3f4b09830338b4a1647851048e02c64252e`, proven by the completed VALID consumer upgrade in Maatify/php-paymob PR #10. Upstream Adoption Commit: `2ea426aee0e6a5265f0c30ced667f21bb7b1d302`; consumer integration commit: `28b790455685b3f7052688d7d20d4b939fd13795`; the consumer-pinned artifact blob is `d020e3f4b09830338b4a1647851048e02c64252e` (exact blob equality PASS).
+- Frozen baseline `4.1.0`, exact artifact blob `d020e3f4b09830338b4a1647851048e02c64252e`, proven by the completed VALID consumer upgrade in a consumer repository (PR #10; identity withheld per `DEC-042`). Upstream Adoption Commit: `2ea426aee0e6a5265f0c30ced667f21bb7b1d302`; consumer integration commit: `28b790455685b3f7052688d7d20d4b939fd13795`; the consumer-pinned artifact blob is `d020e3f4b09830338b4a1647851048e02c64252e` (exact blob equality PASS).
+- Issue #168 (`DEC-042`): consumer-identity neutralization of the preceding frozen-baseline evidence line only; `EDITORIAL / NO_CONTRACT_CHANGE` (Patch), absorbed in the existing Mutable Candidate calculated from the Frozen Version Baseline; no additional bump, freeze, release, or adoption. The artifact blob and commit hashes are unchanged.
 - `NORMATIVE / BREAKING_CONTRACT_CHANGE`: require the Composer-distributed archive to preserve the complete applicable consumer/release-facing artifact set and its exact release identity, including VCS export behavior and resulting archive inspection; existing archive/export exclusions may otherwise omit required documents. Calculated candidate from frozen baseline `4.1.0`: `5.0.0`.
+
+### `7.0.0`
+
+- `DEC-053` changes the Composer eligibility and release-verification contract (`NORMATIVE / BREAKING_CONTRACT_CHANGE`). Keep existing per-minor security floors and allow forward eligibility within a supported major under §15.1. Calculate the Major candidate from the frozen `6.1.0` artifact blob `1605e1f69513477d80ff40041a0f4ecb512d2f89`, proven by completed VALID adoption at `d3dd98b8d82c8bcdd65614fe4ed80853bdcdcc73`.
+
+### `6.1.0`
+
+- `DEC-050`: `NORMATIVE / BACKWARD_COMPATIBLE_CONTRACT_CHANGE` (Minor). Explicitly allow Composer’s `proprietary` identifier, allow GitHub to leave a custom license unclassified, and reference the separate presentation contract. Previously valid license identifiers and expressions remain accepted.
+- Mutable Candidate `6.1.0`, calculated from Frozen Version Baseline `6.0.0`, artifact blob `87e17351519855ee5438524acfb3f7f972d3a606` at completed VALID Adoption Commit `c5d70cbe005fc26c38a7218967efe991194e76d6` (consumer identity withheld per `DEC-042`).
+
+### `6.0.0`
+
+- Frozen Version Baseline `5.0.0`, exact artifact blob `64ce9bc38a87034c5a57df0265f551d083658b32`, proven by completed VALID consumer Adoption (identity withheld per `DEC-042`; upstream Adoption Commit `334c9d5888fd46f9b4624c57e131440c37b840ce`; evidence recorded in Issue #179). The calculation below is made once from this baseline, not from a previous candidate.
+- Cumulative changes since the baseline: (1) Issue #168 (`DEC-042`) consumer-identity neutralization of a Version History evidence line, `EDITORIAL / NO_CONTRACT_CHANGE` (Patch); (2) Issue #181, below. The earlier `5.0.0` entry is retained as historical evidence; the Issue #179 reconciliation below corrects its frozen-status inference.
+- Issue #181 `NORMATIVE / BREAKING_CONTRACT_CHANGE`: new-package `require.php` must exclude, per supported minor, every PHP patch below the §15.1.1 security floor (8.4.27, 8.5.12) and any minor without a floor, replacing the previously canonical `^8.4`; `config.platform.php` is defined as the lowest admitted patch and not the consumer eligibility contract; templates, placeholders, and checklist updated. Previously compliant new-package constraints such as `^8.4` become non-compliant. Existing published packages' declared compatibility is not amended.
+- Version Class: Major (highest impact in the cumulative set) → calculated Mutable Candidate `6.0.0` from Frozen Baseline `5.0.0`; not chained through `5.0.1`. This is a candidate only: no Freeze, Owner Version Finalization, release, or adoption is claimed.
+
+- Issue #179 factual reconciliation (2026-11-04): the historical `5.0.0` entry's statement that Issue #168's editorial edit was absorbed in an existing Mutable Candidate was inaccurate because the qualified `5.0.0` snapshot above was already frozen. The original entry is preserved; neither the neutralization policy nor the frozen artifact is rewritten. This evidence correction is `EDITORIAL / NO_CONTRACT_CHANGE` (Patch class), aggregated with the already-recorded breaking Issue #181 change from Frozen `5.0.0`; the highest cumulative impact remains Major and the Mutable Candidate remains `6.0.0`. The earlier editorial-only proposal `5.0.1` is no longer the cumulative result, and no `6.0.1`, new Freeze, Version Finalization, release, or Adoption is created by this reconciliation.

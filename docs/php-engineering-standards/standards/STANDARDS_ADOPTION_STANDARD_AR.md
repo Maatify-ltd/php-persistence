@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-standards-adoption`
-- **Standard Version:** `5.0.0`
+- **Standard Version:** `5.0.2`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **النطاق:** آلية اختيار المعايير وتثبيتها وتوزيعها وتفعيلها داخل المشاريع التابعة لمنظومة Maatify.
@@ -16,7 +16,7 @@
 المستودع:
 
 ```text
-Maatify/php-engineering-standards
+Maatify-ltd/php-engineering-standards
 ```
 
 هو المصدر المركزي الوحيد لتأليف المعايير وProfiles. المشروع التابع يحتفظ بنسخ محلية لأغراض الاعتماد والتثبيت، لكنه لا يجعل النسخة المحلية أو ملف الـ Manifest مصدرًا منافسًا للقواعد الأصلية.
@@ -440,7 +440,7 @@ Pinned Operational Assets Set إن كانت Operational Assets معتمدة:
 
 ### 9.1 سجل استثناء Operational Asset Mixed-Pinning
 
-الاستثناء من same-commit pinning لا يستخدم إلا للسماح صراحةً بقراءة Operational Asset محدد من Commit مركزي بديل. لا تمنح صيغة هذا السجل صلاحية عامة لأي مستهلك. يجب أن يعتمد المستهلك قرارًا دائمًا خاصًا به يوافق هذا الاستثناء تحديدًا؛ أما `DEC-032` فيعرّف صيغة السجل والتحقق الميكانيكي فقط ولا يوافق على أي انحراف لمستهلك.
+الاستثناء من same-commit pinning لا يستخدم إلا للسماح صراحةً بقراءة Operational Asset محدد من Commit مركزي بديل. لا تمنح صيغة هذا السجل صلاحية عامة لأي مستهلك. يجب أن يعتمد المستهلك قرارًا دائمًا خاصًا به يوافق هذا الاستثناء تحديدًا؛ أما `DEC-032` المركزي لمستودع `Maatify-ltd/php-engineering-standards` (سجل `OPERATIONAL_ASSET_MIXED_PINNING_EXCEPTION_RECORD_DECISION.md`، وليس قرارًا محليًا للمستهلك) فيعرّف صيغة السجل والتحقق الميكانيكي فقط ولا يوافق على أي انحراف لمستهلك.
 
 يسجل الاستثناء كسطر واحد داخل `Explicit Exceptions/Overrides` وبالصيغة والترتيب الحرفيين التاليين، بما في ذلك أسماء الحقول وحالة الأحرف وعلامة الفصل `; `:
 
@@ -727,6 +727,8 @@ APPROVED_AND_DOCUMENTED
 
 ## 17. سجل تغييرات المعيار
 
+> **توضيح مرجعي (Issue #149):** كل معرف `DEC-###` في هذا السجل التاريخي يشير إلى قرار مركزي في `Maatify/php-engineering-standards` وليس إلى قرار محلي للمستهلك. هذا التوضيح لا يعيد كتابة التاريخ ولا يغير نطاق أي إصدار مذكور.
+
 ### `4.1.0`
 
 - تطبيق `DEC-031`: إضافة `Pinned Operational Assets Set` كطبقة اختيارية/مشروطة غير معيارية بجانب Control Set وApplicable Standards Set، مع بقاء غيابها حالة صحيحة تعني عدم اعتماد Operational Assets.
@@ -739,3 +741,14 @@ APPROVED_AND_DOCUMENTED
 
 - اعتماد `DEC-032` وتحديد سجل حتمي قابل للتحقق آليًا لاستثناء Operational Asset mixed-pinning، مع ربط كل سجل بقرار مستهلك نشط ومحدد للزوج الدقيق والمسار والمصدر.
 - التصنيف `NORMATIVE / BREAKING_CONTRACT_CHANGE / Major` من Frozen Version Baseline `4.0.0` (blob `d84856f7cd50112b32d6843989700a819e6bad98`) إلى Mutable Candidate `5.0.0`. السجلات الحرة التي لم تحقق العقد السابق بوضوح تحتاج إلى ترحيل قبل أن تقبل كاستثناء آلي؛ لا يفترض هذا التصنيف جردًا شاملًا للمستهلكين الخارجيين.
+
+### `5.0.1`
+
+- Issue #149: توضيح مرجعي فقط لمعرفات `DEC-###` لتشير صراحةً إلى قرارات `Maatify/php-engineering-standards` المركزية لا إلى قرارات المستهلك المحلية (§9.1 وملاحظة السجل التاريخي)، دون تغيير أي Obligation أو Permission ودون اعتماد على `docs/decisions/` داخل المستهلك ودون تعديل سجل `5.0.0` التاريخي.
+- التصنيف `CLARIFICATION / NO_CONTRACT_CHANGE / Patch` من Frozen Version Baseline `5.0.0` (blob `05e37ef12bacb8cb7c0b7bfcfe9633462a868c99`) إلى Mutable Candidate `5.0.1`. لا Freeze ولا Version Finalization ولا Adoption.
+
+### `5.0.2`
+
+- ثبتت `5.0.1` كـFrozen Version Baseline في ترقية مكتملة بحالة `VALID`، بالـblob `071b76486a6d44f7828d0b762d2e2d8d8fa2ad2e` عند Adoption Commit `1f560795397f24bddcc3d09b982ff93a77f7154e`. [دليل الترقية المكتملة](https://github.com/Maatify-ltd/php-engineering-standards/pull/210#issuecomment-7114166541)
+- صحّح PR #205 ضمن Issue #204 مسار المستودع المركزي في §1 وفي إشارة `DEC-032` في §9.1 إلى `Maatify-ltd/php-engineering-standards`. المسار السابق `Maatify/php-engineering-standards` يحيل إلى المستودع نفسه (repository ID `1304138984`). كان التغيير مسجلًا تحت `5.0.1` في snapshot `6f3cd481f09d6f00aebd4ddedeab8d7ea656e044` (blob `7f4561ebad78804cf89551b214ece891100fcb78`). يصحح هذا القيد إسناده إلى الإصدار المناسب بعد التجميد.
+- تصنيف الأثر التراكمي `CLARIFICATION / NO_CONTRACT_CHANGE / Patch`، لأن تصحيح المسار لم يغير هوية المصدر أو عقد الاعتماد أو Manifest schema. الناتج `5.0.2` بوصفه Mutable Candidate محسوبة من `5.0.1` المجمدة. يظل إثبات أي Freeze جديدة مرتبطًا باعتماد أو ترقية مكتملة بحالة `VALID`.

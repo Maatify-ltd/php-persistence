@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-documentation-lifecycle`
-- **Standard Version:** `3.1.0`
+- **Standard Version:** `3.1.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **النطاق:** ملكية الوثائق المعيارية، وحدود السلطة بينها، ودلالات الحالة الحالية والتاريخية، ودورة حياتها بعد إغلاق العمل، ومراجعة حداثتها، والاحتفاظ بها.
@@ -166,5 +166,13 @@ maatify.dev
 
 ### `3.1.0`
 
-- Frozen baseline `3.0.0`, artifact blob `9b0c73f5043c922bceaeac7d824d421045f77247`, proven by the completed VALID adoption in Maatify/php-paymob PR #3 at upstream Adoption Commit `5f872d3ef7da847cba3f82fee124a19c22f1c5c4`.
+- Frozen baseline `3.0.0`, artifact blob `9b0c73f5043c922bceaeac7d824d421045f77247`, proven by the completed VALID adoption in a consumer repository (PR #3; identity withheld per `DEC-042`) at upstream Adoption Commit `5f872d3ef7da847cba3f82fee124a19c22f1c5c4`.
+- Issue #168 (`DEC-042`): consumer-identity neutralization of the preceding frozen-baseline evidence line only; `EDITORIAL / NO_CONTRACT_CHANGE` (Patch), absorbed in the existing Mutable Candidate calculated from the Frozen Version Baseline; no additional bump, freeze, release, or adoption. The artifact blob and commit hashes are unchanged.
 - `NORMATIVE / BACKWARD_COMPATIBLE_CONTRACT_CHANGE`: establish explicit immutable release-artifact versus live default-branch temporal semantics. This adds a permitted truthful artifact state while preserving prior compliant documentation behavior.
+
+### `3.1.1`
+
+- Qualified Frozen Version Baseline: `3.1.0`, exact artifact blob `5e75fa711a507f4195d7ca4b8cc43874d6255d5c`, established by a completed VALID consumer Adoption at upstream Commit `334c9d5888fd46f9b4624c57e131440c37b840ce` and unchanged at `ebcf55b0591db61d18a1407bc3effef0197b388f`; qualification evidence is recorded in [Issue #179](https://github.com/Maatify/php-engineering-standards/issues/179).
+- Issue #179 reconciles the historical `3.1.0` entry above: its statement that the Issue #168 identity-neutralization edit was absorbed in an existing Mutable Candidate was inaccurate because `3.1.0` was already frozen. The original entry is retained as historical evidence; editorial changes are not exempt from exact frozen-artifact identity. The neutralized wording remains, and the frozen snapshot is not rewritten.
+- Cumulative changes since Frozen `3.1.0` are the Issue #168 consumer-identity neutralization and its added version-history note, plus this metadata and factual reconciliation. They are `EDITORIAL / NO_CONTRACT_CHANGE` (Patch class); no normative documentation contract changes. The Mutable Candidate is calculated once as `3.1.1` from Frozen `3.1.0`, not from the older `3.0.0` baseline or an intermediate candidate.
+- This is a Mutable Candidate correction only. No Version Finalization, Freeze, release, consumer Adoption/Upgrade, or change to an existing valid exact consumer pin is claimed.

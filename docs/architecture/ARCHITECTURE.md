@@ -25,7 +25,7 @@ WU-9 delivered the Package Reference required by the pinned standards. It is now
 
 | Source | Role |
 |---|---|
-| [STANDARDS_MANIFEST.md](../php-engineering-standards/STANDARDS_MANIFEST.md) | Adoption record; pinned upstream commit `ebcf55b0591db61d18a1407bc3effef0197b388f` ([DEC-003](../decisions/DEC-003-pinned-standards-adoption.md)) |
+| [STANDARDS_MANIFEST.md](../php-engineering-standards/STANDARDS_MANIFEST.md) | Adoption record; pinned upstream commit `c1dbb2da062a35c45638abf2bcb2ae210140eb5d` ([DEC-029](../decisions/DEC-029-selective-pinned-standards-upgrade.md)) |
 | Pinned standards under `docs/php-engineering-standards/standards/` | Normative rules; this document links to them rather than copying them |
 | Decisions `ACTIVE` in the index | Closed choices; `PROPOSED` records are not implementation authority |
 | Issue [#1](https://github.com/Maatify/php-persistence/issues/1) | Architecture study (historical; superseded parts are not decisions) |
@@ -114,7 +114,7 @@ Exceptions: the package defines named exceptions for configuration, execution-co
 
 ## 7. Successor intent and the standards boundary
 
-The package is intended to replace `maatify/persistence` in the future ([DEC-006](../decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)). Today the pinned Package Building Standard still names `maatify/persistence` as the canonical published provider of shared Ordering and Pagination. This repository does not claim a transfer, does not reopen central issue #180, and does not change the pinned standards. A central change is a separate, later, Owner-authorized step after the first release.
+The package is intended to replace `maatify/persistence` in the future ([DEC-006](../decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)). The pinned [Package Building Standard §11](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md#11-shared-ordering-and-pagination-utilities) names `maatify/php-persistence` as the normative owner of shared PDO Ordering and Pagination mechanics. Stable consumption requires a verified, published Major 1 release at or above `1.0.0`. Release, consumer migration and the legacy package lifecycle require separate authorization.
 
 Coexistence rules are in [DEC-005](../decisions/DEC-005-coexistence-with-legacy-package.md): both packages can be installed; no `replace`, `provide`, `conflict`, `class_alias` or bridge.
 

@@ -2,12 +2,12 @@
 
 - **Decision ID:** `DEC-003`
 - **Title:** Selective pinned standards adoption at an exact upstream commit
-- **Status:** `ACTIVE`
+- **Status:** `SUPERSEDED`
 - **Date:** `2026-10-24`
 - **Decision Authority:** `Project Owner` — decision M-5, ratified in [Issue #2, comment 6375609651](https://github.com/Maatify/php-persistence/issues/2#issuecomment-6375609651); implementation authorized by [Issue #3](https://github.com/Maatify/php-persistence/issues/3).
 - **Scope / Concern:** Which engineering standards govern this repository, and the exact upstream snapshot they are pinned to.
 - **Supersedes:** `—`
-- **Superseded By:** `—`
+- **Superseded By:** [DEC-029](./DEC-029-selective-pinned-standards-upgrade.md)
 - **Canonical Contract / Current Owner:** [STANDARDS_MANIFEST.md](../php-engineering-standards/STANDARDS_MANIFEST.md) records the adoption result; the pinned [Standards Adoption Standard](../php-engineering-standards/standards/STANDARDS_ADOPTION_STANDARD_AR.md) owns the mechanism.
 
 ## Context

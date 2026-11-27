@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-github-phase-stack-workflow`
-- **Standard Version:** `4.0.0`
+- **Standard Version:** `5.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **الهدف:** تقليل زمن التسليم الكلي عبر Phase Draft أو Execution Batch وDependency-Aware Execution Train، مع الحفاظ على traceability والمراجعة والاختبارات وجودة `main` دون فرض Branch/PR أو تسلسل إداري لا تدعمه dependencies فعلية.
@@ -94,17 +94,17 @@ main
 
 ## 2.1 اختيار حد التكامل للـPhase أو الـExecution Batch
 
-1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` أو Automatic Merge. وتحدد Phase Stack الحاجة إلى reconciliation وحدودها، بينما تُحكم طريقة Git الدقيقة وفق صلاحيات AI Collaboration.
+1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ وتأخر الفرع عن `main` ليس مانعًا تلقائيًا للعمل أو الدمج (انظر §8.2 و§8.3). يحتاج Material Divergence وحده إلى Owner-authorized reconciliation، ولا يوجد fallback تلقائي إلى `main` أو Automatic Merge. وتحدد Phase Stack الحاجة إلى reconciliation وحدودها، بينما تُحكم طريقة Git الدقيقة وفق صلاحيات AI Collaboration.
 2. قبل إنشاء Branch جديدة، يحدد المساعد القائد هل توجد حاجة فعلية إلى Work Branch مستقلة أو Phase Draft منفصلة. استمرار عدة Phases مترابطة على Work Branch واحدة هو الخيار المفضل عندما تكون dependencies والملفات والسياق مشتركة ولا يضيف الفصل عزلًا أو مراجعة أو rollback وضوحًا. إذا أُنشئت Work Branch ثم نُشرت إلى GitHub، يجب أن ترتبط بـPR صحيحة ضمن نفس publication handoff قبل استمرار العمل عليها.
 3. إذا احتاجت الـBatch إلى حد تجميع ومراجعة مستقل، تُعيّن Work Branch واحدة كـPhase Draft أو Batch Integration Branch. لا تنشأ Phase Draft إضافية إذا كانت Work Branch الحالية تؤدي هذا الدور بأمان.
 4. يمكن أن تستهدف Work Branches المنفصلة Phase Draft عند وجود توازٍ حقيقي أو ownership مستقل. أما عند عدم الحاجة إلى تجميع منفصل، فتكون Work Branch/Batch PR الواحدة هي حد المراجعة النهائي قبل `main`.
-5. لا يدخل `main` إلا حد التكامل المعيّن بعد اكتمال جميع Phases وWork Units وGates المطلوبة. وكل GitHub Merge، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main`، يحتاج Owner authorization صريحة وفق §8.2.
+5. لا يدخل `main` إلا حد التكامل المعيّن بعد اكتمال جميع Phases وWork Units وGates المطلوبة. وكل GitHub Merge، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main`، يحتاج Owner authorization صريحة وفق §8.4.
 
 إذا أثبت Baseline Reconciliation أن الـPhase `No-op` بالكامل، فلا تنفذ هذه الخطوات؛ يطبق مسار الإثبات والإغلاق التشغيلي في §5 بدل إنشاء Draft أو Branch أو PR.
 
 ## 2.2 Work Units ذات التغيير
 
-1. كل Work Unit أو Component ينتج تغييرًا في المستودع يجب أن يملك حدًا واضحًا للملكية والقبول، لكنه لا يحتاج تلقائيًا إلى Branch أو PR **مستقلة**؛ يجوز أن يستخدم Branch/PR قائمة للـExecution Batch. أما إذا احتاج Work Branch مستقلة ونُشرت إلى GitHub، فتكون لها PR مرتبطة بها إلزاميًا وفق DEC-017.
+1. كل Work Unit أو Component ينتج تغييرًا في المستودع يجب أن يملك حدًا واضحًا للملكية والقبول، لكنه لا يحتاج تلقائيًا إلى Branch أو PR **مستقلة**؛ يجوز أن يستخدم Branch/PR قائمة للـExecution Batch. أما إذا احتاج Work Branch مستقلة ونُشرت إلى GitHub، فتكون لها PR مرتبطة بها إلزاميًا وفق `DEC-017` المركزي لمستودع `Maatify/php-engineering-standards` (سجل `PUBLISHED_GOVERNED_WORK_BRANCH_REQUIRES_PR_DECISION.md`، وليس قرارًا محليًا للمستهلك).
 2. عندما تكون الوحدات مترابطة أو متتابعة أو تشترك في الملفات أو architecture أو verification setup، يجوز تنفيذها على Work Branch واحدة مع Commits واضحة لكل Phase أو logical milestone.
 3. عندما تكون الوحدات مستقلة فعليًا ويكون التوازي أسرع بعد احتساب setup وإعادة الفهم والمراجعة وCI والتكامل والتعارضات، يجوز إنشاء Work Branches منفصلة لها؛ وكل Branch منشورة منها تُفتح لها PR مستقلة إلى Phase Draft أو الـparent الصحيح.
 4. إذا كانت Phase Draft Branch منفصلة عن Work Branch، تظل نقطة تجميع محمية ولا تضاف إليها Commits عشوائية. وإذا كانت Work Branch الواحدة هي Batch/Phase Draft المعتمدة، يجوز أن تحتوي على Commits التنفيذ المحددة، مع بقاء review وGates واشتراط Owner authorization لكل GitHub Merge.
@@ -128,8 +128,8 @@ main
 1. لا تدمج عدة Components إلى Draft بصورة عمياء.
 2. عندما يوجد Component مستقل فعليًا، يجب اعتماده واجتياز Component Gate قبل دمجه.
 3. عندما تُختار Phase Draft كحد تجميع، تتم عمليات الدمج إليها واحدة تلو الأخرى حتى تظل حالة Draft معروفة بعد كل دمج.
-4. قبل دمج Component مبنية على Draft أقدم، يتحقق المساعد القائد من توافقها مع أحدث Draft HEAD، ومن عدم تغير assumptions أو الملفات المشتركة.
-5. إذا كانت المزامنة مطلوبة، يحدد Phase Stack الحاجة والـtarget وأثرها على حد التكامل؛ وتُنفذ طريقة Git الدقيقة فقط وفق صلاحيات AI Collaboration، ثم تعاد checks والمراجعة المتأثرة بعد المزامنة.
+4. قبل دمج Component مبنية على Draft أقدم، يتحقق المساعد القائد من توافقها مع أحدث Draft HEAD، ومن عدم تغير assumptions أو الملفات المشتركة وفق معايير التقييم الثلاثي للاختلاف في §8.2.
+5. إذا كانت المزامنة مطلوبة، يحدد Phase Stack الحاجة والـtarget وأثرها على حد التكامل وفق ضوابط §8.2 و§8.3؛ وتُنفذ طريقة Git الدقيقة فقط وفق صلاحيات AI Collaboration، ثم تعاد checks والمراجعة المتأثرة بعد المزامنة.
 6. تخضع عمليات Git وقيودها التفصيلية لقواعد AI Collaboration؛ ولا ينشئ هذا المعيار صلاحية عملية محلية من تلقاء نفسه.
 
 عند اكتمال واعتماد Component مستقلة ذات PR، يجوز دمجها إلى Phase Draft إذا كانت Draft جزءًا من topology المختارة وبعد اجتياز Component Gate وOwner authorization الصريحة لذلك الـGitHub Merge. أما الوحدات المتتابعة داخل Work Branch واحدة فتراجع ضمن تلك الـBranch وفق الـGates نفسها، دون إنشاء Component PR لكل وحدة. لا يجوز دمج Component غير مكتملة أو تمرير تعارض لمجرد أن تنفيذها بدأ في Wave سابقة.
@@ -364,7 +364,7 @@ BLOCKED BY DECISION
 
 ## 6.3 Quality Invariant
 
-هذا التغيير لا يلغي Review أو Testing أو Quality Gates أو Regression Protection أو شرط أن `main` لا يستقبل عملًا ناقصًا أو غير مثبت. ولا يفرض في المقابل Phase Draft أو Component أو **PR مستقلة لكل Work Unit** أو Verification أو Final Review منفصلة عندما لا تبررها Execution Topology أو المخاطر أو حد تكامل ذي معنى. لكن أي governed Work Branch غير افتراضية تُنشر فعليًا إلى GitHub تظل ملزمة بPR مرتبطة بها وفق DEC-017. تبقى الأدلة والمراجعة والتحقق مطلوبة بقدر العقد والـrisk الفعليين.
+هذا التغيير لا يلغي Review أو Testing أو Quality Gates أو Regression Protection أو شرط أن `main` لا يستقبل عملًا ناقصًا أو غير مثبت. ولا يفرض في المقابل Phase Draft أو Component أو **PR مستقلة لكل Work Unit** أو Verification أو Final Review منفصلة عندما لا تبررها Execution Topology أو المخاطر أو حد تكامل ذي معنى. لكن أي governed Work Branch غير افتراضية تُنشر فعليًا إلى GitHub تظل ملزمة بPR مرتبطة بها وفق `DEC-017` المركزي لمستودع `Maatify/php-engineering-standards` (سجل `PUBLISHED_GOVERNED_WORK_BRANCH_REQUIRES_PR_DECISION.md`، وليس قرارًا محليًا للمستهلك). تبقى الأدلة والمراجعة والتحقق مطلوبة بقدر العقد والـrisk الفعليين.
 
 ---
 
@@ -391,23 +391,184 @@ BLOCKED BY DECISION
 4. اجتياز Full Applicable Gate وRegression Protection عند Meaningful Integration Boundary المختارة، مع حفظ phase-level traceability داخل الـBatch.
 5. تنفيذ Direct Lead Acceptance Review لحد التكامل المعيّن. تكون Independent أو Separate Final Review مشروطة بالـrisk ولا تُنشأ لكل conceptual Phase تلقائيًا.
 6. عدم وجود Public Contract أو Architecture أو Scope غير معتمد.
+7. استيفاء بوابات التحقق الميكانيكي لجاهزية الدمج وسلامة الشجرة وفق §8.3.
 
 تنطبق هذه الشروط على كل Phase ذات عمل فعلي وعلى Execution Batch التي تجمعها. أما الـPhase المثبتة بالكامل كـ`Execution No-op`، فتغلق فقط وفق Evidence شروط §5، ولا تنشئ Draft أو Full Applicable Gate أو PR أو Merge.
 
-## 8.2 الدمج النهائي
+## 8.2 تقييم تأخر الفرع عن main وقواعد التزامن (Behind-Main Qualification & Concurrency)
+
+### 8.2.1 القاعدة القاطعة لتأخر الفرع (Behind-Main Definitive Rule)
+
+1. **تأخر الفرع عن `main` (Behind Main) ليس مانعًا تلقائيًا للدمج بمفرده.** في بيئات التطوير الموزعة وغير المتزامنة، يتقدم فرع `main` باستمرار نتيجة دمج فروع أخرى مستقلة؛ ولا يجوز معاملة هذا التقدم كسبب تلقائي يفرض إعادة ترتيب الفرع (Rebase) أو دمج `main` إليه قسرًا.
+2. يُحظر فرض الـ Rebase أو الـ Merge المتكرر لمجرد أن واجهة GitHub تظهر الفرع "Behind Main" أو لتقليل عداد التأخر شكليًا؛ لأن فرض التحديث القسري دون مقتضى هندسي يؤدي إلى دوران غير مبرر (churn)، ويزيد مخاطر الأخطاء العرضية، ويعيد كتابة التاريخ، ويبطل الاختبارات والفحوصات المنفذة، ويهدر جهود المراجعة السابقة.
+3. المعتمد هو **التقييم الموضوعي للاختلاف الفعلي والتبعيات والتعارضات**، لا مجرد المسافة الزمنية أو عدد الـ commits التي تأخر بها الفرع.
+
+### 8.2.2 التقييم الإلزامي للاختلاف والتعارض (Mandatory Divergence Evaluation)
+
+عندما يكون الفرع متأخرًا عن الـ Target Base (Behind > 0)، يجب تقييم أثر هذا التأخر ميكانيكيًا وهندسيًا عبر ثلاثة أبعاد إلزامية بالنسبة إلى الـ Target Base المعيّن (سواء كان `main` أو Phase Draft أو فرع تكامل أب):
+
+1. **تعارض الملفات المباشر (File-Level Divergence):**
+   - مقارنة نطاق الملفات المعدلة في الفرع بنطاق الملفات المعدلة على الـ Target Base منذ الـ Merge Base المشترك:
+     ```bash
+     # ملفات تغيرت على الـ Target Base منذ نقطة التفرع
+     git diff --name-only "$MERGE_BASE..$TARGET_BASE_SHA"
+     # ملفات تغيرت في فرع العمل
+     git diff --name-only "$MERGE_BASE..$PR_HEAD"
+     ```
+   - إذا كانت مجموعتا الملفات منفصلتين تمامًا (Disjoint File Sets) دون أي تداخل في أي مسار ملف، ينتفي تعارض الملفات المباشر.
+2. **التعارض الدلالي وانزياح العقود (Semantic Conflicts & Contract Shifts):**
+   - حتى لو كانت مجموعات الملفات منفصلة، يجب فحص ما إذا كانت الـ commits التي دخلت الـ Target Base:
+     - قد عدلت عقودًا عامة (Public Interfaces / Contracts) أو توقيعات دوال أو أصناف تشغيلية يستهلكها الفرع.
+     - قد غيرت مخططات قواعد بيانات (Database Schemas / Migrations) أو جداول أو حقولًا مشتركة تؤثر على عمل الفرع.
+     - قد عدلت افتراضات معمارية أو قواعد عمل أساسية يعتمد عليها الفرع.
+   - إذا لم تتغير العقود أو المخططات المشتركة التي يستهلكها الفرع، ينتفي التعارض الدلالي.
+3. **انزياح التبعيات وإعدادات التشغيل (Dependency & Configuration Shifts):**
+   - فحص ما إذا كان تحرك الـ Target Base قد تضمن تحديثًا لملفات قفل التبعيات (`composer.lock` / `package-lock.json`) أو ترقية مكتبات خارجية تؤثر على الفرع، أو تعديلًا في إعدادات البيئة المشتركة أو مسارات CI يؤثر على سلوك الكود أو نتائج فحوصاته.
+   - إذا بقيت التبعيات والإعدادات المشتركة المؤثرة متطابقة، ينتفي تعارض التبعيات.
+
+### 8.2.3 حالات الحسم: متى يستمر العمل ومتى يُلزم التحديث
+
+بناءً على التقييم الثلاثي في §8.2.2:
+
+1. **الاختلاف النظيف غير المتعارض (Clean / Benign Divergence):**
+   - إذا ثبت (أ) انفصال مسارات الملفات بالكامل، (ب) وعدم وجود انزياح في العقود أو المخططات المشتركة، (ج) وثبات التبعيات والبيئة المؤثرة؛ يُصنف التأخر كـ **Clean Divergence**.
+   - في هذه الحالة:
+     - **لا يلزم Rebase ولا يلزم دمج الـ Target Base.**
+     - يستمر عمل الفرع ومراجعته بالتوازي دون أي تعطيل.
+     - تظل نتائج الاختبارات والفحوصات السابقة سارية وقابلة للاعتماد وفق ضوابط §8.2.4.
+     - يظل الفرع مؤهلًا للمضي قدمًا إلى بوابات جاهزية الدمج النهائي (§8.3) دون إجبار على التحديث.
+2. **الاختلاف الجوهري والمعالجة المعمارية (Material Divergence & Bounded Remedies):**
+   - عند وجود تعارض ملفات مباشر يمنع الدمج النظيف ميكانيكيًا، أو حدوث انزياح أو كسر في عقد عام أو schema يعتمد عليه الفرع، أو ترقية تبعيات تسبب انكسارًا سلوكيًا، أو صدور قرار صريح من المالك أو المساعد القائد بأن التباعد جوهري (Material Divergence)؛ لا يجوز إعلان الجاهزية للدمج قبل حسم هذا التباعد وإثبات سلامته.
+   - **لا يُعد Rebase أو دمج الـ Base المستهدف الحل التقني الإلزامي الوحيد في كل حالة انزياح دلالي.** يحدد المساعد القائد والمالك المعالجة الهندسية المناسبة وفق بنية الـ topology:
+     - (أ) **معالجة محصورة (Bounded Compatibility Fix):** تطبيق تصحيح توافقي داخل فرع العمل مع إبقاء نقطة التفرع وتاريخ الفرع سليمين دون تدوير غير ضروري.
+     - (ب) **تكامل متتابع منظم (Ordered Sequential Integration):** تسلسل التكامل عبر PR تابعة أو وسيطة تسد الفجوة دون مساس بفرع العمل المكتمل.
+     - (ج) **التحديث الصارم (Re-baselining):** لا يكون Rebase أو دمج الـ Base إلزاميًا إلا عندما يتعذر قبول الدمج المختار دونه هندسيًا أو عند وجود تعارض ملفات حقيقي يستحيل حله دونه.
+   - يمنع تحويل التقييم المعماري إلى دوران قسري لتاريخ Git؛ ويظل تغيير الـ execution parent المعتمد خاضعًا لسلطة المالك وفق §2.1.
+
+### 8.2.4 حدود التزامن بين الفروع والمراجعات ومتى تجب إعادة المراجعة
+
+1. **استمرار العمل والمراجعة بالتوازي:**
+   - يجوز للفروع المستقلة ذات النطاقات المنفصلة والعقود المستقلة الاستمرار في العمل والتطوير والمراجعة بالتوازي دون انتظار دمج بعضها البعض ودون التوقف عند كل commit يدخل الـ Target Base.
+   - دمج فرع موازٍ إلى الـ Base لا يبطل الفروع الأخرى النشطة طالما كان الاختلاف نظيفًا (Clean Divergence) وفق §8.2.2.
+2. **ضوابط صلاحية الأدلة وإعادة المراجعة وفق `DEC-033` المركزي لمستودع `Maatify/php-engineering-standards` (سجل `VERIFICATION_EVIDENCE_ACCEPTED_CONTENT_INTEGRITY_DECISION.md`، وليس قرارًا محليًا للمستهلك):**
+   - تطبيقًا للمعيار الحاكم `DEC-033` المركزي لمستودع `Maatify/php-engineering-standards` (سجل `VERIFICATION_EVIDENCE_ACCEPTED_CONTENT_INTEGRITY_DECISION.md`، وليس قرارًا محليًا للمستهلك): يجب أن يُثبت أن أدلة التحقق المعتمدة (Verification Evidence) ما زالت صالحة للمحتوى النهائي الخاضع للقرار عند حدود Commit أو Direct Lead Acceptance أو Integration.
+   - **إعادة التحقق المتأثر (Affected Verification):** إذا طرأ تغيير جوهري مادي على المحتوى (مثل تعديل الكود لحل تعارض، أو انزياح تبعيات يغير السلوك، أو تعذر إثبات استمرار الصلاحية)، يجب إعادة تشغيل التحقق المتأثر (Affected Verification) للمحتوى النهائي، دون فرض تشغيل حزمة كاملة (Full Suite) تلقائيًا بعد كل تغيير صغير، وتشغيل Full Applicable Verification عند Meaningful Integration Boundary كما يوجب العقد القائم.
+   - **جواز إعادة استخدام الأدلة غير المتأثرة (Evidence Reuse):** إذا كان التغيير غير مؤثر ماديًا على صلاحية الدليل (مثل commit يضيف تقرير فحص أو توثيقًا منفصلًا فقط دون مساس بكود التشغيل أو مدخلات الاختبار، أو تحديث نسب/ancestry-only مع ثبات شجرة الكود والمدخلات والبيئة)، وكان بالإمكان إثبات استمرار صلاحية الدليل قطعيًا، يجوز إعادة استخدام الدليل السابق دون إجبار على إعادة تشغيل الفحوصات، تجنبًا للدخول في حلقة مفرغة (مثل اشتراط إعادة الفحص بعد كتابة تقرير الفحص).
+   - **إلزامية Direct Lead Review طازجة عند حدود التكامل والتصحيح:** تظل Fresh Full Acceptance Review من المساعد القائد إلزامية عند حدوث remediation غيرت حالة سابقة أو عند حد التكامل المعيّن، لتقييم الحالة المتراكمة النهائية بالكامل، وهي مسؤولية مراجعة مستقلة عن إعادة تشغيل الاختبارات ميكانيكيًا عند ثبات صلاحيتها.
+3. **متى لا تلزم إعادة الفحص أو المراجعة:**
+   - إذا كان الفرع متأخرًا عن الـ Target Base وثبت أنه Clean Divergence دون تعديل على شجرة الكود أو كسر لمدخلات التحقق، فإن المراجعة المكتملة وأدلة التحقق المقبولة على exact PR HEAD تظل سارية وصالحة للاعتماد، ولا يبطل الدليل لمجرد تقدم الـ Base طالما لم يمس شجرة الفرع أو عقوده.
+
+## 8.3 بوابات التحقق الميكانيكي لجاهزية الدمج وسلامة الشجرة (Mechanical Merge Readiness Gates & Tree Integrity)
+
+قبل أن تصبح أي PR جاهزة للدمج النهائي بإذن المالك وفق §8.4، يجب استيفاء بوابات التحقق الميكانيكي الأربع التالية وإثباتها بالأدلة القطعية:
+
+### البوابة 1: التحقق الميكانيكي من SHA الفعلي للـ Base من المستودع البعيد (Actual Remote Target Base SHA)
+
+1. **حظر الاعتماد على المراجع المحلية العائمة:** يُحظر الاعتماد على أسماء الفروع المحلية العائمة أو مراجع التتبع المحلية المنعزلة (مثل `origin/${TARGET_BRANCH}`) وحدها دون إثبات طزاجتها؛ إذ قد تكون متأخرة عن حقيقة المستودع البعيد على GitHub.
+2. **استعلام الحقيقة البعيدة (Remote Truth):** يجب التحقق ميكانيكيًا من Commit SHA الفعلي للـ Base المستهدف في المستودع البعيد:
+   ```bash
+   # استعلام SHA الفعلي للـ target branch من المستودع البعيد مباشرة:
+   TARGET_BASE_SHA=$(gh pr view "$PR_NUMBER" --json baseRefOid --jq .baseRefOid 2>/dev/null || git ls-remote origin "refs/heads/${TARGET_BRANCH}" | cut -f1)
+   # أو بعد تحديث صريح ومثبت لمراجع التتبع: git fetch origin "${TARGET_BRANCH}" && TARGET_BASE_SHA=$(git rev-parse "origin/${TARGET_BRANCH}")
+   ```
+3. **تثبيت المرجع والعمومية:** يُثبت هذا الـ `TARGET_BASE_SHA` كقيمة غير قابلة للتغيير طوال عملية فحص التباعد وجاهزية الدمج. ينطبق ذلك على أي target branch معتمد (`main`، أو Phase Draft، أو Umbrella). ويجب إعادة التحقق من ثباته قبل إعلان القبول النهائي؛ فإن تحرك الـ Base البعيد، يعاد تقييم الطزاجة والتباعد.
+
+### البوابة 2: تحديد الـ Merge Base وقياس التباعد بدقة (Merge Base Determination)
+
+1. استخراج نقطة التفرع المشتركة الفعلية بدقة بين الـ PR HEAD والـ `TARGET_BASE_SHA` المعتمد:
+   ```bash
+   MERGE_BASE=$(git merge-base "$TARGET_BASE_SHA" "$PR_HEAD")
+   ```
+2. استخراج عداد الـ commits المتقدمة والمتأخرة بدقة:
+   ```bash
+   # عداد التأخر والتقدم: Behind / Ahead
+   git rev-list --left-right --count "$TARGET_BASE_SHA...$PR_HEAD"
+   ```
+3. إذا كان عداد التأخر صفرًا (Behind = 0)، يكون الفرع محدثًا بالكامل (Fast-Forward Candidate).
+4. إذا كان عداد التأخر أكبر من صفر (Behind > 0)، يطبق التقييم الإلزامي في §8.2: إذا صنف Clean Divergence يجوز المتابعة إلى البوابتين 3 و4؛ وإن كشف التقييم عن Material Divergence، تطبق المعالجة المعمارية المناسبة وفق §8.2.3 وإثبات صلاحيتها قبل إعلان الجاهزية.
+
+### البوابة 3: التحقق المستقل من شجرة الكود المختبرة وفق `DEC-033` المركزي (Independent Tested Tree Verification)
+
+1. **منع الإثبات الدائري والفصل بين Candidate Tree والشجرة المختبرة (Non-Tautological Proof):**
+   - قراءة شجرة الـ PR HEAD الحالية (`PR_HEAD^{tree}`) تمثل شجرة المرشح (`CANDIDATE_PR_TREE`)، وإعادة تسميتها "tested" دون إسناد لسجل الفحص الفعلي لا يشكل إثباتًا مستقلاً على خضوعها للفحص.
+   - يجب تسجيل مصدر أدلة الفحص بوضوح عبر تحديد commit التشغيل الفعلي (`EVIDENCE_TESTED_COMMIT`) واستخراج شجرته (`EVIDENCE_TESTED_TREE`):
+     ```bash
+     EVIDENCE_TESTED_TREE=$(git rev-parse "${EVIDENCE_TESTED_COMMIT}^{tree}")
+     CANDIDATE_PR_TREE=$(git rev-parse "${PR_HEAD}^{tree}")
+     ```
+2. **التحقق من سلامة المحتوى واستمرار الصلاحية وفق `DEC-033` المركزي لمستودع `Maatify/php-engineering-standards`:**
+   - إذا تطابق المعرفان (`EVIDENCE_TESTED_TREE == CANDIDATE_PR_TREE`)، يثبت بالبايت أن محتوى كود الـ PR لم يتغير منذ إجراء الفحوصات.
+   - إذا اختلف المعرفان، يطبق عقد `DEC-033` المركزي (سجل `VERIFICATION_EVIDENCE_ACCEPTED_CONTENT_INTEGRITY_DECISION.md`):
+     - إذا كان الاختلاف ناتجًا عن تغيير غير مؤثر ماديًا في كود الإنتاج أو السلوك (مثل commit توثيقي، أو تحديث تقرير فحص، أو تعديل نسبي/وصفي لا يمس الكود المفحوص، أو تباعد سلالي مع ثبات الشجرة والمدخلات)، مع توثيق إثبات استمرار الصلاحية (Continued Validity Proof)، يجوز إعادة استخدام الدليل (Evidence Reuse) دون إلزام إعادة التشغيل الميكانيكي لكل الفحوصات غير المتأثرة لمجرد اختلاف الـ Commit SHA.
+     - إذا كان التغيير ماديًا يمس السلوك أو تعذر إثبات استمرار الصلاحية، تبطل الأدلة السابقة وتلزم إعادة تشغيل الفحوصات المتأثرة (Affected Verification) على `CANDIDATE_PR_TREE`.
+
+### البوابة 4: إثبات سلامة الدمج وعدم التشويه عبر الدمج المكتمل (Complete Merge & Application Proof)
+
+1. **في حالة Fast-Forward أو Squash لفرع محدث (Behind = 0):**
+   - تطابق الشجرة المدمجة على الـ Base الناتج شجرة `PR_HEAD^{tree}` تلقائيًا، دون مخاطر لتعارض ثلاثي الأطراف.
+2. **في حالة الدمج مع وجود تأخر نظيف (Clean Divergence مع Behind > 0):**
+   - **طبيعة الشجرة الناتجة:** الشجرة الناتجة عن الدمج (`RESULTING_MERGE_TREE`) تجمع بين تغييرات الـ Base المستقلة وتغييرات الـ PR؛ وبالتالي فإن قيمتها الإجمالية **لا تطابق** بالضرورة شجرة `PR_HEAD^{tree}` بمفردها، ولا يجوز اشتراط التطابق الكامل لمجمل المستودع بين فروع اختلفت قواعدها.
+   - **أمر الفحص الحديث المعتمد (Git >= 2.38):**
+     يُحظر استخدام صيغة `git merge-tree` الثلاثية القديمة (`git merge-tree <base> <branch1> <branch2>`) لأنها قد تنتهي بخروج 0 رغم وجود تعارضات محتوى حقيقية. كما يُحظر فرض وسيط `--merge-base` في أمر الدمج؛ لأن `--merge-base` لم يظهر إلا في Git 2.40، وتجاوزه يعطل حساب Git التلقائي لنقاط الدمج المتعددة (Multiple Merge Bases / recursive virtual merge base) ويحذر توثيق Git الرسمي من أنه قد ينتج دمجاً مختلفاً ويفقد تغييرات.
+     الصيغة الحديثة المعتمدة هي احتساب الدمج الثلاثي المكتمل تلقائياً في الذاكرة:
+     ```bash
+     # احتساب شجرة الدمج الثلاثي الكامل في الذاكرة دون وسيط --merge-base
+     RESULTING_MERGE_TREE=$(git merge-tree --write-tree "$TARGET_BASE_SHA" "$PR_HEAD")
+     MERGE_STATUS=$?
+     ```
+     - **دلالة كود الخروج:**
+       - **الخروج 0 (Clean Merge):** دمج نظيف وناجح تماماً دون تعارضات؛ يطبع الأمر معرف شجرة الدمج الناتجة (`RESULTING_MERGE_TREE`) في السطر الأول.
+       - **الخروج 1 (Conflict):** وجود تعارضات حقيقية مانعة للدمج (تعارض محتوى، تعارض إعادة تسمية، تعارض ملف/مجلد، أو ملفات ثنائية). يطبع الأمر تفاصيل ومسارات التعارض إلى `stdout`. يُمنع الاعتماد الحصري على البحث النصي عن علامات التعارض (`<<<<<<<`) كبديل لكود الخروج.
+       - **الخروج > 1 (Tooling / Fatal Error):** خطأ في الأداة، وسيط غير صالح، أو إشارة إلى commit/ref غير موجود.
+     *(ملاحظة: يبقى `git merge-base "$TARGET_BASE_SHA" "$PR_HEAD"` أو `git merge-base --all` وسيلة مستقلة لإثبات الـ ancestry وحساب عداد behind/ahead في البوابة 2، وليس تجاوزاً قسرياً لخوارزمية دمج `git merge-tree`).*
+   - **البديل العازل عبر Worktree مؤقت منفصل (لإصدارات Git < 2.38 أو التحقق المنعزل المستقل):**
+     إذا كانت أداة Git أقدم من 2.38 ولا تدعم `--write-tree`، أو عند الرغبة في إجراء trial merge حقيقي منعزل، **يُمنع منعاً باتاً** التبديل المباشر في نفس مساحة العمل الحالية (مثل `git checkout --detach`) لما يسببه ذلك من تبديل الـ HEAD الفعلي وتعطيل العمل أو فشله مع التعديلات غير المحفوظة. يجب استخدام مساحة عمل مؤقتة منفصلة ومستقلة (Disposable Separate Worktree) مع ضمان التنظيف الكامل:
+     ```bash
+     # 1. إنشاء مساحة عمل مؤقتة معزولة تماماً في مسار منفصل
+     TEMP_WORKTREE=$(mktemp -d /tmp/git-trial-merge.XXXXXX)
+     git worktree add --detach "$TEMP_WORKTREE" "$TARGET_BASE_SHA"
+
+     # 2. تنفيذ محاكاة الدمج المنعزلة داخل الـ Worktree المؤقت دون التأثير على مساحة العمل الأصلية
+     set +e
+     git -C "$TEMP_WORKTREE" merge --no-commit --no-ff "$PR_HEAD" >/dev/null 2>&1
+     TRIAL_STATUS=$?
+     set -e
+
+     if [ "$TRIAL_STATUS" -eq 0 ]; then
+         # استخراج معرف شجرة الدمج الناتج من الـ index المؤقت المعزول
+         RESULTING_MERGE_TREE=$(git -C "$TEMP_WORKTREE" write-tree)
+     fi
+
+     # 3. التنظيف الإلزامي الشامل للـ Worktree المؤقت فور الانتهاء
+     git worktree remove --force "$TEMP_WORKTREE"
+     rm -rf "$TEMP_WORKTREE"
+     ```
+     - **ضمانات العزل في البديل المؤقت:**
+       - تبقى مساحة العمل الأصلية (HEAD الحالي، والـ Index، والتعديلات غير المحفوظة في ملفات العمل) نظيفة ومحفوظة بنسبة 100% دون أي تغيير.
+       - يتم التخلص من مساحة العمل المؤقتة وسجلاتها في Git بالكامل فور الانتهاء (`git worktree remove --force`).
+   - **إثبات سلامة المساهمة وعدم التشويه:**
+     التحقق من أن الفارق الذي تدخله شجرة الدمج على الـ Base المستهدف:
+     `git diff "$TARGET_BASE_SHA" "$RESULTING_MERGE_TREE"`
+     يطابق بالضبط مساهمة فرع العمل المفحوصة والمراجعة:
+     `git diff "$MERGE_BASE" "$PR_HEAD"`
+     على كافة المسارات التي يمسها الفرع، مع بقاء المسارات المستقلة التابعة للـ Base سليمة ودون أي حذف أو تشويه صامت.
+3. لا تُعلن جاهزية الـ PR للدمج ما لم تجتز هذه البوابات الميكانيكية بالكامل وتُسجل أدلتها بوضوح في وصف الـ PR أو سجل الفحص. ويظل تشغيل Full Applicable Gate بعد الدمج إلزاميًا عند Meaningful Integration Boundary.
+
+## 8.4 الدمج النهائي
 
 1. يمنع إدخال أي Work Unit أو Documentation أو Fix غير مكتملة أو غير مراجعة مباشرة إلى `main`.
-2. بعد اكتمال حد التكامل المعيّن للـExecution Batch وكل Gates وReviews المنطبقة، يكون الحد نفسه جاهزًا للدمج.
+2. بعد اكتمال حد التكامل المعيّن للـExecution Batch وكل Gates وReviews وبوابات التحقق الميكانيكي المنطبقة وفق §8.3، يكون الحد نفسه جاهزًا للدمج.
 3. يظل كل GitHub Merge، بما في ذلك Component PR إلى Phase Draft وPhase Draft أو Batch Integration Boundary إلى `main`، مشروطًا بـOwner authorization صريحة. لا توجد Standing Merge Authority للـLead.
 لا يشكل دمج حد التكامل إلى `default branch` بحد ذاته `Standards Adoption` أو `Standards Upgrade`. وتظل `Standards Adoption` و`Standards Upgrade` محكومتين حصريًا بـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
 4. إذا ضمت Work Branch/PR واحدة عدة Phases، يجوز أن تنتج Squash Commit واحدة إلى `main`، بشرط أن تكون Commits الـBranch وتوثيق الـPR قد حافظا على phase-level traceability لكل Phase وlogical milestone قبل الدمج.
 5. كل Merge إلى Parent/Umbrella نشطة يخضع بعده لـPost-Merge Reconciliation Gate في §2.4 قبل بدء عمل sequential/dependent جديد من الـParent الناتجة.
+6. **التحقق بعد الدمج إلى `main` (Post-Merge Main Verification):** بعد إتمام GitHub Merge المصرح بها من المالك إلى `main` بأي طريقة مسموحة (`merge` أو `squash` أو `rebase`)، يجب على Technical Lead إثبات الـactual integration result من المصدر البعيد وفق الطريقة المستخدمة: Merge Commit لطريقة `merge`، وSquash Commit لطريقة `squash`، وCommit(s) الناتجة عن `rebase` كما تبلغها GitHub، باستخدام آخر Commit مُعاد تأسيسها (rebased) كنتيجة التكامل. لا يُشترط Merge/Squash Commit غير موجودة في طريقة `rebase`، وتُسجل هويات Commits الناتجة الجديدة ولا تُعامل كـPR HEAD القديمة. ثم يُثبت result Tree، ويُتحقق أن **المساهمة المقبولة في المراجعة** وصلت إلى الناتج دون حذف أو تغيير أو إضافة مادية غير مراجعة، حتى عندما ينشئ `rebase` هويات Commits مختلفة عن PR HEAD المراجعة. تستخدم Whole-Tree equality عندما تبررها ancestry وtopology الفعلية، وتستخدم changed-path Git Blobs/patch equivalence أو ما يعادلها مع سلامة التغييرات المستقلة عند Clean Divergence أو Rebase؛ ولا يُشترط تطابق شجرة PR الكاملة مع `main` التي تلقت تغييرات مستقلة. إذا تقدم `main` بعد هذا الدمج وقبل المصالحة، تُحدد نتيجة هذا التكامل المعين وشجرتها من تاريخ PR/Commits غير القابل للتغيير، ويُثبت احتواء `main` الحالية عليها؛ ولا تُعتبر `main` الحية الأحدث حالة التكامل السابق المباشر. إثبات `git merge-tree` السابق للدمج ليس إثبات دمج حدث بالفعل. عند Material discrepancy لا يُعلن reconciliation PASS، ويطبق `DEC-033` وقواعد الـintegration/verification القائمة. هذا ليس Full Suite Gate جديدًا عند كل Squash أو Rebase، ولا يوجب إعادة اختبارات بلا مبرر لمجرد تغير الـSHA، ولا يعني نشرًا أو Release أو Migration.
 
 عندما لا توجد Phase Draft منفصلة، يظل أي GitHub Merge من Work Branch/Batch Integration Boundary مشروطًا بـOwner authorization صريحة؛ لا ينشئ ذلك دورة PR مستقلة لكل Phase.
 
 لا يوجد Phase-to-main Merge أو owner merge ceremony للـPhase المثبتة كـ`Execution No-op`، لأنها لا تنشئ Draft أو Commit أو PR أصلًا.
 
-## 8.3 Git History المستهدف
+## 8.5 Git History المستهدف
 
 يظل تاريخ `main` نظيفًا ومفاهيميًا، بينما تحفظ الـBranch والـPR والتوثيق traceability التفصيلية. داخل PR نفسها يكون الوصف current-state snapshot قابلة للاستئناف، بينما تحفظ الـtimeline التاريخ التنفيذي material دون تحويل الوصف إلى diary:
 
@@ -431,6 +592,26 @@ Execution Batch 2 — Phase C — complete
 ---
 
 # 10. سجل تغييرات المعيار
+
+> **توضيح مرجعي (Issue #149):** كل معرف `DEC-###` في هذا السجل التاريخي يشير إلى قرار مركزي في `Maatify/php-engineering-standards` وليس إلى قرار محلي للمستهلك. هذا التوضيح لا يعيد كتابة التاريخ ولا يغير نطاق أي إصدار مذكور.
+
+## `5.0.0`
+
+- تنفيذ Issue #166 (التابع لـ Issue #152): إضافة §8.4 البند 6 (Post-Merge Main Verification) وفق `DEC-041`، وتغطي طرق `merge` و`squash` و`rebase` (هويات Commits الناتجة عن Rebase) وتقدم `main` قبل المصالحة. التصنيف `NORMATIVE / BREAKING_CONTRACT_CHANGE`، وهو التصنيف الأعلى نفسه القائم؛ تبقى Mutable Candidate `5.0.0` المحسوبة مرة واحدة من خط الأساس المجمد `4.0.0` دون Bump إضافي. لا Freeze ولا Version Finalization ولا Adoption.
+- تنفيذ Issue #156 (التابع لـ Issue #152) ومعالجة مراجعة Lead (F160-01 إلى F160-06):
+  - **Standard ID:** `std-github-phase-stack-workflow`
+  - **Standard Version:** `5.0.0` (Mutable Candidate Version مؤقتة محسوبة من خط الأساس المجمد `4.0.0` ذي الـ Blob المعتمد `f96f94a7be5a90caea629ad4fa5051819084859c` والمطابق لدى المستهلكين المعتمدين).
+  - **Change Nature:** `NORMATIVE`.
+  - **Compatibility Impact:** `BREAKING_CONTRACT_CHANGE` (حساب Candidate على أساس Major من خط الأساس المجمد `4.0.0`). يرتكز هذا التصنيف إلى أن إضافة بوابات تحقق ميكانيكية ملزمة لجاهزية الدمج (الاستعلام عن الحقيقة البعيدة لـ Base SHA، تحديد Merge Base بدقة، التحقق المستقل من شجرة الكود المختبرة تحت DEC-033، واعتماد الدمج الثلاثي المكتمل عبر `git merge-tree --write-tree` مع التدقيق الصارم لكود الخروج) تفرض شروطًا وإجراءات ملزمة جديدة على مسارات عمل PRs كانت تعتبر مكتملة ومتوافقة سابقًا. تظل هذه النسخة مرشحًا مؤقتًا خاضعًا للمراجعة، دون إقرار أي تجميد أو إصدار نهائي في هذه المرحلة.
+  - **Behind-Main Qualification (§8.2):** تثبيت القاعدة القاطعة بأن تأخر الفرع عن `main` ليس مانعًا تلقائيًا للدمج ولا يبرر فرض Rebase أو Merge بمفرده؛ واعتماد التقييم الثلاثي الإلزامي للاختلاف (تعارض الملفات المباشر مع تعميم التسمية للـ Target Base، التعارض الدلالي وانزياح العقود، انزياح التبعيات وإعدادات التشغيل).
+  - **المعالجة المعمارية للتباعد الجوهري (§8.2.3):** إزالة فرض Rebase أو Merge كحل تقني وحيد إجباري عند حدوث تباعد دلالي، وإتاحة المعالجة المحصورة (Bounded Compatibility Fix) أو التكامل المتتابع المنظم، وقصر إلزامية Re-baselining على الحالات التي يتعذر قبول الدمج المختار دونها هندسيًا.
+  - **صلاحية الأدلة وحدود التزامن وفق `DEC-033` (§8.2.4):** مطابقة القواعد مع `DEC-033` بالسماح الصريح بإعادة استخدام الأدلة غير المتأثرة التي يثبت استمرار صلاحيتها قطعيًا (مثل commits التوثيق/التقارير أو ancestry-only مع ثبات شجرة الكود)، وتخصيص إعادة الفحص للتحقق المتأثر (Affected Verification) عند التغيير المادي، مع الحفاظ على إلزامية Fresh Full Acceptance Review من المساعد القائد عند حدود التكامل والتصحيح.
+  - **بوابات الجاهزية الميكانيكية وسلامة شجرة الكود (§8.3):**
+    - استعلام الحقيقة البعيدة لـ `TARGET_BASE_SHA` عبر GitHub API / `ls-remote` / fetch لمنع الاعتماد على مراجع التتبع المحلية المنعزلة التي قد تكون متأخرة.
+    - استخراج شجرة الفحص بصورة مستقلة عن شجرة المرشح لمنع الإثبات الدائري.
+    - تصحيح عقد `git merge-tree` باعتماد الأمر الحديث `--write-tree` مع التحقق الصارم من كود الخروج (0 للدمج النظيف، 1 للتعارضات الحقيقية) مع بديل الدمج المنعزل.
+    - توضيح أن الشجرة الناتجة عن دمج فرع متأخر نظيفًا تجمع تغييرات الـ Base والـ PR، وإثبات السلامة بمطابقة فارق المساهمة (`diff $TARGET_BASE_SHA $RESULTING_MERGE_TREE` مقابل `diff $MERGE_BASE $PR_HEAD`).
+- Issue #149: توضيح مرجعي فقط لمعرفات `DEC-###` لتشير صراحةً إلى قرارات `Maatify/php-engineering-standards` المركزية لا إلى قرارات المستهلك المحلية، دون تغيير أي Obligation أو Permission ودون اعتماد على `docs/decisions/` داخل المستهلك. التصنيف `CLARIFICATION / NO_CONTRACT_CHANGE` (Patch)؛ بعد تجميعه مع الأثر الأعلى القائم (`NORMATIVE / BREAKING_CONTRACT_CHANGE / Major`) من Frozen Version Baseline `4.0.0` تظل Mutable Candidate `5.0.0` دون Bump إضافي. لا Freeze ولا Version Finalization ولا Adoption.
 
 ## `4.0.0`
 

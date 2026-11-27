@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-testing`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document establishes the canonical, repository-wide Testing Standard for the Maatify ecosystem. Its primary purpose is to protect implemented behavior from regressions and unintended damage during future development.
@@ -103,6 +103,18 @@ Current-truth verification against an externally controlled provider and its evi
 
 ---
 
+### 3.6. Final Classes and Test Doubles
+
+This subsection records the Owner-approved final-class testing policy of central `DEC-008` of `Maatify/php-engineering-standards` (identifying record: `INITIAL_STANDARDS_GOVERNANCE_DECISIONS_AR.md` §8). It is not a consumer-local decision, and this reference does not require the record to exist in a consumer repository.
+
+- Test doubles MUST target contracts or interfaces that are meaningful boundaries by default, not concrete `final` classes.
+- `final` MUST NOT be removed from a class solely to facilitate testing.
+- When a class depends on a concrete `final` class, tests SHOULD first use a real instance when it is deterministic and suitable, or a Fake or test double at the collaborator or external boundary it depends on.
+- An interface MUST NOT be introduced solely to satisfy a test; it is justified only by a real runtime replaceability need.
+- `dg/bypass-finals` and legacy PHPStan suppressions for mocking `final` classes are not centrally approved default standards. This does not prohibit a repository from using a tool permitted by the Standard that governs its artifact type; any such use MUST NOT weaken production design or justify PHPStan suppressions or baselines.
+
+---
+
 ## 4. Regression Protection Rules
 
 Future development MUST NOT rely only on implementation-level tests.
@@ -121,6 +133,8 @@ Where correctness depends on multiple components working together, an appropriat
 
 ### 4.5. Resolved Bugs/Regressions
 A fixed regression MUST be accompanied by a test capable of detecting recurrence. Prefer the narrowest useful recurrence-detecting test, selected according to the actual defect boundary; it MAY be Unit, Integration, or System/E2E. Such a test MAY be sufficient on its own only when the defect did not affect any behavioral boundary that independently requires System/E2E protection under this Standard. If such a boundary was affected, including externally observable behavior, a critical workflow, or an integration boundary covered by the Core Principle, the relevant System/E2E protection MUST also remain present. Describing a Repository/DB, persistence, or database-interaction regression as internal MUST NOT remove the System/E2E obligation for an affected integration boundary covered by the Core Principle; an Integration recurrence test alone does not replace that protection.
+
+**RED/GREEN evidence for proven defects.** When remediation corrects a **proven existing defect** whose deficient behavior can be safely and reliably reproduced, verification MUST capture a relevant failing execution **before the fix** (RED) and a successful execution **after the fix** (GREEN), using the narrowest test that actually detects the defect. An existing pre-fix failure is sufficient; a redundant test MUST NOT be created solely to produce a RED. If safe and reliable pre-fix reproduction is impracticable, the constraint MUST be stated explicitly, the recurrence-detecting test required above MUST still be retained, and proportionate alternative detection evidence MUST be provided; a RED result MUST NOT be fabricated. A new feature, a refactor, a documentation-only task, absent coverage for correct behavior, or a speculative or unproved defect does not by itself trigger this requirement. It does not replace separately applicable Unit, Integration, System/E2E, Host CI, or other obligations under this Standard, and it does not universally require Mutation Testing.
 
 ### 4.6. Internal-Only Refactors
 If an internal refactor does not create or change externally observable behavior, and existing E2E/system coverage already protects the behavior, that existing coverage MAY be sufficient. The rule is about behavioral protection, not test-count inflation. You are NOT required to write a new E2E test for every trivial internal change.
