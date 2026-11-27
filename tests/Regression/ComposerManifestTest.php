@@ -66,7 +66,7 @@ final class ComposerManifestTest extends TestCase
         $require = $manifest['require'];
 
         self::assertIsArray($require);
-        self::assertSame('^8.4', $require['php']);
+        self::assertSame('>=8.4.27 <8.5.0 || >=8.5.12 <9.0.0', $require['php']);
         self::assertSame('*', $require['ext-pdo']);
         self::assertSame('*', $require['ext-pdo_mysql']);
         self::assertArrayHasKey('maatify/exceptions', $require);
@@ -99,6 +99,7 @@ final class ComposerManifestTest extends TestCase
         self::assertIsArray($config);
         self::assertTrue($config['sort-packages']);
         self::assertTrue($config['optimize-autoloader']);
+        self::assertSame(['php' => '8.4.27'], $config['platform']);
         self::assertArrayNotHasKey('secure-http', $config);
         self::assertArrayNotHasKey('allow-plugins', $config);
 
@@ -148,6 +149,7 @@ final class ComposerManifestTest extends TestCase
         }
         self::assertSame(['@test:unit', '@test:regression', '@test:integration'], $scripts['test']);
         self::assertSame('@php scripts/integration.php', $scripts['test:integration']);
+        self::assertSame('bash scripts/check-php-constraint.sh', $scripts['verify:php-constraint']);
         self::assertSame('phpunit --testsuite unit', $scripts['test:unit']);
         self::assertSame('phpunit --testsuite regression', $scripts['test:regression']);
 

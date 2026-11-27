@@ -49,7 +49,7 @@ This package is a separate Composer package from the published `maatify/persiste
 
 ### 1.4 Release Candidate target
 
-The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. `composer.json` governs the declared package identity, PHP/extension requirements (`php ^8.4`, `ext-pdo`, `ext-pdo_mysql`), and dependency (`maatify/exceptions ^1.0`); see that file for the authoritative, current declaration.
+The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. [`composer.json`](composer.json) governs the current package identity, PHP and extension requirements, and Composer dependencies.
 
 ---
 

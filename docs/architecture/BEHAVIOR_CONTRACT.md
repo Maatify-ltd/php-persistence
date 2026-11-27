@@ -54,7 +54,7 @@ Type mapping is in [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md). Baseline strategy
 | ID | Contract | A | B | C | Class. | Required tests (future) |
 |---|---|---|---|---|---|---|
 | B-14 | SQL dialect | backtick quoting, `FOR UPDATE`, `SAVEPOINT`, `DO 0` | same | Same statements; engine behavior differs and is verified per engine ([DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md)) | Engine-conditional | The whole matrix, including MariaDB cells and the `1020` cases of DEC-009. |
-| B-15 | Dependencies | `php >=8.2`, `ext-pdo`, `maatify/exceptions ^1.0` | same | `php ^8.4`, `ext-pdo`, `maatify/exceptions ^1.0` (compatibility of the lowest `maatify/exceptions` with PHP 8.4 is unverified); `ext-pdo_mysql` decided in WU-4 | Delta | Lowest and latest dependency jobs on PHP 8.4. |
+| B-15 | Dependencies | `php >=8.2`, `ext-pdo`, `maatify/exceptions ^1.0` | same | WU-4 baseline: `php ^8.4`, `ext-pdo`, `maatify/exceptions ^1.0` (compatibility of the lowest `maatify/exceptions` with PHP 8.4 was unverified at that point); `ext-pdo_mysql` decided in WU-4. See [`composer.json`](../../composer.json) for current requirements. | Delta | Lowest and latest dependency jobs on PHP 8.4. |
 | B-16 | Archive contents | nearly the whole repository | `.gitattributes` `export-ignore` for raw study results | Minimal `.gitattributes`; mandatory Composer files never excluded | Delta | Release-artifact verification in WU-11. |
 
 ## 4. Behavior differences that must reach the release notes

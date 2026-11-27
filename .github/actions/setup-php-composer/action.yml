@@ -1,7 +1,7 @@
 name: Set up PHP and Composer
 description: >-
   Installs the requested PHP minor (8.4, 8.5 or 8.6) with pdo_mysql, pcntl and posix, proves that
-  the CLI is a real stable build of that minor, and installs a deterministic Composer 2.10.3
+  the CLI is a real stable build that meets the applicable security patch floor, and installs Composer 2.10.3
   (pinned version, SHA-256 verified). Composer 2.10 is the first release with the
   dependency-policy model (config.policy) required by the pinned CI Workflow Standard.
 inputs:
@@ -37,18 +37,32 @@ runs:
         tools: none
         coverage: none
         ini-values: error_reporting=-1, display_errors=On
-    - name: Prove a native stable PHP CLI of the requested minor
+    - name: Prove the native stable PHP CLI and security patch floor
       shell: bash
       env:
         PHP_MINOR: ${{ inputs.php-version }}
       run: |
         set -euo pipefail
         actual="$(php -r 'echo PHP_VERSION;')"
-        echo "PHP_VERSION=$actual SAPI=$(php -r 'echo PHP_SAPI;') ZTS=$(php -r 'echo PHP_ZTS;') machine=$(uname -m)"
+        version_id="$(php -r 'echo PHP_VERSION_ID;')"
+        echo "PHP_VERSION=$actual PHP_VERSION_ID=$version_id SAPI=$(php -r 'echo PHP_SAPI;') ZTS=$(php -r 'echo PHP_ZTS;') machine=$(uname -m)"
         case "$actual" in
           "$PHP_MINOR".[0-9]|"$PHP_MINOR".[0-9][0-9]) ;;
           *) echo "PHP $actual is not a stable release of the requested minor $PHP_MINOR" >&2; exit 1 ;;
         esac
+        if [[ ! "$version_id" =~ ^[0-9]{5}$ ]]; then
+          echo "Cannot verify the patch level for PHP $actual: invalid PHP_VERSION_ID" >&2
+          exit 1
+        fi
+        case "$PHP_MINOR" in
+          8.4) floor=80427 ;;
+          8.5) floor=80512 ;;
+          *) floor= ;;
+        esac
+        if [[ -n "$floor" ]] && (( 10#$version_id < floor )); then
+          echo "PHP $actual is below the security patch floor for $PHP_MINOR (PHP_VERSION_ID >= $floor)" >&2
+          exit 1
+        fi
         test "$(php -r 'echo PHP_SAPI;')" = cli
         test "$(uname -m)" = x86_64
         loaded="$(php -m)"
