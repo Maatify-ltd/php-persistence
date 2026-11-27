@@ -30,6 +30,8 @@ use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 
 require __DIR__ . '/vendor/autoload.php';
 
+const ORDERING_CHECK_FAILURE_TIMESTAMP = '2026-01-01 00:00:00';
+
 function verifySame(mixed $expected, mixed $actual, string $description): void
 {
     if ($expected !== $actual) {
@@ -79,8 +81,8 @@ function createCatalog(PDO $pdo, string $table): void
         scope_id INT NULL,
         position INT NOT NULL,
         deleted_at DATETIME NULL,
-        stamp VARCHAR(8) NOT NULL DEFAULT 'ready',
-        CHECK (stamp <> 'blocked'),
+        stamp VARCHAR(19) NOT NULL DEFAULT 'ready',
+        CHECK (stamp <> '" . ORDERING_CHECK_FAILURE_TIMESTAMP . "'),
         KEY scope_position (scope_id, position)
     ) ENGINE=InnoDB");
 }
@@ -180,7 +182,7 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         $pdo->beginTransaction();
         $pdo->exec("UPDATE `{$table}` SET stamp = 'earlier' WHERE id = 4");
         try {
-            $manager->moveWithinScope($pdo, $timestampedConfig, 7, 1, 1, 'blocked');
+            $manager->moveWithinScope($pdo, $timestampedConfig, 7, 1, 1, ORDERING_CHECK_FAILURE_TIMESTAMP);
             throw new LogicException('Target write unexpectedly passed its CHECK constraint');
         } catch (PDOException $error) {
             verifySame($mariaDb ? 4025 : 3819, (int) ($error->errorInfo[1] ?? 0), 'Target write failed after the range shift');
