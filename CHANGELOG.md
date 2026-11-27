@@ -4,19 +4,28 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0]
 
 ### Added
 
-- Optional consistent pagination for one page on a qualified Host-delegated read connection. The Host receives a terminal connection disposition independently of the page or exception.
-
-- Optional protected UNIQUE-safe ordering for qualified dense InnoDB lists. Hosts can allocate an append position, move rows, or run a registered delete with compaction under one scope anchor. Existing Ordering methods keep their contracts.
+- Optional consistent pagination for one page on a qualified Host-delegated read connection (C1). The Host receives a terminal connection disposition independently of the page or exception.
+- Optional pagination within a qualified Host-owned transaction (B). Registered pages share the confirmed read view, can see earlier writes in that transaction, and report per-attempt settlements.
+- Forward-only Keyset pagination for a qualified unique integer key, with a signed continuation bound to the query and Host scope.
+- Static composite and dynamic Offset sorting through separate entry points. Static plans define fixed trailing terms. Dynamic sorting accepts up to three allowlisted request sort keys with independent directions.
+- Protected Host write checkouts with registered commands and guarded Ordering. The Host directs transaction completion and uses the settlement to choose handoff or discard.
+- Verified Apply/Discard (C2) for package-owned and Host-owned transactions. It returns the decision payload after confirming the required control and reports the database outcome and connection disposition separately.
+- Protected UNIQUE-safe Ordering (B1) for eligible dense InnoDB lists. Hosts can allocate an append position, move rows, or run a registered delete with compaction under one scope anchor.
 
 ### Changed
 
-- The current source narrows Composer PHP eligibility from RC.2's `^8.4`. PHP 8.4.0–8.4.26 and 8.5.0–8.5.11 can no longer resolve the new package version. The admitted ranges start at 8.4.27 for PHP 8.4 and 8.5.12 for PHP 8.5, with forward eligibility within PHP 8.
+- Raised the Composer PHP patch floors from RC.2's `^8.4`. PHP 8.4.0–8.4.26 and 8.5.0–8.5.11 can no longer resolve this version. The admitted ranges start at 8.4.27 for PHP 8.4 and 8.5.12 for PHP 8.5, with forward eligibility within PHP 8.
+- Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
 
-- Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The new optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
+### Fixed
+
+- Preserve the original transaction or savepoint failure when the cleanup state check also fails.
+- Attempt to release count and data cursors after pagination read, validation, or mapper failures while preserving the original error.
+- Reject terminal newlines in trusted SQL identifiers, named binding keys, decimal COUNT values and direct result sort keys.
 
 ## [1.0.0-rc.2] - 2026-11-18
 

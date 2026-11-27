@@ -1,17 +1,30 @@
 # Release Artifact Verification
 
-[`maatify/php-persistence:1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) was published from the qualified commit tagged [`v1.0.0-rc.2`](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2).
+## Verify the Stable 1.0.0 target
 
-Run the same archive checks as CI from a checkout containing the release tag. The command needs Git, tar, PHP, and Composer.
+Run the repository command from a Git checkout at the committed source you intend to verify. It requires Git, tar, PHP, and Composer. Compare the printed commit and tree with the intended PR head or `main` SHA.
+
+```sh
+ARTIFACT_SHA="$(git rev-parse HEAD)"
+git rev-parse HEAD 'HEAD^{tree}'
+composer release:verify -- --target=1.0.0 --sha="$ARTIFACT_SHA"
+```
+
+The verifier accepts only the exact `1.0.0` target and a full commit SHA. It checks the selected commit in an isolated checkout and produces independent Git and Composer archives. For each archive it checks required consumer files and examples, the full runtime source, exclusions for repository-only and sensitive paths, and byte equality against the selected commit. The verifier checks Composer identity and production PSR-4 autoloading, exact target and installation markers in the README, the undated CHANGELOG target heading, and the SECURITY lifecycle and support markers. The output records package target, commit, tree, sorted file inventories, SHA-256 hashes, and the verification result. The temporary workspace is removed when verification ends.
+
+Structural checks cover archive paths and private key markers. The release review verifies claims and their context, the allocation of CHANGELOG entries and any remaining unreleased changes, support semantics, local links, and archive contents for sensitive data.
+
+The required CI job checks out the PR head or pushed SHA, verifies HEAD against that SHA, and invokes the same command for `1.0.0`. Qualification requires evidence on the actual `main` candidate SHA. A passing PR run verifies its own source and archives.
+
+## Verify the historical RC.2 archive
+
+[`maatify/php-persistence:1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) was published from the qualified commit tagged [`v1.0.0-rc.2`](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2). The CI job verifies this target separately with the verifier from that tag. Use a separate checkout at that tag for the same historical check.
 
 ```sh
 QUALIFIED_SHA=71dc61548e48fd053376db69149a00bc87069b70
+test "$(git rev-parse HEAD)" = "$QUALIFIED_SHA"
 composer release:verify -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"
 ```
-
-The verifier creates an isolated checkout of the selected commit. It generates a VCS archive with `git archive` and a Composer archive with `composer archive`, independently of each other. The verification checks the actual entries and bytes, including required consumer files, the full runtime source, manifest identity and production PSR-4 mapping, and repository-only or sensitive paths. The log records the target, commit, tree, and a file inventory and SHA-256 for each generated archive. The temporary workspace is removed when verification ends. The sensitive-path and private-key checks are structural. The Lead reviews release claims, changelog allocation, and the contents for sensitive data in context.
-
-The CI archive job checks out `v1.0.0-rc.2` and verifies it against the recorded qualified SHA. The other jobs continue to verify the pull request or pushed commit. Keep the archive result with the evidence for RC.2 and its qualified SHA.
 
 ## Release evidence handoff
 
@@ -21,7 +34,7 @@ Before requesting publication authorization, record `maatify/php-persistence`, t
 
 ## Published Artifact Verification
 
-Run this command from the same checkout to verify the published Composer distribution. Use the `QUALIFIED_SHA` recorded above.
+The current Published Artifact Verification command accepts RC.2. Run it from the historical checkout using the `QUALIFIED_SHA` recorded above. Stable `1.0.0` requires separate Published Artifact Verification tooling for its eventual external distribution.
 
 ```sh
 composer release:verify-published -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"

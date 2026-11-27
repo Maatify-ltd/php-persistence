@@ -8,8 +8,7 @@
   <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
 </picture>
 
-[![Status](https://img.shields.io/badge/Status-Release%20Candidate-blue)](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2)
-[![Version](https://img.shields.io/badge/Version-1.0.0--rc.2-blue)](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2)
+[![Artifact target 1.0.0](https://img.shields.io/badge/Artifact-1.0.0%20Stable%20target-blue)](#release-artifact)
 [![PHP](https://img.shields.io/badge/PHP-8.4.27%20minimum-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-Proprietary-green)](LICENSE)
 [![PHPStan](https://img.shields.io/badge/PHPStan-Level%20Max-brightgreen)](README.md#quality-status)
@@ -36,7 +35,11 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
-**Release Candidate `1.0.0-rc.2`** is published on [Packagist](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) and available as a [GitHub pre-release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2). The package has no Stable release.
+## Release artifact
+
+This release artifact targets Stable `1.0.0`.
+
+During release preparation, this target was unpublished and the latest published version was [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). The [RC.2 release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2) and its usage instructions record that version separately.
 
 ## Key Features
 
@@ -47,7 +50,7 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 ## Requirements
 
-The current source declares its runtime requirements in [`composer.json`](composer.json).
+The artifact declares its runtime requirements in [`composer.json`](composer.json).
 
 - PHP `>=8.4.27 <8.5.0 || >=8.5.12 <9.0.0`
 - `ext-pdo`, `ext-pdo_mysql`
@@ -57,13 +60,13 @@ The Composer constraint permits forward installation within PHP 8. The [CI matri
 
 ## Installation
 
-Install the exact release candidate from Packagist:
+The following command resolves after this exact version is published on Packagist.
 
 ```bash
-composer require maatify/php-persistence:1.0.0-rc.2
+composer require maatify/php-persistence:1.0.0
 ```
 
-For a clean project, follow the [installed RC.2 quickstart](docs/guides/USAGE_GUIDE.md#run-the-published-rc2-examples-from-a-clean-install) to run all three Basic examples with its own Composer autoloader and disposable fixtures. The [current-source verification](docs/guides/USAGE_GUIDE.md#verify-unreleased-source-in-a-clean-consumer) installs an exact Git candidate in separate Composer roots.
+Use the [installed 1.0.0 examples](docs/guides/USAGE_GUIDE.md#run-the-examples-from-a-100-install) after installation. For a source checkout, [consumer verification](docs/guides/USAGE_GUIDE.md#verify-an-exact-source-checkout-in-a-clean-consumer) installs an exact Git candidate in separate Composer roots. The [historical RC.2 quickstart](docs/guides/USAGE_GUIDE.md#run-the-published-rc2-examples-from-a-clean-install) applies to that earlier version.
 
 See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md) for release and support details.
 
@@ -100,15 +103,15 @@ See [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) for a capability ma
 The public surface is three independent capability namespaces under `Maatify\PhpPersistence\`:
 
 - `Transaction\Repository\{TransactionRunnerInterface, SavepointTransactionRunnerInterface, PdoTransactionRunner, PdoSavepointTransactionRunner}` and `Transaction\Exception\{InvalidTransactionConfigurationException, TransactionExecutionException}`.
-- `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`. The optional C1 surface adds `Pagination\{Repository\PdoSnapshotPaginator, DTO\SnapshotConnectionOutcomeDTO, Enum\SnapshotConnectionDispositionEnum, Exception\SnapshotPaginationException}` to the current source.
-- The current source also offers optional forward-only Keyset pagination on the Host’s PDO through `Pagination\{Repository\PdoKeysetPaginator, Criteria\KeysetQueryDescriptor, DTO\KeysetPageResultDTO, Exception\InvalidKeysetCursorException}`. [Keyset contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#532-optional-forward-only-keyset-pagination) · [Runnable example](examples/pagination_keyset_usage.php)
-- Optional static composite Offset pagination in the unreleased source uses `Pagination\Config\StaticSortPlan` with `PdoPaginator::paginateWithStaticSort()`. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#534-optional-static-composite-offset-pagination) · [Runnable example](examples/pagination_static_sort_usage.php)
-- Optional dynamic Offset sorting in the unreleased source uses `PdoPaginator::paginateWithDynamicSort()` for up to three independently directed public sort keys. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#535-optional-dynamic-offset-sorting) · [Runnable example](examples/pagination_dynamic_sort_usage.php)
+- `Pagination\{Criteria\PageRequest, Config\PaginationConfig, ValueObject\SortWhitelist, Criteria\PdoPaginationQueryDescriptor, Repository\PdoPaginator, DTO\PageResultDTO, Enum\SortDirectionEnum}` and `Pagination\Exception\{InvalidPaginationConfigurationException, InvalidPaginationQueryException, PaginationExecutionException}`. The optional C1 surface adds `Pagination\{Repository\PdoSnapshotPaginator, DTO\SnapshotConnectionOutcomeDTO, Enum\SnapshotConnectionDispositionEnum, Exception\SnapshotPaginationException}`.
+- Optional forward-only Keyset pagination runs on the Host’s PDO through `Pagination\{Repository\PdoKeysetPaginator, Criteria\KeysetQueryDescriptor, DTO\KeysetPageResultDTO, Exception\InvalidKeysetCursorException}`. [Keyset contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#532-optional-forward-only-keyset-pagination) · [Runnable example](examples/pagination_keyset_usage.php)
+- Optional static composite Offset pagination uses `Pagination\Config\StaticSortPlan` with `PdoPaginator::paginateWithStaticSort()`. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#534-optional-static-composite-offset-pagination) · [Runnable example](examples/pagination_static_sort_usage.php)
+- Optional dynamic Offset sorting uses `PdoPaginator::paginateWithDynamicSort()` for up to three independently directed public sort keys. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#535-optional-dynamic-offset-sorting) · [Runnable example](examples/pagination_dynamic_sort_usage.php)
 - Optional B pagination uses a dedicated PdoHostSnapshotSource and PdoHostSnapshotPaginator on the Host's transaction, with per-attempt settlements and explicit Host handoff or discard. [B contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction)
 - `Ordering\{Config\ScopedOrderingConfig, Repository\ScopedOrderingManager}` and `Ordering\Exception\{InvalidOrderingConfigurationException, InvalidOrderingOperationException, OrderingExecutionException}`.
-- The current source adds [protected UNIQUE-safe Ordering B1](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1) for eligible dense InnoDB scopes. It coordinates append allocation, move and delete with a shared anchor, under a Host-owned transaction.
+- [Protected UNIQUE-safe Ordering B1](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1) applies to eligible dense InnoDB scopes. It coordinates append allocation, move and delete with a shared anchor, under a Host-owned transaction.
 - Optional protected write checkout uses `PdoProtectedTransactionCheckout` and `ProtectedScopedOrderingManager` on an exclusively delegated Host connection. The Host directs transaction completion and uses the settlement to decide handoff or discard. [Protected transaction contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction)
-- **Optional verified checkout (C2).** `PdoVerifiedTransactionCheckout` runs an explicit Apply or Discard decision on an exclusively delegated PDO connection. It verifies the required transaction or savepoint control before returning the payload and reports the database outcome and connection disposition separately. This API is available only in the current repository source. The published `v1.0.0-rc.2` predates it. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard) · [Walkthrough](docs/guides/USAGE_GUIDE.md#optional-verified-checkout-c2) · [Runnable example](examples/verified_transaction_usage.php)
+- **Optional verified checkout (C2).** `PdoVerifiedTransactionCheckout` runs an explicit Apply or Discard decision on an exclusively delegated PDO connection. It verifies the required transaction or savepoint control before returning the payload and reports the database outcome and connection disposition separately. [Contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard) · [Walkthrough](docs/guides/USAGE_GUIDE.md#optional-verified-checkout-c2) · [Runnable example](examples/verified_transaction_usage.php)
 - One package-wide exception marker: `Exception\PhpPersistenceExceptionInterface`.
 
 The package uses internal helpers in the capability repositories. The [Package Reference](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#35-internal-types-excluded-from-the-public-contract) identifies them and their contract status.
@@ -132,7 +135,7 @@ Table and column identifiers passed to `ScopedOrderingConfig` and sort-key ident
 
 ## Examples
 
-Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The current source includes an [opt-in Snapshot example](examples/pagination_snapshot_usage.php) for a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage.
+Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The [opt-in Snapshot example](examples/pagination_snapshot_usage.php) shows a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage.
 
 ## Documentation
 

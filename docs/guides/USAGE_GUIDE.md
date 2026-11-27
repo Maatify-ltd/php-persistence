@@ -2,7 +2,7 @@
 
 Consumer-facing integration guidance for `maatify/php-persistence`. This guide explains how to use the three capabilities; it does not define a technical contract of its own — every normative rule here is a presentation of what [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) already defines. Where the two disagree, the Package Reference governs.
 
-The [published RC.2 quickstart](#run-the-published-rc2-examples-from-a-clean-install) uses the Basic APIs. The [unreleased-source path](#verify-unreleased-source-in-a-clean-consumer) covers the optional paths and the raw Ordering tail-read limit.
+This guide covers the Stable `1.0.0` target. Follow the [installation instructions](../../README.md#installation) after publication or [verify an exact source checkout](#verify-an-exact-source-checkout-in-a-clean-consumer). The [RC.2 quickstart](#run-the-published-rc2-examples-from-a-clean-install) applies to that earlier version.
 
 ## Before you start
 
@@ -16,11 +16,15 @@ The [published RC.2 quickstart](#run-the-published-rc2-examples-from-a-clean-ins
 | Capability | Primary call | Walkthrough | Example |
 |---|---|---|---|
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
-| Transaction · Optional verified checkout (current source) | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
+| Transaction · Optional verified checkout | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
-| Pagination · Optional static composite sort (current source) | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
-| Pagination · Optional dynamic sort (unreleased source) | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
+| Pagination · Optional static composite sort | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
+| Pagination · Optional dynamic sort | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
+
+## Run the examples from a 1.0.0 install
+
+After [installing the exact version](../../README.md#installation), create an `examples/` directory in your Composer project and copy the example PHP files from `vendor/maatify/php-persistence/examples/` into it, including `_bootstrap.php`. The scripts then load that project's Composer autoloader. Run the script linked in the capability map. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`.
 
 ## Run the published RC.2 examples from a clean install
 
@@ -57,9 +61,9 @@ php examples/ordering_basic_usage.php
 
 Each command ends with `OK`. Transaction commits invoice 1 and rolls back the second insert. Pagination shows page 2 with 15 of 25 rows matching and a maximum of 10 rows per page. Ordering appends at position 4 in the seeded scope, moves row 3 to the first position, and verifies an outer rollback. Discard the disposable database when finished.
 
-RC.2 contains the three Basic examples. C1, B, Keyset, static and dynamic Offset sorting, Protected Host checkout and Ordering, protected UNIQUE-safe Ordering B1, Verified Apply/Discard and the raw Ordering tail-read budget belong to unreleased source. See the [RC.2 Package Reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+RC.2 contains the three Basic examples. See the archived [RC.2 Package Reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md) for that version's public contract.
 
-## Verify unreleased source in a clean consumer
+## Verify an exact source checkout in a clean consumer
 
 From a repository checkout at the exact committed source to verify, compare the printed commit and tree against the intended GitHub `main` or PR HEAD. The candidate is installed by the repository harness in separate Composer roots with production dependencies and autoloading.
 
@@ -135,7 +139,7 @@ Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the s
 
 ### Optional verified checkout (C2)
 
-Use Verified Checkout when your callback needs to choose whether to keep or undo provisional InnoDB writes and you need confirmation of the required transaction or savepoint control before receiving its payload. This API is available only in the current repository source. The published `v1.0.0-rc.2` predates it.
+Use Verified Checkout when your callback needs to choose whether to keep or undo provisional InnoDB writes and you need confirmation of the required transaction or savepoint control before receiving its payload.
 
 The Host supplies an idle, non-persistent `PDO` or `Pdo\Mysql` connection from `pdo_mysql` with native prepares, exception mode, the default statement class and autocommit enabled. Disable multi-statements at construction and clear any pending transaction settings or resources before attachment. Reserve the connection for this checkout throughout the delegation, including when it comes from a pool. Prevent raw alias use, reconnect and multiplexing. Supply a trusted command catalog whose SQL, including triggers and routines, preserves the transaction.
 
@@ -146,7 +150,7 @@ The Host supplies an idle, non-persistent `PDO` or `Pdo\Mysql` connection from `
 3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PENDING_HOST` after savepoint release and confirmed continuity. Discard records `LOCAL_UNDONE` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome.
 4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `UNKNOWN` and the connection `DISCARD_REQUIRED`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `REUSABLE` or an untouched `UNCHANGED` cancellation. For `DISCARD_REQUIRED`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
 
-Run `php examples/verified_transaction_usage.php` from the root of the current source checkout with the disposable database settings above. The example covers Owned Apply and Discard, Host Discard followed by an outer commit, and settlement after a callback throws. See the [runnable example](../../examples/verified_transaction_usage.php) and the [complete Verified Checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard).
+Run `php examples/verified_transaction_usage.php` from the project root with the disposable database settings above. The example covers Owned Apply and Discard, Host Discard followed by an outer commit, and settlement after a callback throws. See the [runnable example](../../examples/verified_transaction_usage.php) and the [complete Verified Checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard).
 
 ---
 
@@ -229,7 +233,7 @@ Separate Offset requests can drift across writes even with a unique tie. Counts 
 
 ### Optional static composite sorting
 
-Use this path when the Host wants a named order such as status ascending, priority descending, then unique row ID ascending. It is available in the unreleased repository source.
+Use this path when the Host wants a named order such as status ascending, priority descending, then unique row ID ascending.
 
 - **Input** — build `StaticSortPlan` once with trusted identifier paths and a profile for each key this query should offer. Put the primary column in the whitelist and specify the trailing terms in order. Omit a term direction to inherit the requested primary direction. Use an explicit `null` profile for the standard primary/tie-breaker order.
 - **Public call** — pass the descriptor, ordinary `PageRequest`, plan, and mapper to `PdoPaginator::paginateWithStaticSort()`.
@@ -238,7 +242,7 @@ Use this path when the Host wants a named order such as status ascending, priori
 
 ### Optional dynamic sorting
 
-Use this Offset path when a grid or other caller selects up to three sort keys in priority order and chooses a direction for each. The API is in the unreleased source. The published RC.2 uses the standard pagination path.
+Use this Offset path when a grid or other caller selects up to three sort keys in priority order and chooses a direction for each.
 
 - **Input** — translate the grid's request into a list such as `[['key' => 'status', 'direction' => 'asc'], ['key' => 'priority', 'direction' => 'desc']]`. Configure a whitelist of public keys and a unique tie column for this query. Supply only page and page size in `PageRequest`.
 - **Public call** — pass the descriptor, request, configuration, sort list and mapper to `PdoPaginator::paginateWithDynamicSort()`. An empty list uses the configured default order.
@@ -246,8 +250,6 @@ Use this Offset path when a grid or other caller selects up to three sort keys i
 - **Boundary** — the Host owns the SQL, identifiers, connection and unique ordering on the actual result rows. `allowTieBreakerSelection` is a Host policy for the configured public tie key. To reserve the physical column from selection also omit its public aliases. Sort order alone provides no shared snapshot across requests. See the [dynamic sort contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#535-optional-dynamic-offset-sorting).
 
 ### Optional C1 snapshot pagination
-
-C1 is available in the current repository source. Use the existing caller-controlled paginator with the published RC.2 artifact.
 
 Use C1 when all reads for one page can run through the same eligible InnoDB connection and the Host can grant that connection exclusively. Start with a new non-persistent PDO reader with server autocommit enabled, effective REPEATABLE READ and PDO exception mode. The Host proves the connection has no active transaction or pending next-transaction policy.
 
@@ -259,7 +261,7 @@ The [snapshot example](../../examples/pagination_snapshot_usage.php) runs succes
 
 ### Optional B pagination in a Host transaction
 
-Use B from the unreleased source when the Host needs eligible page reads, including its earlier writes, within one transaction it starts through the checkout.
+Use B when the Host needs eligible page reads, including its earlier writes, within one transaction it starts through the checkout.
 
 1. **Input** — Start with an idle, exclusively delegated, non-persistent `pdo_mysql` PDO with exception mode, the default statement class and autocommit enabled. Register non-locking, side-effect-free InnoDB page plans and trusted commands in a `HostSnapshotCatalog`. Route all use of the connection through the checkout during delegation.
 2. **Start** — Create the source with `PdoHostSnapshotSource::attachExclusive($pdo, $catalog)`, obtain a lease with `$source->checkout()`, then call `$checkout->beginRepeatableRead()`. Checkout rejects an already active transaction. At the Host's request, B issues `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` for the next transaction, starts it, and confirms the same session and active transaction. The Host's session and server defaults stay in effect for later transactions. For writes before a page, use `runRegisteredCommand()` on that checkout in read-write mode with commands registered to preserve the transaction.
@@ -337,13 +339,13 @@ Run `composer examples:smoke` to see the [standalone example](../../examples/ord
 
 For a protected Host write transaction, delegate an eligible PDO with `PdoProtectedTransactionCheckout::attachExclusive()`, call `begin()`, then pass it to `ProtectedScopedOrderingManager::getNextPositionForUpdate()` or `moveWithinScope()`. Keep the Host's scope-lock protocol and issue any insert through a registered command on the same checkout. The Host chooses completion, inspects settlement and returns or discards the connection under the [protected checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction). After transaction loss, a fenced checkout prevents continuation and handoff.
 
-In the current source, the **raw** `ScopedOrderingManager::getNextPositionForUpdate()` defaults to 64 locking tail reads. Its optional `maxTailReads` parameter accepts 2–512 and counts the initial read. If no two consecutive values match within the budget, the call reports `TAIL_READ_LIMIT_EXCEEDED` in `OrderingExecutionException` metadata. The Host retains transaction control, and engine lock-wait limits apply separately. [DEC-021](../decisions/DEC-021-bound-ordering-tail-reads.md)
+The **raw** `ScopedOrderingManager::getNextPositionForUpdate()` defaults to 64 locking tail reads. Its optional `maxTailReads` parameter accepts 2–512 and counts the initial read. If no two consecutive values match within the budget, the call reports `TAIL_READ_LIMIT_EXCEEDED` in `OrderingExecutionException` metadata. The Host retains transaction control, and engine lock-wait limits apply separately. [DEC-021](../decisions/DEC-021-bound-ordering-tail-reads.md)
 
 For dense positions backed by a UNIQUE key, use the protected B1 lifecycle below on an eligible schema.
 
 ### Protected UNIQUE-safe Ordering B1
 
-B1 is an opt-in feature of the current source. See the [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1) for schema, receipt and connection requirements.
+B1 is opt-in. See the [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#541-protected-unique-safe-ordering-b1) for schema, receipt and connection requirements.
 
 #### Basic — append to a global banner list
 
