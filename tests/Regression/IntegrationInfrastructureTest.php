@@ -6,6 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Regression;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Protects the repository-owned Integration infrastructure contract without needing Docker.
@@ -351,17 +352,152 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));
     }
 
-    public function testPublishedVerificationAcceptsOnlyTheCurrentTarget(): void
+    public function testPublishedVerificationAcceptsOnlyTheStableTarget(): void
     {
         require_once self::root() . '/scripts/published-artifact.php';
 
-        self::assertTrue(publishedVersion(PAV_TARGET));
-        self::assertTrue(publishedVersion('v' . PAV_TARGET));
-        self::assertTrue(publishedVersion('v' . str_replace('-rc.', '-RC', PAV_TARGET)));
-        self::assertFalse(publishedVersion(PAV_TARGET . '0'));
-        self::assertFalse(publishedVersion(' ' . PAV_TARGET));
-        self::assertFalse(publishedVersion('1.0.0'));
+        self::assertTrue(publishedVersion('1.0.0'));
+        self::assertTrue(publishedVersion('v1.0.0'));
+        self::assertFalse(publishedVersion('1.0.0-rc.2'));
+        self::assertFalse(publishedVersion('1.0.0.0'));
+        self::assertFalse(publishedVersion(' 1.0.0'));
         self::assertFalse(publishedVersion(null));
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function unqualifiedPublishedReferences(): iterable
+    {
+        yield 'wrong dist reference' => [['dist' => ['reference' => str_repeat('b', 40)]]];
+        yield 'wrong source reference' => [['source' => ['reference' => str_repeat('b', 40)]]];
+        yield 'missing dist' => [['dist' => null]];
+    }
+
+    /** @param array<string, mixed> $overrides */
+    #[DataProvider('unqualifiedPublishedReferences')]
+    public function testPublishedVerificationRequiresBothQualifiedReferences(array $overrides): void
+    {
+        require_once self::root() . '/scripts/published-artifact.php';
+        $sha = str_repeat('a', 40);
+        $metadata = self::publishedPackageFixture($sha) + ['versions' => ['v1.0.0']];
+
+        self::assertSame('v1.0.0', publishedResolvedVersion($metadata, $sha));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Packagist must expose GitHub dist and source for the exact qualified SHA');
+        publishedResolvedVersion(array_replace_recursive($metadata, $overrides), $sha);
+    }
+
+    public function testPublishedVerificationRejectsObservedSourceFallback(): void
+    {
+        require_once self::root() . '/scripts/published-artifact.php';
+        $sha = str_repeat('a', 40);
+        $package = self::publishedPackageFixture($sha);
+
+        self::assertSame($package, publishedInstalledPackage(['packages' => [$package]], $sha));
+
+        $package['installation-source'] = 'source';
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Composer did not install the exact release from dist');
+        publishedInstalledPackage(['packages' => [$package]], $sha);
+    }
+
+    /**
+     * @return array{
+     *     name: string,
+     *     version: string,
+     *     installation-source: string,
+     *     install-path: string,
+     *     source: array{type: string, url: string, reference: string},
+     *     dist: array{type: string, url: string, reference: string},
+     * }
+     */
+    private static function publishedPackageFixture(string $sha): array
+    {
+        return [
+            'name' => 'maatify/php-persistence',
+            'version' => 'v1.0.0',
+            'installation-source' => 'dist',
+            'install-path' => '../maatify/php-persistence',
+            'source' => ['type' => 'git', 'url' => 'https://github.com/Maatify-ltd/php-persistence.git', 'reference' => $sha],
+            'dist' => ['type' => 'zip', 'url' => 'https://api.github.com/repos/Maatify-ltd/php-persistence/zipball/' . $sha, 'reference' => $sha],
+        ];
+    }
+
+    /** @return iterable<string, array{array<string, ?string>, array<string, ?string>, ?string}> */
+    public static function publishedContentCases(): iterable
+    {
+        yield 'matching artifacts' => [[], [], null];
+        yield 'new required example absent from both' => [
+            ['examples/ordering_unique_usage.php' => null],
+            ['examples/ordering_unique_usage.php' => null],
+            'The qualified reference omits a required file: examples/ordering_unique_usage.php',
+        ];
+        yield 'installed example omitted' => [
+            [],
+            ['examples/pagination_keyset_usage.php' => null],
+            'Installed dist differs from the qualified archive: examples/pagination_keyset_usage.php',
+        ];
+        yield 'installed bytes changed' => [
+            [],
+            ['README.md' => 'This content differs.'],
+            'Installed dist differs from the qualified archive: README.md',
+        ];
+        yield 'extra installed file' => [
+            [],
+            ['unexpected.txt' => 'Unexpected dist content.'],
+            'Installed dist differs from the qualified archive: unexpected.txt',
+        ];
+        yield 'matching but stale presentation' => [
+            ['README.md' => 'Old release identity.'],
+            ['README.md' => 'Old release identity.'],
+            'Archived README is missing the exact Stable target',
+        ];
+    }
+
+    /**
+     * @param array<string, ?string> $referenceOverrides
+     * @param array<string, ?string> $installedOverrides
+     */
+    #[DataProvider('publishedContentCases')]
+    public function testPublishedVerificationChecksRequiredFilesBytesAndPresentation(
+        array $referenceOverrides,
+        array $installedOverrides,
+        ?string $expectedError,
+    ): void {
+        require_once self::root() . '/scripts/published-artifact.php';
+        $workspace = sys_get_temp_dir() . '/pp-pav-test-' . bin2hex(random_bytes(8));
+        $runtime = 'src/PavFixture.php';
+        $files = [$runtime => '<?php'];
+        foreach (RELEASE_FILES as $relative) {
+            $files[$relative] = self::read($relative);
+        }
+
+        try {
+            foreach (['qualified' => $referenceOverrides, 'installed' => $installedOverrides] as $name => $overrides) {
+                foreach (array_replace($files, $overrides) as $relative => $contents) {
+                    if ($contents === null) {
+                        continue;
+                    }
+                    $path = $workspace . '/' . $name . '/' . $relative;
+                    if (!is_dir(dirname($path))) {
+                        self::assertTrue(mkdir(dirname($path), 0700, true));
+                    }
+                    self::assertSame(strlen($contents), file_put_contents($path, $contents));
+                }
+            }
+
+            if ($expectedError !== null) {
+                $this->expectException(RuntimeException::class);
+                $this->expectExceptionMessage($expectedError);
+            }
+            $actual = publishedContents($workspace . '/qualified', $workspace . '/installed', [$runtime]);
+            $expected = array_map(static fn(string $contents): string => hash('sha256', $contents), $files);
+            ksort($expected);
+            self::assertSame($expected, $actual);
+        } finally {
+            [$cleanup] = execute(['rm', '-rf', '--', $workspace]);
+            self::assertSame(0, $cleanup);
+        }
     }
 
     public function testComposerAndToolingAreProvisionedDeterministically(): void

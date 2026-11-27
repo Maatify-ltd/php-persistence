@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/integration-support.php';
+require_once __DIR__ . '/integration-support.php';
 
 const RELEASE_PACKAGE = 'maatify/php-persistence';
 const RELEASE_TARGET = '1.0.0';
@@ -149,6 +149,12 @@ function verifyReleaseArchive(string $archive, string $workspace, string $source
     sort($files);
 
     return $files;
+}
+
+// The published verifier reuses the release target, file set and presentation checks.
+$scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
+if (!is_string($scriptFilename) || realpath($scriptFilename) !== __FILE__) {
+    return;
 }
 
 $root = dirname(__DIR__);

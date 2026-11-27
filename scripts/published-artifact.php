@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-const PAV_PACKAGE = 'maatify/php-persistence';
-const PAV_TARGET = '1.0.0-rc.2';
+require_once __DIR__ . '/release-artifact.php';
+
 const PAV_REPOSITORY = 'Maatify-ltd/php-persistence';
 
 /** @param list<string> $command */
@@ -49,24 +49,10 @@ function publishedRead(string $path): string
     return $contents;
 }
 
-/**
- * Recognizes the exact RC.2 target after case normalization, an optional
- * v prefix and normalization of an omitted dot before the RC number.
- * Other versions fail the metadata check.
- */
+/** Accepts the exact Stable version with or without Composer's tag prefix. */
 function publishedVersion(mixed $version): bool
 {
-    if (!is_string($version)) {
-        return false;
-    }
-
-    // Composer can omit the dot before the RC number and include a tag prefix.
-    $version = strtolower($version);
-    if (str_starts_with($version, 'v')) {
-        $version = substr($version, 1);
-    }
-
-    return preg_replace('/-rc([0-9]+)\z/', '-rc.$1', $version) === PAV_TARGET;
+    return $version === RELEASE_TARGET || $version === 'v' . RELEASE_TARGET;
 }
 
 /**
@@ -126,19 +112,92 @@ function publishedReference(array $metadata, string $sha): void
     }
 }
 
+/**
+ * Verifies the published package's exact version and references before installation.
+ *
+ * @param array<array-key, mixed> $metadata
+ */
+function publishedResolvedVersion(array $metadata, string $sha): string
+{
+    $versions = $metadata['versions'] ?? null;
+    $version = is_array($versions) && count($versions) === 1 ? $versions[0] ?? null : null;
+    if (($metadata['name'] ?? null) !== RELEASE_PACKAGE || !is_string($version) || !publishedVersion($version)) {
+        throw new RuntimeException('Packagist did not resolve the exact package and release version');
+    }
+    publishedReference($metadata, $sha);
+
+    return $version;
+}
+
+/**
+ * Requires the exact installed package at the standard path and reads the
+ * observed mode from Composer metadata. Source fallback fails even with matching references.
+ *
+ * @param array<array-key, mixed> $installation
+ * @return array<array-key, mixed>
+ */
+function publishedInstalledPackage(array $installation, string $sha): array
+{
+    $packages = $installation['packages'] ?? null;
+    if (!is_array($packages)) {
+        throw new RuntimeException('Composer did not record installed packages');
+    }
+    $matches = array_values(array_filter($packages, static fn(mixed $package): bool
+        => is_array($package) && ($package['name'] ?? null) === RELEASE_PACKAGE));
+    $package = $matches[0] ?? null;
+    if (count($matches) !== 1 || !is_array($package) || !publishedVersion($package['version'] ?? null)
+        || ($package['installation-source'] ?? null) !== 'dist'
+        || ($package['install-path'] ?? null) !== '../' . RELEASE_PACKAGE
+    ) {
+        throw new RuntimeException('Composer did not install the exact release from dist at the expected path');
+    }
+    publishedReference($package, $sha);
+
+    return $package;
+}
+
+/**
+ * Checks the qualified archive's required files and full runtime inventory,
+ * compares the installed bytes, and applies the shared release presentation checks.
+ *
+ * @param list<string> $runtime
+ * @return array<string, string>
+ */
+function publishedContents(string $reference, string $installed, array $runtime): array
+{
+    $expectedFiles = publishedInventory($reference);
+    $installedFiles = publishedInventory($installed);
+    foreach (RELEASE_FILES as $required) {
+        if (!isset($expectedFiles[$required])) {
+            throw new RuntimeException('The qualified reference omits a required file: ' . $required);
+        }
+    }
+    if ($runtime === [] || array_diff($runtime, array_keys($expectedFiles)) !== []) {
+        throw new RuntimeException('The qualified reference omits runtime source');
+    }
+    if ($installedFiles !== $expectedFiles) {
+        $missingOrChanged = array_diff_assoc($expectedFiles, $installedFiles);
+        $extra = array_diff_key($installedFiles, $expectedFiles);
+        throw new RuntimeException('Installed dist differs from the qualified archive: '
+            . implode(', ', [...array_keys($missingOrChanged), ...array_keys($extra)]));
+    }
+
+    verifyReleasePresentation($installed, RELEASE_TARGET);
+
+    return $installedFiles;
+}
+
 // Regression tests load the same metadata checks without starting publication verification.
 $scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
 if (!is_string($scriptFilename) || realpath($scriptFilename) !== __FILE__) {
     return;
 }
 
-require __DIR__ . '/integration-support.php';
-
 $arguments = $_SERVER['argv'] ?? [];
-if (!is_array($arguments) || count($arguments) !== 3 || ($arguments[1] ?? null) !== '--target=' . PAV_TARGET
+if (!is_array($arguments) || count($arguments) !== 3 || ($arguments[1] ?? null) !== '--target=' . RELEASE_TARGET
     || !is_string($arguments[2] ?? null) || preg_match('/^--sha=([0-9a-f]{40})$/D', $arguments[2], $matches) !== 1
 ) {
-    fail(EXIT_USAGE, 'Usage: composer release:verify-published -- --target=' . PAV_TARGET . ' --sha=<full qualified SHA>');
+    fail(EXIT_USAGE, 'Usage: composer release:verify-published -- --target=' . RELEASE_TARGET . ' --sha=<full qualified SHA>');
 }
 
 $sha = $matches[1];
@@ -150,12 +209,12 @@ if (!mkdir($workspace, 0700)) {
 
 $status = EXIT_TEST_FAILURE;
 try {
-    $tag = 'refs/tags/v' . PAV_TARGET;
+    $tag = 'refs/tags/v' . RELEASE_TARGET;
     if (publishedCommand(['git', 'rev-parse', '--verify', $tag . '^{commit}'], $root) !== $sha) {
         throw new RuntimeException('The release tag must resolve to the exact qualified SHA');
     }
     $manifest = json_encode([
-        'require' => [PAV_PACKAGE => PAV_TARGET],
+        'require' => [RELEASE_PACKAGE => RELEASE_TARGET],
         'repositories' => ['packagist.org' => ['type' => 'composer', 'url' => 'https://repo.packagist.org']],
         'config' => ['preferred-install' => 'dist', 'allow-plugins' => false],
     ], JSON_THROW_ON_ERROR);
@@ -165,31 +224,12 @@ try {
 
     echo publishedComposer(['--version'], $workspace) . "\n";
     echo "PAV source=https://repo.packagist.org preference=dist plugins=off scripts=off isolated-home-and-cache=true\n";
-    $metadata = publishedJson(publishedComposer(['show', '--all', PAV_PACKAGE, PAV_TARGET, '--format=json'], $workspace));
-    $versions = $metadata['versions'] ?? null;
-    if (($metadata['name'] ?? null) !== PAV_PACKAGE || !is_array($versions) || count($versions) !== 1
-        || !publishedVersion($versions[0] ?? null)
-    ) {
-        throw new RuntimeException('Packagist did not resolve the exact package and release version');
-    }
-    publishedReference($metadata, $sha);
+    $metadata = publishedJson(publishedComposer(['show', '--all', RELEASE_PACKAGE, RELEASE_TARGET, '--format=json'], $workspace));
+    $resolvedVersion = publishedResolvedVersion($metadata, $sha);
 
     publishedComposer(['update', '--prefer-dist', '--no-progress'], $workspace);
     $installation = publishedJson(publishedRead($workspace . '/vendor/composer/installed.json'));
-    $packages = $installation['packages'] ?? null;
-    if (!is_array($packages)) {
-        throw new RuntimeException('Composer did not record installed packages');
-    }
-    $matches = array_values(array_filter($packages, static fn(mixed $package): bool
-        => is_array($package) && ($package['name'] ?? null) === PAV_PACKAGE));
-    $package = $matches[0] ?? null;
-    if (count($matches) !== 1 || !is_array($package) || !publishedVersion($package['version'] ?? null)
-        || ($package['installation-source'] ?? null) !== 'dist'
-        || ($package['install-path'] ?? null) !== '../' . PAV_PACKAGE
-    ) {
-        throw new RuntimeException('Composer did not install the exact release from dist at the expected path');
-    }
-    publishedReference($package, $sha);
+    $package = publishedInstalledPackage($installation, $sha);
 
     $reference = $workspace . '/qualified';
     $archive = $workspace . '/qualified.tar';
@@ -198,32 +238,14 @@ try {
     }
     publishedCommand(['git', 'archive', '--format=tar', '--output=' . $archive, $sha], $root);
     publishedCommand(['tar', '-xf', $archive, '-C', $reference], $workspace);
-    $installed = $workspace . '/vendor/' . PAV_PACKAGE;
-    $expectedFiles = publishedInventory($reference);
-    $installedFiles = publishedInventory($installed);
-    foreach (['composer.json', 'README.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE',
-        'PHP_PERSISTENCE_PACKAGE_REFERENCE.md', 'docs/guides/USAGE_GUIDE.md', 'llms.txt',
-        'examples/_bootstrap.php', 'examples/transaction_basic_usage.php', 'examples/pagination_basic_usage.php',
-        'examples/ordering_basic_usage.php',
-    ] as $required) {
-        if (!isset($expectedFiles[$required])) {
-            throw new RuntimeException('The qualified reference omits a required file: ' . $required);
-        }
-    }
+    $installed = $workspace . '/vendor/' . RELEASE_PACKAGE;
     $runtime = publishedCommand(['git', 'ls-tree', '-r', '--name-only', $sha, '--', 'src'], $root);
-    if ($runtime === '' || array_diff(explode("\n", $runtime), array_keys($expectedFiles)) !== []) {
-        throw new RuntimeException('The qualified reference omits runtime source');
-    }
-    if ($installedFiles !== $expectedFiles) {
-        $missingOrChanged = array_diff_assoc($expectedFiles, $installedFiles);
-        $extra = array_diff_key($installedFiles, $expectedFiles);
-        throw new RuntimeException('Installed dist differs from the qualified archive: '
-            . implode(', ', [...array_keys($missingOrChanged), ...array_keys($extra)]));
-    }
+    $files = publishedContents($reference, $installed, $runtime === '' ? [] : explode("\n", $runtime));
     echo 'PAV EVIDENCE ' . json_encode([
-        'package' => PAV_PACKAGE, 'target' => PAV_TARGET, 'sha' => $sha, 'tag' => $tag,
-        'installedVersion' => $package['version'], 'installationSource' => 'dist', 'installedPath' => $installed,
-        'dist' => $package['dist'], 'source' => $package['source'], 'files' => $installedFiles,
+        'package' => RELEASE_PACKAGE, 'target' => RELEASE_TARGET, 'sha' => $sha, 'tag' => $tag,
+        'resolvedVersion' => $resolvedVersion, 'installedVersion' => $package['version'],
+        'installationSource' => $package['installation-source'], 'installedPath' => $installed,
+        'dist' => $package['dist'], 'source' => $package['source'], 'files' => $files,
     ], JSON_THROW_ON_ERROR) . "\n";
     $status = 0;
 } catch (Throwable $exception) {
@@ -236,4 +258,7 @@ try {
     }
 }
 
+if ($status === 0) {
+    echo 'PAV VERIFICATION OK target=' . RELEASE_TARGET . " sha={$sha}\n";
+}
 exit($status);
