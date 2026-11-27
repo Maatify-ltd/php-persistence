@@ -189,15 +189,17 @@ final readonly class ScopedOrderingManager
      * - false when the target row does not exist in the given scope.
      * - false when the target update affects zero rows and the move is undone.
      *
-     * Caller-owned transaction: a Throwable in the range shift or target write
-     * triggers best-effort rollback to and release of the operation-local
-     * savepoint ({@see \Maatify\PhpPersistence\Transaction\Repository\SavepointScope}).
+     * In a caller-owned transaction, a range-shift or target-write failure
+     * triggers best-effort cleanup of the operation-local savepoint
+     * ({@see \Maatify\PhpPersistence\Transaction\Repository\SavepointScope}).
+     * The helper attempts rollback to the savepoint if PDO reports an active
+     * transaction, then attempts release only after rollback is acknowledged.
      * The original Throwable propagates unchanged. A zero-row target update
      * requires a successful rollback to the savepoint before returning false.
-     * A no-op move and a missing row issue no savepoint statement. A mutating move adds SAVEPOINT
-     * and RELEASE. While the transaction remains active, the scope lock is
-     * kept, earlier work and the caller's own savepoints are
-     * untouched, and the caller still owns commit and rollback. A deadlock (1213),
+     * A no-op move and a missing row issue no savepoint statement. A successful
+     * mutation releases its savepoint. While the transaction remains active,
+     * it retains the scope lock and the caller keeps earlier work and their
+     * own savepoints. The caller still owns commit and rollback. A deadlock (1213),
      * the MariaDB 1020 hazard, or a lock-wait timeout (1205) with
      * innodb_rollback_on_timeout=ON can end the caller's whole transaction on
      * the server. The failure follows the configured PDO error mode. This
