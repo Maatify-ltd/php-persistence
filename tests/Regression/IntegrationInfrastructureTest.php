@@ -324,17 +324,30 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertStringContainsString('echo "$RESULTS" | jq -e \'all(.[]; .result == "success")\' > /dev/null', $gate);
     }
 
-    public function testReleaseArtifactGateVerifiesTheQualifiedRcTag(): void
+    public function testReleaseArtifactGateVerifiesTheStableHeadAndHistoricalRcTag(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');
         [, $following] = array_pad(explode("\n  release-artifact:\n", $workflow, 2), 2, '');
         [$job] = explode("\n  exploratory:\n", $following, 2);
-        self::assertStringContainsString('ref: refs/tags/v1.0.0-rc.2', $job);
-        self::assertStringContainsString('ARTIFACT_SHA: 71dc61548e48fd053376db69149a00bc87069b70', $job);
-        self::assertStringContainsString('set -euo pipefail', $job);
-        self::assertStringContainsString('test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"', $job);
-        self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.2 --sha="$ARTIFACT_SHA"', $job);
-        self::assertStringContainsString('persist-credentials: false', $job);
+        $verificationSteps = explode('          ref: refs/tags/v1.0.0-rc.2', $job, 2);
+        self::assertCount(2, $verificationSteps);
+        [$candidate, $historical] = $verificationSteps;
+        $head = '${{ github.event.pull_request.head.sha || github.sha }}';
+        $headCheck = 'test "$(git rev-parse HEAD)" = "$ARTIFACT_SHA"';
+
+        self::assertStringContainsString('ref: ' . $head, $candidate);
+        self::assertStringContainsString('ARTIFACT_SHA: ' . $head, $candidate);
+        self::assertStringContainsString('set -euo pipefail', $candidate);
+        self::assertStringContainsString($headCheck, $candidate);
+        self::assertStringContainsString('composer release:verify -- --target=1.0.0 --sha="$ARTIFACT_SHA"', $candidate);
+        self::assertStringNotContainsString('working-directory: published-rc2', $candidate);
+        self::assertStringContainsString('path: published-rc2', $historical);
+        self::assertStringContainsString('working-directory: published-rc2', $historical);
+        self::assertStringContainsString('ARTIFACT_SHA: 71dc61548e48fd053376db69149a00bc87069b70', $historical);
+        self::assertStringContainsString('set -euo pipefail', $historical);
+        self::assertStringContainsString($headCheck, $historical);
+        self::assertStringContainsString('composer release:verify -- --target=1.0.0-rc.2 --sha="$ARTIFACT_SHA"', $historical);
+        self::assertSame(2, substr_count($job, 'persist-credentials: false'));
         self::assertStringContainsString('"release:verify": "@php scripts/release-artifact.php"', self::read('composer.json'));
     }
 

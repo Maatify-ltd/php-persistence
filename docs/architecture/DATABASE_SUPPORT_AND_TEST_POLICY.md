@@ -14,7 +14,7 @@ Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-veri
 | Unverified | A version outside the declared range, an engine whose endpoints are not both verified, or a behavior difference that is known or suspected but not covered by a test. | No. |
 
 Range support and per-version testing are different claims. The endpoint rule is what supports a range; a version between two verified endpoints is covered by the range claim and is not called individually tested unless it has its own cells. Intermediate cells are added by risk (section 4), not as a precondition for the range.
-Current state (2026-10-29): MySQL and MariaDB are design targets; no supported range is declared for either. The Integration infrastructure of WU-5 ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)) runs infrastructure-level tests on candidate cells, which is test evidence for those cells and not a verification of any package capability. WU-6, WU-7 and WU-8 are exceptions: the Transaction capability's tests, including genuine deadlocks; the Pagination capability's tests, including a deterministic concurrent-writer snapshot test; and the Ordering capability's tests, including real stale-snapshot concurrency, a genuine deadlock while acquiring the scope lock, and the MariaDB `innodb_snapshot_isolation` ON/OFF evidence of §7, pass on named MySQL and MariaDB cells of the required matrix (Ordering directly re-run by this work unit on `mysql-8.4.13` — 220 tests, two full suite passes, zero residue — and `mariadb-11.8.9` with `innodb_snapshot_isolation=ON` by default — 220 tests, two full suite passes, zero residue; the full required matrix runs as the CI gate on the pull request) — "version tested" evidence for those named versions, not "range verified".
+Evidence snapshot from 2026-10-29. MySQL and MariaDB are design targets; no supported range is declared for either. The Integration infrastructure of WU-5 ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)) runs infrastructure-level tests on candidate cells, which is test evidence for those cells and not a verification of any package capability. WU-6, WU-7 and WU-8 are exceptions: the Transaction capability's tests, including genuine deadlocks; the Pagination capability's tests, including a deterministic concurrent-writer snapshot test; and the Ordering capability's tests, including real stale-snapshot concurrency, a genuine deadlock while acquiring the scope lock, and the MariaDB `innodb_snapshot_isolation` ON/OFF evidence of §7, pass on named MySQL and MariaDB cells of the required matrix (Ordering directly re-run by this work unit on `mysql-8.4.13` — 220 tests, two full suite passes, zero residue — and `mariadb-11.8.9` with `innodb_snapshot_isolation=ON` by default — 220 tests, two full suite passes, zero residue; the full required matrix runs as the CI gate on the pull request) — "version tested" evidence for those named versions, not "range verified".
 
 ## 2. Engines and versions
 
@@ -27,9 +27,9 @@ Version numbers come from the vendors' announcements; the exact tags and digests
 
 ## 3. PHP and dependency axes
 
-- PHP minimum is `8.4` and the CI exercises the oldest and the latest supported minor, as required by the pinned [CI Workflow Standard](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md).
-- Dependencies run in two modes: latest compatible and lowest compatible.
-- The unit/regression suites run without a database. Integration and the consumer harness run against the real database matrix.
+- [`composer.json`](../../composer.json) defines Composer's PHP range and its minimum patch levels. The [CI test matrix](CI_AND_INTEGRATION.md#3-test-matrix) records the jobs on PHP `8.4`, `8.5`, and `8.6`.
+- Compat runs latest-compatible and lowest-compatible dependency resolutions. Unit and Regression run without a database.
+- Integration and the consumer harness select their own cells from the shared real-database matrix. See [CI and Integration](CI_AND_INTEGRATION.md) for the coverage of each job.
 
 ## 4. Required matrix shape (for WU-5)
 

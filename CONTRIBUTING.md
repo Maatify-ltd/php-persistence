@@ -53,7 +53,7 @@ For the exact release target and archive commands, see [Release Artifact Verific
 
 ### `composer.lock` policy
 
-This package does not commit `composer.lock`. CI resolves both `latest` and `lowest` compatible dependency sets on every run (see the `compat` job in [.github/workflows/ci.yml](.github/workflows/ci.yml)) so that the declared `composer.json` constraints — not a single frozen resolution — are what gets verified. Do not add a committed lock file in a pull request.
+This package does not commit `composer.lock`. CI resolves both `latest` and `lowest` compatible dependency sets on every run (see the `compat` job in [.github/workflows/ci.yml](https://github.com/Maatify-ltd/php-persistence/blob/main/.github/workflows/ci.yml)) so that the declared `composer.json` constraints — not a single frozen resolution — are what gets verified. Do not add a committed lock file in a pull request.
 
 ## Pull request expectations
 
