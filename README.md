@@ -35,11 +35,23 @@ Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB
 
 `maatify/php-persistence` is a small, direct-PDO toolkit with three independent capabilities over a **caller-supplied** `PDO` connection: running callbacks inside a transaction or a caller's savepoint (with optional bounded deadlock replay), parameterized whitelist-sorted bounded pagination, and locking next-position/move operations for integer display-order columns. It is developed as a separate package from the earlier, published `maatify/persistence` ([coexistence rules](docs/decisions/DEC-005-coexistence-with-legacy-package.md)), not a drop-in replacement.
 
+## Published release snapshot
+
+[![Release Candidate status on 2026-11-27](https://img.shields.io/badge/Status%20at%202026--11--27-Release%20Candidate-orange)](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2)
+
+On 2026-11-27, the most recent published version was Release Candidate `1.0.0-rc.2`. See the [Packagist version](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) and the [GitHub release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2).
+
+```bash
+composer require maatify/php-persistence:1.0.0-rc.2
+```
+
+Follow the [RC.2 usage guide](docs/guides/USAGE_GUIDE.md#run-the-published-rc2-examples-from-a-clean-install) for this version. See [Packagist](https://packagist.org/packages/maatify/php-persistence) for current availability.
+
 ## Release artifact
 
 This release artifact targets Stable `1.0.0`.
 
-During release preparation, this target was unpublished and the latest published version was [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). The [RC.2 release](https://github.com/Maatify-ltd/php-persistence/releases/tag/v1.0.0-rc.2) and its usage instructions record that version separately.
+The target had not yet been published on 2026-11-27.
 
 ## Key Features
 
@@ -66,7 +78,7 @@ The following command resolves after this exact version is published on Packagis
 composer require maatify/php-persistence:1.0.0
 ```
 
-Use the [installed 1.0.0 examples](docs/guides/USAGE_GUIDE.md#run-the-examples-from-a-100-install) after installation. For a source checkout, [consumer verification](docs/guides/USAGE_GUIDE.md#verify-an-exact-source-checkout-in-a-clean-consumer) installs an exact Git candidate in separate Composer roots. The [historical RC.2 quickstart](docs/guides/USAGE_GUIDE.md#run-the-published-rc2-examples-from-a-clean-install) applies to that earlier version.
+Use the [installed 1.0.0 examples](docs/guides/USAGE_GUIDE.md#run-the-examples-from-a-100-install) after installation. For a source checkout, [consumer verification](docs/guides/USAGE_GUIDE.md#verify-an-exact-source-checkout-in-a-clean-consumer) installs an exact Git candidate in separate Composer roots.
 
 See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md) for release and support details.
 
