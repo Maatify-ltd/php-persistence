@@ -1,8 +1,6 @@
 # PHP Persistence Package Reference
 
-`maatify/php-persistence` — canonical stable public/runtime/behavioral contract.
-
-The latest published release is [`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2). C1, Keyset, B, static composite and dynamic Offset sorting, protected Host write transactions and Ordering, protected UNIQUE-safe Ordering B1, Verified Apply/Discard, and the raw Ordering tail-read limit describe unreleased repository source. For the published API, use the [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md).
+This is the public runtime contract for the Stable `1.0.0` target of `maatify/php-persistence`. For publication and installation, see the [README](README.md#release-artifact). Use the archived [RC.2 reference](https://github.com/Maatify-ltd/php-persistence/blob/v1.0.0-rc.2/PHP_PERSISTENCE_PACKAGE_REFERENCE.md) when working with that version.
 
 This document is the single canonical Package Reference required by the pinned [Package Building Standard](docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) §3. It owns the stable public Runtime API inventory, behavior and exception guarantees, and package boundaries. It supersedes [docs/architecture/CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md) and [docs/architecture/BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md) as the *current* public-contract surface; those documents remain as dated design/evidence records (legacy mapping and the test evidence recorded per behavior) and are not a second competing contract.
 
@@ -47,9 +45,9 @@ This package is a separate Composer package from the published `maatify/persiste
 - Published legacy `v1.4.0` and the unpublished legacy `main` used as source provenance are distinct baselines ([DEC-007](docs/decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md)). This package has its own namespace and public API.
 - Consumer migration from `maatify/persistence` to this package is explicitly **not** addressed by this document and needs its own separate authorization ([DEC-030](docs/decisions/DEC-030-successor-transition-before-first-stable.md)).
 
-### 1.4 Release Candidate target
+### 1.4 Release artifact
 
-The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. `composer.json` governs the declared package identity, PHP/extension requirements (`php ^8.4`, `ext-pdo`, `ext-pdo_mysql`), and dependency (`maatify/exceptions ^1.0`); see that file for the authoritative, current declaration.
+The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. [`composer.json`](composer.json) governs the current package identity, PHP and extension requirements, and Composer dependencies.
 
 ---
 
@@ -640,7 +638,7 @@ public function __construct(
 ```
 
 - The source issues the opaque checkout, grant, and attempt. These identities and the source reject cloning, serialization, and restoration. Members marked @internal are implementation details. Explicit B contract rejections use Pagination\Exception\HostSnapshotPaginationException and the package marker.
-- DTO\HostSnapshotPageSettlementDTO is readonly with public enum fields disposition and reason. DTO\HostSnapshotRetirementDTO is readonly with public HostSnapshotRetirementDispositionEnum disposition and PDO pdo.
+- `DTO\HostSnapshotPageSettlementDTO` is readonly with two public fields: `disposition` (`Enum\HostSnapshotPageDispositionEnum`) and `reason` (`Enum\HostSnapshotPageSettlementReasonEnum`). See the [page settlement contract in §5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction) for their values and meaning. `DTO\HostSnapshotRetirementDTO` is readonly with public `HostSnapshotRetirementDispositionEnum disposition` and `PDO pdo` fields.
 - Checkout state is IDLE, TRANSACTION_ACTIVE, TRANSACTION_UNQUALIFIED, BUSY, QUARANTINED, RELEASED, or RETIRED. The access modes are READ_WRITE and READ_ONLY. Command result modes are AFFECTED_ROWS and BOUNDED_ROWS. Effects are INVALIDATE_GENERATION and PRESERVES_TRANSACTION.
 
 #### Pagination exceptions
@@ -824,7 +822,7 @@ Host Input (callback) → run($callback) → caller-owned: participate
 ### 5.2 `PdoSavepointTransactionRunner::run()`
 
 - **No active transaction:** identical owned-transaction behavior to §5.1 (including optional deadlock replay); no savepoint SQL is issued on this path.
-- **Active caller-owned transaction:** opens an operation-local savepoint through `SavepointScope::begin()`. On success, releases it (`RELEASE SAVEPOINT`). If release fails, it attempts to undo the operation and throws the release failure. On a callback `Throwable`, performs best-effort `ROLLBACK TO SAVEPOINT` then best-effort `RELEASE SAVEPOINT`, and rethrows the **original** callback `Throwable` unchanged — a cleanup failure never replaces it. It never commits, fully rolls back, or retries the caller-owned transaction or the savepoint itself, even on a deadlock. If the driver reports the transaction no longer active immediately after `SAVEPOINT` succeeds (the server already ended the caller's transaction, for example on an earlier swallowed error), `SavepointScope::begin()` throws `TransactionExecutionException` before the callback runs.
+- **Active caller-owned transaction:** opens an operation-local savepoint through `SavepointScope::begin()`. On success, releases it (`RELEASE SAVEPOINT`). If release fails, it attempts to undo the operation and throws the release failure. On a callback `Throwable`, attempts `ROLLBACK TO SAVEPOINT` if PDO reports an active transaction, then attempts `RELEASE SAVEPOINT` only after the rollback is acknowledged. This cleanup is best effort. A state check or cleanup failure leaves the **original** callback `Throwable` unchanged. It never commits, fully rolls back, or retries the caller-owned transaction or the savepoint itself, even on a deadlock. If the driver reports the transaction no longer active immediately after `SAVEPOINT` succeeds (the server already ended the caller's transaction, for example on an earlier swallowed error), `SavepointScope::begin()` throws `TransactionExecutionException` before the callback runs.
 
 #### 5.2.1 Optional protected Host write transaction
 
@@ -954,7 +952,7 @@ The Host builds one `StaticSortPlan` for a query shape and can reuse it across r
 - **Request:** §5.3 resolves the key and direction independently. A key missing from the underlying whitelist falls back to the default. A key in that whitelist that is excluded from the static plan raises `InvalidPaginationQueryException` before any SQL, even if there are no matching rows.
 - **Result and ownership:** `sortBy` and `sortDirection` still identify the effective primary choice. The array and JSON shape remains `PageResultDTO`. The Host supplies trusted SQL and identifier paths and verifies a total order over the actual result, including joins, NULLs, and collation. Use a qualified caller-managed transaction when the page needs one read view. Independent requests can see a different dataset. The method does not change PDO attributes or take transaction ownership.
 
-See the [runnable example](examples/pagination_static_sort_usage.php) and [DEC-024](docs/decisions/DEC-024-optional-static-composite-offset-pagination.md). This path is in the unreleased repository source.
+See the [runnable example](examples/pagination_static_sort_usage.php) and [DEC-024](docs/decisions/DEC-024-optional-static-composite-offset-pagination.md).
 
 ### 5.3.5 Optional dynamic Offset sorting
 
@@ -966,7 +964,7 @@ See the [runnable example](examples/pagination_static_sort_usage.php) and [DEC-0
 4. The effective SQL order is the selection, or the default for an empty selection, with the configured tie appended when its path is absent. A default that already uses the tie path keeps its own label and direction. The Host chooses a tie unique on the actual result rows under JOIN, NULL and collation behavior. A three-term request can produce four SQL terms. The term limit bounds the input shape. Query cost depends on the query, indexes and data. Different snapshots can produce Offset drift even with a total order.
 5. The returned `MultiSortPageResultDTO` exposes the `PageResultDTO` plus the normalized selected list and exact effective order, including when filtered count is zero or the page resets to one. An automatically appended tie appears only as the last term with `key: null` and its actual direction, regardless of the selection policy. An explicitly selected or configured default label may appear. The result carries public labels and directions. SQL identifiers stay in the validated execution order.
 
-Existing `paginate()`, static sort, C1, B, and Keyset calls keep their own result contracts. See [DEC-025](docs/decisions/DEC-025-optional-dynamic-offset-sort-contract.md) and the [runnable dynamic example](examples/pagination_dynamic_sort_usage.php) in the unreleased source.
+Existing `paginate()`, static sort, C1, B, and Keyset calls keep their own result contracts. See [DEC-025](docs/decisions/DEC-025-optional-dynamic-offset-sort-contract.md) and the [runnable dynamic example](examples/pagination_dynamic_sort_usage.php).
 
 ### 5.4 `ScopedOrderingManager`
 
@@ -1000,7 +998,7 @@ The range shift runs while the target row still occupies its original position. 
 
 - Returns `true` on a successful move, and `true` (as a no-op, no SQL mutation issued beyond the scope lock and the read) when the row is already at the requested/clamped position.
 - Returns `false` when the target row does not exist in the given scope at the moment it is read under the scope lock — **this is not an exception**, and in this common case **no savepoint statement is issued at all**: the absence is detected before any savepoint is opened.
-- **Participating in a caller-owned transaction:** only once the row is confirmed to exist *and* its clamped target order actually differs from its current order (the no-op and missing-row cases above never reach this point) does it open an operation-local savepoint (`SavepointScope::begin()`), immediately before the first mutating statement. A `Throwable` from the range-shift or target-write statements triggers `cleanupAfterFailure()` (best-effort `ROLLBACK TO`/`RELEASE`) and the original `Throwable` is rethrown unchanged. In the narrower case where the shifts succeed but the final target-row `UPDATE` itself still affects zero rows, the open savepoint is undone through `undoOrFail()` before returning `false` — there, `ROLLBACK TO` is **not** best-effort: its own failure is thrown instead of the `false` result; the following `RELEASE SAVEPOINT` is still best effort. If releasing the savepoint after a successful update fails, the method attempts to undo the operation and throws the release failure. The caller owns the surrounding transaction and its earlier work while that transaction remains active.
+- **Participating in a caller-owned transaction:** only once the row is confirmed to exist *and* its clamped target order actually differs from its current order (the no-op and missing-row cases above never reach this point) does it open an operation-local savepoint (`SavepointScope::begin()`), immediately before the first mutating statement. A `Throwable` from the range-shift or target-write statements triggers best-effort `cleanupAfterFailure()`. The cleanup attempts `ROLLBACK TO` only if PDO reports an active transaction, and attempts `RELEASE` only after the rollback is acknowledged. The original `Throwable` is rethrown unchanged. In the narrower case where the shifts succeed but the final target-row `UPDATE` itself still affects zero rows, the open savepoint is undone through `undoOrFail()` before returning `false` — there, `ROLLBACK TO` is **not** best-effort: its own failure is thrown instead of the `false` result; the following `RELEASE SAVEPOINT` is still best effort. If releasing the savepoint after a successful update fails, the method attempts to undo the operation and throws the release failure. The caller owns the surrounding transaction and its earlier work while that transaction remains active.
 - **Owned path (no active caller transaction):** the method uses no savepoint. It requests a whole-transaction rollback on an exception, on a missing target, or when the target update affects zero rows. Rollback is best effort through `PdoTransactionRunner`.
 - A deadlock (`1213`), the MariaDB `1020` hazard (§7.3), or a lock-wait timeout with `innodb_rollback_on_timeout=ON` can end the **caller's whole transaction** on the server. If PDO throws, that exception propagates unchanged. If PDO reports the statement failure by return value, the method raises `OrderingExecutionException`. This method does not retry either failure.
 
@@ -1012,7 +1010,7 @@ A scope-aware existence check using a plain read. It excludes soft-deleted rows 
 
 #### 5.4.1 Protected UNIQUE-safe Ordering B1
 
-B1 is an opt-in contract in the current source. It applies to the three B1 methods on an active `PdoProtectedTransactionCheckout`. Existing raw and protected Ordering methods retain their contracts. The [B1 decision](docs/decisions/DEC-026-protected-unique-ordering-b1.md) assigns the generic ordering operations to the package and business authorization, insert payload, schema, and transaction completion to the Host.
+B1 is an opt-in contract. It applies to the three B1 methods on an active `PdoProtectedTransactionCheckout`. Existing raw and protected Ordering methods retain their contracts. The [B1 decision](docs/decisions/DEC-026-protected-unique-ordering-b1.md) assigns the generic ordering operations to the package and business authorization, insert payload, schema, and transaction completion to the Host.
 
 **Eligible profile.** Use two distinct permanent, non-partitioned InnoDB tables named as `schema.table` in trusted configuration. Items have a single-column `PRIMARY KEY (id)` and exactly one additional full-column BTREE unique key. A global list uses `UNIQUE (pos)` and a fixed seeded positive `globalAnchorId`. A scoped list uses `UNIQUE (scope_id, pos)` and a positive, non-null scope ID that identifies its existing anchor row. The anchor has a single-column primary key and no other unique key. An optional single-column foreign key from the scope to that primary key must have matching INT signedness, share the schema, and use `RESTRICT` or `NO ACTION` for both operations. Other inbound and outbound foreign keys are outside B1. If the runtime account can see the scope-to-anchor key but cannot verify either referential action, B1 reports `SCHEMA_UNVERIFIED` before ordering writes. The deployment attestation does not substitute for these required metadata fields.
 

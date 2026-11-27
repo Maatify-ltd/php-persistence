@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/integration-support.php';
+require_once __DIR__ . '/integration-support.php';
 
 const RELEASE_PACKAGE = 'maatify/php-persistence';
-const RELEASE_TARGET = '1.0.0-rc.2';
+const RELEASE_TARGET = '1.0.0';
 const RELEASE_FILES = [
     'composer.json',
     'LICENSE',
@@ -13,11 +13,20 @@ const RELEASE_FILES = [
     'CHANGELOG.md',
     'SECURITY.md',
     'PHP_PERSISTENCE_PACKAGE_REFERENCE.md',
+    'CONTRIBUTING.md',
+    'docs/guides/CONSUMER_VERIFICATION.md',
+    'docs/guides/RELEASE_ARTIFACT_VERIFICATION.md',
     'docs/guides/USAGE_GUIDE.md',
     'examples/_bootstrap.php',
     'examples/ordering_basic_usage.php',
+    'examples/ordering_unique_usage.php',
     'examples/pagination_basic_usage.php',
+    'examples/pagination_dynamic_sort_usage.php',
+    'examples/pagination_keyset_usage.php',
+    'examples/pagination_snapshot_usage.php',
+    'examples/pagination_static_sort_usage.php',
     'examples/transaction_basic_usage.php',
+    'examples/verified_transaction_usage.php',
     'llms.txt',
 ];
 
@@ -46,9 +55,9 @@ function releaseFile(string $path): string
 }
 
 /**
- * Runs the RC.2 verifier's structural checks for Composer identity and
- * production autoload, exact README and SECURITY target strings, and one
- * undated CHANGELOG heading. Semantic review of the wording is separate.
+ * Checks Composer identity and production autoload, exact README installation
+ * and artifact labels, the CHANGELOG allocation, and SECURITY lifecycle
+ * markers. The release claims also require separate semantic review.
  */
 function verifyReleasePresentation(string $directory, string $target): void
 {
@@ -62,18 +71,30 @@ function verifyReleasePresentation(string $directory, string $target): void
         throw new RuntimeException('Unexpected archived Composer identity or production autoload');
     }
 
-    $readme = releaseFile($directory . '/README.md');
+    $readme = explode("\n", releaseFile($directory . '/README.md'));
+    if (!in_array('This release artifact targets Stable `' . $target . '`.', $readme, true)
+        || !in_array('The following command resolves after this exact version is published on Packagist.', $readme, true)
+        || !in_array('composer require ' . RELEASE_PACKAGE . ':' . $target, $readme, true)
+    ) {
+        throw new RuntimeException('Archived README is missing the exact Stable target or its conditional install command');
+    }
+
     $changelog = releaseFile($directory . '/CHANGELOG.md');
-    $security = releaseFile($directory . '/SECURITY.md');
     $targetHeading = '## [' . $target . ']';
     $targetLabel = preg_quote('[' . $target . ']', '/');
-    if (!str_contains($readme, 'composer require ' . RELEASE_PACKAGE . ':' . $target)
-        || !str_contains($readme, 'Release Candidate artifact `' . $target . '`')
-        || preg_match_all('/^[ \t]{0,3}##[ \t]+' . $targetLabel . '[^\r\n]*$/m', $changelog, $headings) !== 1
-        || $headings[0] !== [$targetHeading]
-        || !str_contains($security, 'Release Candidate `' . $target . '`')
+    if (preg_match_all('/^[ \t]{0,3}##[ \t]+' . $targetLabel . '[^\r\n]*$/m', $changelog, $headings, PREG_OFFSET_CAPTURE) !== 1
+        || $headings[0][0][0] !== $targetHeading
+        || (preg_match('/^## \[Unreleased\]$/m', $changelog, $unreleased, PREG_OFFSET_CAPTURE) === 1
+            && $unreleased[0][1] > $headings[0][0][1])
     ) {
-        throw new RuntimeException('Archived presentation is missing an exact, undated release target');
+        throw new RuntimeException('Archived CHANGELOG must allocate the release to one exact, undated target heading');
+    }
+
+    $security = explode("\n", releaseFile($directory . '/SECURITY.md'));
+    if (!in_array('This security policy accompanies the Stable target `' . $target . '`.', $security, true)
+        || !in_array('No Stable support line was established during release preparation.', $security, true)
+    ) {
+        throw new RuntimeException('Archived SECURITY is missing the Stable target or preparation support status');
     }
 }
 
@@ -81,7 +102,7 @@ function verifyReleasePresentation(string $directory, string $target): void
  * Checks archive inventory against the allowed and required paths, then
  * compares extracted bytes with the selected commit. Rejects duplicate
  * paths, unexpected files and private key markers before checking the
- * RC.2 release presentation. Returns the sorted file list for evidence.
+ * target presentation. Returns the sorted file list for evidence.
  *
  * @param non-empty-list<string> $requiredFiles
  * @return list<string>
@@ -93,7 +114,7 @@ function verifyReleaseArchive(string $archive, string $workspace, string $source
         $path = rtrim($entry, '/');
         if ($path === '' || preg_match('~^(?:src|docs|examples)(?:/|$)|^(?:' . implode('|', array_map(
             static fn(string $file): string => preg_quote($file, '~'),
-            [...RELEASE_FILES, 'AGENTS.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md'],
+            [...RELEASE_FILES, 'AGENTS.md', 'CODE_OF_CONDUCT.md'],
         )) . ')$~D', $path) !== 1
             || preg_match('~(?:^|/)(?:[.]\.?|[.]env[^/]*|[.]git[^/]*|[.]idea|[.]vscode|vendor|tests|harness|composer[.]lock|auth[.]json)(?:/|$)|[.](?:key|pem|pfx|p12)$~iD', $path) !== 0
         ) {
@@ -130,6 +151,12 @@ function verifyReleaseArchive(string $archive, string $workspace, string $source
     return $files;
 }
 
+// The published verifier reuses the release target, file set and presentation checks.
+$scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
+if (!is_string($scriptFilename) || realpath($scriptFilename) !== __FILE__) {
+    return;
+}
+
 $root = dirname(__DIR__);
 $arguments = $_SERVER['argv'] ?? null;
 if (!is_array($arguments) || count($arguments) !== 3 || !is_string($arguments[1]) || !is_string($arguments[2])
@@ -156,7 +183,7 @@ try {
     if (preg_match('/^(?:120000|160000) /m', $objects) !== 0) {
         throw new RuntimeException('Release source contains symbolic links or submodules');
     }
-    echo "RELEASE ARTIFACT candidate target={$target} sha={$sha} tree={$tree}\n";
+    echo "RELEASE ARTIFACT candidate target={$target} sha={$sha} tree={$tree} package=" . RELEASE_PACKAGE . "\n";
 
     $source = $workspace . '/source';
     releaseCommand(['git', 'clone', '--quiet', '--shared', '--no-checkout', $root, $source], $workspace);
@@ -189,6 +216,6 @@ try {
 }
 
 if ($status === 0) {
-    echo "RELEASE ARTIFACT VERIFICATION OK target={$target} sha={$sha} tree={$tree}\n";
+    echo "RELEASE ARTIFACT VERIFICATION OK target={$target} sha={$sha} tree={$tree} package=" . RELEASE_PACKAGE . "\n";
 }
 exit($status);

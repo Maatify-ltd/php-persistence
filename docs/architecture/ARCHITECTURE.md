@@ -4,7 +4,7 @@
 
 This document records the architecture decided in WU-3. WU-4 and WU-5 established Composer packaging, quality tooling, and real-database CI. WU-6 through WU-8 implemented Transaction, Pagination, and Ordering. Ordering reuses the Transaction capability's Gen2 runner and its `@internal` savepoint helper under [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). WU-9 delivered the canonical [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md), usage guidance, and runnable examples.
 
-WU-10 added [consumer verification and coexistence](../guides/CONSUMER_VERIFICATION.md). WU-11 prepared the `1.0.0-rc.1` artifact. See the [README](../../README.md#installation) for the current release and [Release Artifact Verification](../guides/RELEASE_ARTIFACT_VERIFICATION.md) for its archive checks. The [database policy](DATABASE_SUPPORT_AND_TEST_POLICY.md) records test evidence for named MySQL and MariaDB versions, including deadlocks, pagination snapshots, and ordering concurrency. That evidence is limited to the tested versions.
+WU-10 added [consumer verification and coexistence](../guides/CONSUMER_VERIFICATION.md). WU-11 prepared the `1.0.0-rc.1` artifact and recorded its [historical archive checks](https://github.com/Maatify-ltd/php-persistence/blob/34c3b874525d36ae064c162cdd553bc75d18772b/docs/guides/RELEASE_ARTIFACT_VERIFICATION.md). The [README](../../README.md#release-artifact) identifies the artifact target and the [repository's Release Artifact Verification guide](../guides/RELEASE_ARTIFACT_VERIFICATION.md) describes the current checks. The [database policy](DATABASE_SUPPORT_AND_TEST_POLICY.md) records test evidence for named MySQL and MariaDB versions, including deadlocks, pagination snapshots, and ordering concurrency. That evidence is limited to the tested versions.
 
 ## 1. Document map
 
@@ -43,7 +43,7 @@ The package offers three capabilities over a caller-supplied `PDO` connection:
   Optional dynamic Offset sorting shares that executor and uses one validated internal order for SQL and the dynamic result metadata. The Host owns the unique tie and the read view. See [DEC-025](../decisions/DEC-025-optional-dynamic-offset-sort-contract.md).
 - **Ordering:** next-position and move operations for ordered rows inside a scope (for example a column value), with locking reads and savepoint protection.
 
-Not in scope: owning tables or migrations, opening connections, changing PDO attributes or server settings, operational reporting read models, factories or facades, any consumer-specific logic. The optional C1 paginator holds one grant and its terminal outcome on a single-use object. See [DEC-018](../decisions/DEC-018-optional-delegated-snapshot-pagination.md).
+The Host owns its tables, migrations, connections, PDO attributes, and server and session defaults. Operational reporting read models, factories, facades, and consumer-specific logic are outside this package's scope. The optional C1 paginator holds one grant and its terminal outcome on a single-use object. See [DEC-018](../decisions/DEC-018-optional-delegated-snapshot-pagination.md).
 
 ## 4. Source topology
 
@@ -95,6 +95,8 @@ Rules from [DEC-010](../decisions/DEC-010-package-topology-multi-capability.md):
 
 ## 5. Ownership and failure boundaries
 
+The table describes the raw Transaction runners and raw Ordering paths where they manage or join a transaction. The [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#7-concurrency-transaction-and-isolation-limits) records ownership and failure handling for the qualified Protected, Verified, C1, and B paths, including B's Host-directed next-transaction settings.
+
 | Situation | Package behavior |
 |---|---|
 | No transaction active | Begin, run, commit; on failure roll back (best effort) and rethrow the original. A `false` from begin or commit fails closed with `TransactionExecutionException`. |
@@ -120,13 +122,15 @@ Coexistence rules are in [DEC-005](../decisions/DEC-005-coexistence-with-legacy-
 
 ## 8. Provenance and licensing
 
-The repository is under the Maatify Proprietary License ([DEC-002](../decisions/DEC-002-proprietary-licensing.md)). The legacy repository is MIT-licensed. Before any legacy source or test is copied, the gate in [DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md) item 6 must be completed and recorded in the copying pull request, with the legacy commit SHA. WU-3 copied nothing.
+The repository is under the Maatify Proprietary License ([DEC-014](../decisions/DEC-014-free-license-registration.md)). The legacy repository is MIT-licensed. Before any legacy source or test is copied, the gate in [DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md) item 6 must be completed and recorded in the copying pull request, with the legacy commit SHA. WU-3 copied nothing.
 
 Legacy documents (studies, ADRs, harness scripts) are referenced by permanent links and are not copied or re-labelled as decisions of this repository.
 
-## 9. Requirements on later work units
+## 9. Historical requirements for the original work units
 
-| WU | Must satisfy before acceptance |
+This table records the original WU acceptance criteria. The current PHP constraint is in [`composer.json`](../../composer.json). Section 10 records first-Stable preparation under the current pin.
+
+| WU | Original acceptance criteria |
 |---|---|
 | WU-4 Composer and quality tooling | `php ^8.4`; PSR-4 per DEC-004; no `replace`/`provide`/`conflict`; no `version`, no `composer.lock`; `ext-pdo` and `ext-pdo_mysql` as mandatory `require` entries ([DEC-012](../decisions/DEC-012-mandatory-pdo-mysql-driver.md)); the package marker interface; PHPStan at max level without baseline; code style per the pinned PHP Coding Style Standard. |
 | WU-5 CI and Integration infrastructure | Matrix and environment rules of [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md); matrix cells per [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md); one parameterized Compose; pinned images; lowest/latest dependency jobs; a single required gate job. |
@@ -140,14 +144,12 @@ Legacy documents (studies, ADRs, harness scripts) are referenced by permanent li
 | WU-13 Release Candidate verification | The Consumer Verification Harness runs against the exact published RC; then Real Host Validation of the same RC in at least two independent real projects (reusing one harness twice or several environments of one Host does not count); verifiable evidence retained, identifying the RC version and each Host. |
 | WU-14 Stable release | Stable preparation and publication only after the evidence of WU-13 is complete ([Library Presentation §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md)), with strict lead acceptance and explicit Owner authorization. |
 
-Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md) item 1) and the pinned standards commit.
+The original work units also required verification of the legacy source commit ([DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md) item 1) and the pinned standards commit.
 
-## 10. Unresolved items and what they block
+## 10. First-Stable preparation
 
-| Item | Record | Blocks |
-|---|---|---|
-| MariaDB `1020` in caller-owned transactions | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `ACTIVE` for an optional protected checkout | Raw PDO keeps its contract; DEC-013 remains a test-only matrix. |
-| Which two independent Hosts validate the release candidate, and when | none yet | WU-13 |
-| Central standards change, consumer migration, legacy archive | none (separate authorizations) | Any statement that ownership transferred |
+The standards upgrade in [DEC-029](../decisions/DEC-029-selective-pinned-standards-upgrade.md) is complete. [DEC-030](../decisions/DEC-030-successor-transition-before-first-stable.md) records the ownership boundary before Stable publication and retains separate authorization for consumer migration and the legacy package lifecycle.
 
-Not open: the first Stable release gate is mandatory and is sequenced across WU-11 to WU-14 above (RC prepared, then published, then verified, then Stable); no condition that can only be met after the RC is published blocks WU-11 or WU-12 under the pinned [Library Presentation Standard §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md): a published, externally installable SemVer RC; the Consumer Verification Harness run against that exact published RC; then Real Host Validation of the same RC in at least two independent real projects. CI success and the harness alone do not authorize Stable. Publishing, tagging and owner approval remain separate authorizations that this work does not give.
+[DEC-031](../decisions/DEC-031-first-stable-real-host-exception.md) covers the Real Host Validation requirement only for the first Stable `1.0.0` of `maatify/php-persistence` at Artifact Scope `/`. The published RC and its same-version Consumer Verification Harness remain required. The decision records the published RC.1 and Harness evidence. Qualification on the actual `main` candidate SHA requires Full Applicable CI, the candidate Consumer Verification Harness, Release Artifact Verification, and Strict Lead Acceptance under [Library Presentation Standard §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md#141-first-stable-release-gate). See the [release evidence handoff](../guides/RELEASE_ARTIFACT_VERIFICATION.md#release-evidence-handoff).
+
+Qualification is tracked in [#88](https://github.com/Maatify-ltd/php-persistence/issues/88) and requires separate Owner authorization to start. Publication has its own authorization.

@@ -12,14 +12,14 @@
 
 ## Context
 
-The new package is the intended successor of `maatify/persistence` ([DEC-006](./DEC-006-successor-intent-and-standards-ownership-boundary.md)), and consumers will move gradually. During that period both packages may be required by one application.
+The original successor intent for `maatify/persistence` is recorded in the historical [DEC-006](./DEC-006-successor-intent-and-standards-ownership-boundary.md). [DEC-030](./DEC-030-successor-transition-before-first-stable.md) governs the current successor transition. During a gradual migration, one application may require both packages.
 
 ## Decision
 
 1. Both packages can be installed together. Their namespaces (`Maatify\Persistence\` and `Maatify\PhpPersistence\`) do not overlap ([DEC-004](./DEC-004-package-identity-namespace-and-exception-marker.md)).
 2. `composer.json` of this package must not declare `replace`, `provide` or `conflict` against `maatify/persistence`.
 3. The package must not ship `class_alias` calls, bridge classes or adapters that make a legacy type satisfy a new type or the reverse.
-4. The two packages must not share a mutable global resource. The savepoint name format `maatify_persistence_sp_<32 hex>` of the legacy code is a candidate to keep because its 128-bit random suffix prevents collisions between coexisting packages; that choice is part of [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md) and is not yet closed.
+4. The two packages must not share a mutable global resource. At the time of this decision, the legacy savepoint name format `maatify_persistence_sp_<32 hex>` was a candidate for reuse because its 128-bit random suffix avoids collisions between coexisting packages. The active [DEC-011 decision](./DEC-011-responsibility-placement-and-savepoint-helper.md#decision) retained that format in item 6.
 5. Rollback for a consumer is restoring its previous `require` line and imports; the legacy package stays published and unchanged during development.
 
 ## Rationale

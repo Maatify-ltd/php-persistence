@@ -1,11 +1,20 @@
 # Security Policy
 
 [![Maatify PHP Persistence](https://img.shields.io/badge/Maatify-PHP_Persistence-blue?style=for-the-badge)](https://github.com/Maatify-ltd/php-persistence)
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify)
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify-ltd)
+
+## Release Artifact
+
+This security policy accompanies the Stable target `1.0.0`.
 
 ## Supported Versions
 
-[`1.0.0-rc.2`](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2) is a published Release Candidate. The package has no supported Stable release line.
+### Publication and support snapshot on 2026-11-27
+
+The most recent published version was the [`1.0.0-rc.2` release candidate](https://packagist.org/packages/maatify/php-persistence#v1.0.0-rc.2).
+No Stable support line was established during release preparation.
+
+See [Packagist](https://packagist.org/packages/maatify/php-persistence) for current availability. For archived copies of this file, see the [security policy on the default branch](https://github.com/Maatify-ltd/php-persistence/blob/main/SECURITY.md#supported-versions) for current support.
 
 ## Reporting a Vulnerability
 

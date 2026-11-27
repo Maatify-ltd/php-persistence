@@ -1,6 +1,6 @@
 # PHP Persistence
 
-> Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB, over a caller-supplied `PDO` connection. Published Release Candidate 1.0.0-rc.2. See README for the exact Packagist installation command.
+> Direct-PDO Transaction, Pagination, and Ordering utilities for MySQL and MariaDB, over a caller-supplied `PDO` connection. This artifact targets Stable 1.0.0. The README records the publication state during release preparation and the exact installation command.
 
 This map is for package consumers. Use the Package Reference for the public runtime contract and the guide and examples for usage. Repository workflow and governance are documented separately for contributors in CONTRIBUTING.md.
 
@@ -9,9 +9,9 @@ This map is for package consumers. Use the Package Reference for the public runt
 - [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](PHP_PERSISTENCE_PACKAGE_REFERENCE.md): the canonical, complete Public Runtime API inventory, behavior contracts, exception semantics, concurrency/transaction limits, and database-support claim.
 - [README.md](README.md): package overview, installation/access state, requirements, and a Public Runtime API overview.
 - [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md): a capability map and an `Input → Public Call → Result → Boundary` walkthrough for each capability.
-- [examples/](examples/): maintained, runnable examples that use only the Public API and the production autoload. The C1 snapshot and protected UNIQUE-safe Ordering B1 examples describe current source. See the Package Reference for the published RC.2 API.
+- [examples/](examples/): maintained, runnable examples that use only the Public API and the production autoload.
 
 ## Release and support
 
-- [CHANGELOG.md](CHANGELOG.md): release history and unreleased changes.
+- [CHANGELOG.md](CHANGELOG.md): changes allocated to the exact release target and earlier release history.
 - [SECURITY.md](SECURITY.md): supported state and the vulnerability-reporting channel.
