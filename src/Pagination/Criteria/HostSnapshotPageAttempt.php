@@ -32,6 +32,12 @@ final readonly class HostSnapshotPageAttempt
         return new self($source, $record);
     }
 
+    /**
+     * Reads the recorded state without database I/O. An attempt starts NEW,
+     * becomes RUNNING on admission, and becomes TERMINAL when settled. An
+     * attempt rejected before admission can go directly from NEW to TERMINAL
+     * without performing database I/O.
+     */
     public function state(): State
     {
         return $this->record->state;
@@ -72,13 +78,21 @@ final readonly class HostSnapshotPageAttempt
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws HostSnapshotPaginationException Always. The source tracks this invocation and its settlement by object identity.
+     */
     public function __serialize(): array
     {
         throw new HostSnapshotPaginationException('A Host snapshot attempt cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws HostSnapshotPaginationException Always. A page attempt must be registered with its source.
+     */
     public function __unserialize(array $data): void
     {
         throw new HostSnapshotPaginationException('A Host snapshot attempt cannot be restored.');

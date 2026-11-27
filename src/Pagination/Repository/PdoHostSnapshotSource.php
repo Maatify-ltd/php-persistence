@@ -511,13 +511,21 @@ final class PdoHostSnapshotSource
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws HostSnapshotPaginationException Always. The source owns an in-process Host connection registration.
+     */
     public function __serialize(): array
     {
         throw new HostSnapshotPaginationException('A Host snapshot source cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws HostSnapshotPaginationException Always. The source must establish exclusive use through live attachment.
+     */
     public function __unserialize(array $data): void
     {
         throw new HostSnapshotPaginationException('A Host snapshot source cannot be restored.');

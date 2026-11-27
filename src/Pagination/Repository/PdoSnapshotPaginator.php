@@ -123,13 +123,21 @@ final class PdoSnapshotPaginator
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws SnapshotPaginationException Always. The instance represents a one-shot, Host-delegated read operation.
+     */
     public function __serialize(): array
     {
         throw new SnapshotPaginationException('A snapshot operation cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws SnapshotPaginationException Always. The Host must supply the connection for a new read operation.
+     */
     public function __unserialize(array $data): void
     {
         throw new SnapshotPaginationException('A snapshot operation cannot be restored from serialized data.');

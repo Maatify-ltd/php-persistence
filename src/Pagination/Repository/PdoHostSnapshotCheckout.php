@@ -134,13 +134,21 @@ final readonly class PdoHostSnapshotCheckout
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws HostSnapshotPaginationException Always. The checkout holds authority issued by its live source.
+     */
     public function __serialize(): array
     {
         throw new HostSnapshotPaginationException('A Host snapshot checkout cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws HostSnapshotPaginationException Always. Checkout authority must be issued by the source.
+     */
     public function __unserialize(array $data): void
     {
         throw new HostSnapshotPaginationException('A Host snapshot checkout cannot be restored.');

@@ -49,9 +49,16 @@ final readonly class PdoSavepointTransactionRunner implements SavepointTransacti
 
     /**
      * Returns the callback result after releasing an operation-local savepoint
-     * in an existing caller transaction. On failure it attempts local cleanup
-     * and preserves the original throwable. If PDO has no active transaction,
-     * owns it instead and applies the configured deadlock replay policy.
+     * in an existing caller transaction. A callback or RELEASE failure
+     * keeps precedence after best-effort local cleanup. If PDO has no active
+     * transaction, owns it instead and applies the configured deadlock replay
+     * policy. A false owned BEGIN prevents the callback from running. A false
+     * owned COMMIT suppresses the result after best-effort rollback.
+     *
+     * A false result from owned BEGIN, owned COMMIT, SAVEPOINT or RELEASE
+     * raises TransactionExecutionException. The same exception is raised if
+     * the caller's transaction is no longer active after SAVEPOINT. Any
+     * callback or driver Throwable that escapes this call retains its identity.
      *
      * @template TResult
      *
