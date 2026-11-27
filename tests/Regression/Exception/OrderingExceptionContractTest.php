@@ -88,9 +88,9 @@ final class OrderingExceptionContractTest extends TestCase
     }
 
     /**
-     * Ordering depends on Transaction only (Issue #16 §1): the manager carries no own savepoint
-     * helper and reuses the Transaction-owned SavepointScope (DEC-011 item 2), not a redesigned
-     * duplicate under Ordering.
+     * Ordering depends on Transaction only (Issue #16 §1). It shares the
+     * Transaction-owned SavepointScope (DEC-011 item 2) and the owned
+     * executor used by the public transaction runners (DEC-034).
      */
     public function testOrderingHasNoOwnSavepointHelperAndDoesNotReviveTheInternalOperationSavepoint(): void
     {
@@ -102,7 +102,7 @@ final class OrderingExceptionContractTest extends TestCase
         $operationsSource = file_get_contents($operationsFile);
         self::assertIsString($operationsSource);
         self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\SavepointScope', $operationsSource);
-        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\PdoTransactionRunner', $operationsSource);
+        self::assertStringContainsString('Maatify\\PhpPersistence\\Transaction\\Repository\\OwnedTransactionExecutor', $operationsSource);
     }
 
     public function testInvalidOrderingConfigurationExceptionRepresentativeTrigger(): void
