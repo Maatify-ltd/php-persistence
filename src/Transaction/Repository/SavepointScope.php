@@ -16,10 +16,10 @@ use Throwable;
  *
  * - {@see self::releaseOrUndo()} is the success path: RELEASE, or best-effort
  *   cleanup followed by the RELEASE failure when it fails.
- * - {@see self::cleanupAfterFailure()} is the failure path: best-effort
- *   ROLLBACK TO and RELEASE after the caller's own failure (a thrown
- *   Throwable, or a failed RELEASE); the caller's own failure always wins over
- *   a cleanup failure.
+ * - {@see self::cleanupAfterFailure()} checks for an active transaction
+ *   before attempting ROLLBACK TO. It attempts RELEASE only after rollback
+ *   is acknowledged. The initiating Throwable keeps precedence over
+ *   state-check and cleanup failures.
  * - {@see self::undoOrFail()} is for a caller that reports failure without
  *   throwing: ROLLBACK TO must succeed, and its failure is not swallowed;
  *   Ordering uses this path for a move with a zero-row target update. A
