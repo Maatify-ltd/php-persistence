@@ -34,10 +34,23 @@ Before requesting publication authorization, record `maatify/php-persistence`, t
 
 ## Published Artifact Verification
 
-The current Published Artifact Verification command accepts RC.2. Run it from the historical checkout using the `QUALIFIED_SHA` recorded above. Stable `1.0.0` requires separate Published Artifact Verification tooling for its eventual external distribution.
+Run this command after Packagist publishes the exact Stable `1.0.0` version. Use a Git checkout containing `v1.0.0` and set `QUALIFIED_SHA` to the full qualified commit recorded in the release evidence.
 
 ```sh
-composer release:verify-published -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"
+composer release:verify-published -- --target=1.0.0 --sha="$QUALIFIED_SHA"
 ```
 
-The command requires the release tag to resolve to the supplied qualified SHA. It uses a fresh external Composer root, home, and cache. It resolves the exact version through Packagist, checks the GitHub dist and source references against the qualified SHA, and requires Composer's installed metadata to report an actual `dist` installation. It compares the complete installed file inventory and bytes with a Git archive of the qualified commit, and logs version, installation mode, installed path, resolved metadata, and file hashes before cleaning up. Save the output with the release evidence. A missing version or dist, a source fallback, or any content difference fails verification. The command is read-only with respect to GitHub and Packagist. It is separate from the Consumer Verification Harness.
+The verifier requires the local release tag to resolve to that SHA. It uses a fresh external Composer project, home, and cache, with scripts and plugins disabled. It checks the resolved Packagist version and both GitHub references, then requires Composer's installed metadata to report `dist` at the expected package path. It checks required files, runtime paths, and release presentation, and compares the complete installed inventory and file bytes with a Git archive of the qualified commit. Missing metadata or files, source fallback, and content differences fail verification.
+
+Save the output and exit status with the release evidence. The verifier records the expected target and Composer configuration separately from the resolution and installed metadata it observes. Those records remain available when a check fails, including when a failed Composer update leaves installed metadata. The content record includes file hashes and differences found during comparison. It hashes unexpected paths and redacts values outside the allowed metadata formats. The final `PAV RESULT` records integrity, the failure stage where applicable, and the cleanup result.
+
+The Consumer Verification Harness supplies separate runtime evidence. Publication State is established by separate external availability evidence. If that evidence still shows the version is available after an integrity failure, it remains Published with integrity `NOT PASS`. If the failure supplies credible evidence that the version no longer resolves or installs, re-verify Publication State and record `RE-VERIFY` while that check is pending. See [CI Workflow Standard §2.6](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#26-published-artifact-verification).
+
+### Historical RC.2 publication check
+
+For the earlier release, run its original verifier from a separate checkout at `v1.0.0-rc.2`.
+
+```sh
+QUALIFIED_SHA=71dc61548e48fd053376db69149a00bc87069b70
+composer release:verify-published -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"
+```
