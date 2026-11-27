@@ -140,7 +140,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         $manager = new ProtectedScopedOrderingManager();
         $checkout->begin();
 
-        $failure = self::failureOf(
+        $failure = $this->caughtFailure(
             fn() => $manager->moveWithinScope($checkout, $config, 'target', $second, 1, '2025-02-29 00:00:00'),
         );
         self::assertInstanceOf(InvalidOrderingOperationException::class, $failure);
