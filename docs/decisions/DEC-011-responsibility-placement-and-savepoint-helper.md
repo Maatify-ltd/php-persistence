@@ -8,7 +8,7 @@
 - **Scope / Concern:** Which responsibility folder holds the classes that issue SQL or transaction-control statements, who owns the savepoint helper, and whether optional renames beyond those already decided are made.
 - **Supersedes:** `—`
 - **Superseded By:** `—`
-- **Canonical Contract / Current Owner:** The responsibility vocabulary and the SQL-placement rules are owned by the pinned [Package Building Standard](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md). The layout is [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) §4; per-type placement is [CONTRACT_MATRIX.md](../architecture/CONTRACT_MATRIX.md).
+- **Canonical Contract / Current Owner:** The responsibility vocabulary and the SQL-placement rules are owned by the pinned [Package Building Standard](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md). [Architecture §4](../architecture/ARCHITECTURE.md#4-source-topology) documents the current source topology. The [Package Reference §3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#3-public-runtime-api-inventory) is the canonical public type inventory.
 
 ## Context
 
@@ -30,6 +30,6 @@ The pinned standard says SQL lives in Repositories or package-local SQL support 
 
 ## Consequences
 
-- The folder names in [CONTRACT_MATRIX.md](../architecture/CONTRACT_MATRIX.md) column "New package" are the placement of record.
-- Activation does not remove the gates: WU-6 must pass the characterization tests of item 3 against the merged helper before the public API and the Package Reference are frozen (item 4). Merging the savepoint logic without them is not allowed.
+- The [Contract Matrix §3](../architecture/CONTRACT_MATRIX.md#3-type-matrix) records the original per-type placements and their implementation.
+- The [historical WU-6 evidence](../architecture/BEHAVIOR_CONTRACT.md#transaction-wu-6) records the Transaction verification. Items 3 and 4 required the characterization tests to pass first against the unmerged logic and again against the shared savepoint helper before the original public API and Package Reference freeze.
 - Changing item 1, 2 or 5 later needs a new record that supersedes this one; the namespace root, type short names and capability split stay as decided in [DEC-004](./DEC-004-package-identity-namespace-and-exception-marker.md) and [DEC-010](./DEC-010-package-topology-multi-capability.md).

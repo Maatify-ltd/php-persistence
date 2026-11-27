@@ -8,7 +8,7 @@
 - **Scope / Concern:** Public identity of the package: Composer name, PSR-4 root namespace, package-wide exception marker, and the DTO naming of the pagination result.
 - **Supersedes:** `—`
 - **Superseded By:** `—`
-- **Canonical Contract / Current Owner:** This record for the identity values. The naming rules they follow are owned by the pinned [Package Building Standard](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) and [Composer Package Standard](../php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md). The resulting public type inventory is [CONTRACT_MATRIX.md](../architecture/CONTRACT_MATRIX.md).
+- **Canonical Contract / Current Owner:** This record for the identity values. The naming rules they follow are owned by the pinned [Package Building Standard](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md) and [Composer Package Standard](../php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md). The [Package Reference §3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#3-public-runtime-api-inventory) is the canonical public type inventory.
 
 ## Context
 
