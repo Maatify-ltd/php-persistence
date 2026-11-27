@@ -28,7 +28,8 @@
   ],
   "support": {
     "issues": "https://github.com/Maatify-ltd/php-persistence/issues",
-    "source": "https://github.com/Maatify-ltd/php-persistence"
+    "source": "https://github.com/Maatify-ltd/php-persistence",
+    "security": "https://github.com/Maatify-ltd/php-persistence/security/policy"
   },
   "autoload": {
     "psr-4": {
@@ -59,7 +60,7 @@
       "@php scripts/check-per-cs-3-1.php"
     ],
     "verify:php-constraint": "bash scripts/check-php-constraint.sh",
-    "syntax": "find src tests scripts examples harness .php-cs-fixer.php -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null",
+    "syntax": "bash -o pipefail -c 'find src tests scripts examples harness .php-cs-fixer.php -name \"*.php\" -print0 | xargs -0 -n1 php -l > /dev/null'",
     "whitespace": "git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD -- . ':!docs/php-engineering-standards'",
     "test": [
       "@test:unit",
