@@ -26,11 +26,12 @@ The commands below cover local setup and verification; see [docs/architecture/CI
 ```bash
 composer update --prefer-stable --no-progress
 composer validate --strict
+composer verify:php-constraint  # Composer solver checks for the declared PHP boundaries
 composer check-platform-reqs
 composer dump-autoload --optimize --strict-psr
 composer audit --no-interaction --abandoned=fail
 composer analyse               # PHPStan, level max, zero errors, no baseline
-composer format:check          # PER-CS 3.1 code style, non-mutating
+composer format:check          # full code-style check on PHP 8.4 or 8.5, non-mutating
 composer syntax                # php -l over src, tests, scripts, examples
 composer whitespace             # git diff --check
 composer test:unit             # no Docker needed
@@ -40,6 +41,8 @@ composer examples:smoke        # needs Docker; smoke-executes examples/ against 
 composer test:consumer         # needs Docker; two fresh external Composer verification runs
 actionlint .github/workflows/*.yml
 ```
+
+On PHP 8.6, run `php scripts/check-per-cs-3-1.php` for the independent PER-CS 3.1 check. PHP CS Fixer runs on PHP 8.4 and 8.5 under [DEC-028](docs/decisions/DEC-028-php-cs-fixer-host-separation-for-php-86.md).
 
 For the exact release target and archive commands, see [Release Artifact Verification](docs/guides/RELEASE_ARTIFACT_VERIFICATION.md).
 

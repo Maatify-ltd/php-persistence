@@ -6,7 +6,7 @@
 - **Date:** `2026-11-18`
 - **Decision Authority:** The Project Owner approved this exact scope in the November 18, 2026 collaboration on [PR #33](https://github.com/Maatify-ltd/php-persistence/pull/33).
 - **Scope / Concern:** Composer abandonment auditing of the exact published legacy migration fixture in the temporary coexistence root.
-- **Canonical Contract / Current Owner:** [Consumer verification harness](../../scripts/consumer-verification.php) and its [audit guide](../guides/CONSUMER_VERIFICATION.md#coexistence-audit) implement this decision under the pinned [Composer Package Standard §23.5.4](../php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md#2354-abandoned-dependencies) and [CI Workflow Standard §9](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#9-composer-security-audit).
+- **Canonical Contract / Current Owner:** [Consumer verification harness in the repository](https://github.com/Maatify-ltd/php-persistence/blob/main/scripts/consumer-verification.php) and its [audit guide](../guides/CONSUMER_VERIFICATION.md#coexistence-audit) implement this decision under the pinned [Composer Package Standard §23.5.4](../php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md#2354-abandoned-dependencies) and [CI Workflow Standard §9](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#9-composer-security-audit).
 
 ## Context
 

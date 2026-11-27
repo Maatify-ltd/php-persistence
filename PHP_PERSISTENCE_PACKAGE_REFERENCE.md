@@ -638,7 +638,7 @@ public function __construct(
 ```
 
 - The source issues the opaque checkout, grant, and attempt. These identities and the source reject cloning, serialization, and restoration. Members marked @internal are implementation details. Explicit B contract rejections use Pagination\Exception\HostSnapshotPaginationException and the package marker.
-- DTO\HostSnapshotPageSettlementDTO is readonly with public enum fields disposition and reason. DTO\HostSnapshotRetirementDTO is readonly with public HostSnapshotRetirementDispositionEnum disposition and PDO pdo.
+- `DTO\HostSnapshotPageSettlementDTO` is readonly with two public fields: `disposition` (`Enum\HostSnapshotPageDispositionEnum`) and `reason` (`Enum\HostSnapshotPageSettlementReasonEnum`). See the [page settlement contract in §5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction) for their values and meaning. `DTO\HostSnapshotRetirementDTO` is readonly with public `HostSnapshotRetirementDispositionEnum disposition` and `PDO pdo` fields.
 - Checkout state is IDLE, TRANSACTION_ACTIVE, TRANSACTION_UNQUALIFIED, BUSY, QUARANTINED, RELEASED, or RETIRED. The access modes are READ_WRITE and READ_ONLY. Command result modes are AFFECTED_ROWS and BOUNDED_ROWS. Effects are INVALIDATE_GENERATION and PRESERVES_TRANSACTION.
 
 #### Pagination exceptions
