@@ -104,6 +104,7 @@ The table describes the raw Transaction runners and raw Ordering paths where the
 |---|---|
 | No transaction active | Begin, run, commit; on failure roll back (best effort) and rethrow the original. A `false` from begin or commit fails closed with `TransactionExecutionException`. |
 | Caller's transaction active | Participate. Never begin, commit or finally roll back it. Use a savepoint only to limit the failed operation (savepoint runner, `moveWithinScope`). |
+| Raw Ordering reports a missing target or zero-row write | A missing target in a caller-owned transaction returns `false` without a savepoint. Other ordinary `false` outcomes require the appropriate rollback and settlement to succeed. [DEC-034](../decisions/DEC-034-raw-ordering-settlement-failures.md) governs failures. |
 | Callback throws | The original `Throwable` is rethrown unchanged. Cleanup failures never replace it. |
 | Deadlock (`40001`/`1213`) in a package-owned transaction | Replay only under the exact conditions of B-12, default off. |
 | Deadlock or any error in a caller-owned transaction | Never replayed; propagates. The caller decides. |

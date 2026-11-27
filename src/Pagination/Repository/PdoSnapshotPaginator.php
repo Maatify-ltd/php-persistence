@@ -225,6 +225,7 @@ final class PdoSnapshotPaginator
         }
 
         $resources->track($statement);
+        /** @var list<mixed> $raw Expected list<list<mixed>> from FETCH_NUM. Fetch failures throw in exception mode. */
         $raw = $statement->fetchAll(PDO::FETCH_NUM);
         $resources->release();
         $rows = [];

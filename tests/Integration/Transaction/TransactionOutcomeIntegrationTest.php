@@ -118,7 +118,7 @@ final class TransactionOutcomeIntegrationTest extends IntegrationTestCase
     }
 
     #[DataProvider('releaseOutcomes')]
-    public function testRawUndoCanReturnWithTheSavepointReleasedOrStillLive(bool $releaseSucceeds): void
+    public function testRawUndoRequiresBothRollbackAndReleaseAcknowledgements(bool $releaseSucceeds): void
     {
         $observer = $this->connect();
         $table = $this->createTable($observer);
@@ -133,7 +133,13 @@ final class TransactionOutcomeIntegrationTest extends IntegrationTestCase
             $scope = SavepointScope::begin($host);
             $host->exec("INSERT INTO `$table` (id, v) VALUES (2, 20)");
 
-            $scope->undoOrFail();
+            if ($releaseSucceeds) {
+                $scope->undoOrFail();
+            } else {
+                $thrown = $this->captureThrowable(static fn() => $scope->undoOrFail());
+                self::assertInstanceOf(PDOException::class, $thrown);
+                self::assertSame('Injected control statement failure.', $thrown->getMessage());
+            }
 
             self::assertTrue($host->inTransaction());
             self::assertSame([10], $this->values($host, $table));

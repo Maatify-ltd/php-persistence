@@ -7,6 +7,7 @@ namespace Maatify\PhpPersistence\Ordering\Repository;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
+use Maatify\PhpPersistence\Transaction\Exception\TransactionExecutionException;
 use PDO;
 use Throwable;
 
@@ -188,6 +189,8 @@ final readonly class ScopedOrderingManager
      * - true when the target row is already at the requested/clamped position.
      * - false when the target row does not exist in the given scope.
      * - false when the target update affects zero rows and the move is undone.
+     * A false result from an owned move requires rollback acknowledgement and
+     * an idle PDO transaction state. A rollback failure propagates.
      *
      * In a caller-owned transaction, a range-shift or target-write failure
      * triggers best-effort cleanup of the operation-local savepoint
@@ -195,7 +198,8 @@ final readonly class ScopedOrderingManager
      * The helper attempts rollback to the savepoint if PDO reports an active
      * transaction, then attempts release only after rollback is acknowledged.
      * The original Throwable propagates unchanged. A zero-row target update
-     * requires a successful rollback to the savepoint before returning false.
+     * requires successful rollback to the savepoint and release before returning
+     * false. A failure of either control operation propagates.
      * A no-op move and a missing row issue no savepoint statement. A successful
      * mutation releases its savepoint. While the transaction remains active,
      * it retains the scope lock and the caller keeps earlier work and their
@@ -219,6 +223,7 @@ final readonly class ScopedOrderingManager
      *
      * @throws InvalidOrderingOperationException When the row ID, order, scope or timestamp is invalid.
      * @throws OrderingExecutionException When a statement fails without throwing or a stored order cannot be represented as a PHP integer.
+     * @throws TransactionExecutionException When transaction control fails without throwing or required settlement cannot be confirmed.
      * @throws Throwable When a PDO/database operation throws.
      */
     public function moveWithinScope(

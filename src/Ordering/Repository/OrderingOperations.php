@@ -7,7 +7,7 @@ namespace Maatify\PhpPersistence\Ordering\Repository;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
-use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
+use Maatify\PhpPersistence\Transaction\Repository\OwnedTransactionExecutor;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionStatement;
 use Maatify\PhpPersistence\Transaction\Repository\SavepointScope;
@@ -137,33 +137,14 @@ final readonly class OrderingOperations
         ?string $updatedAtValue = null,
     ): bool {
         $this->validateMove($config, $scopeValue, $id, $newOrder, $updatedAtValue);
-        $rollbackResult = new class extends \RuntimeException {};
-        $participating = $pdo->inTransaction();
-
-        try {
-            return (new PdoTransactionRunner($pdo))->run(function () use (
-                $pdo,
-                $config,
-                $scopeValue,
-                $id,
-                $newOrder,
-                $updatedAtValue,
-                $participating,
-                $rollbackResult,
-            ): bool {
-                if (!$this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, $participating)) {
-                    throw $rollbackResult;
-                }
-
-                return true;
-            });
-        } catch (Throwable $failure) {
-            if ($failure === $rollbackResult) {
-                return false;
-            }
-
-            throw $failure;
+        if ($pdo->inTransaction()) {
+            return $this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, participating: true);
         }
+
+        return (new OwnedTransactionExecutor($pdo, maxDeadlockRetries: 0))->run(
+            fn(): bool => $this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, participating: false),
+            rollBackOnFalse: true,
+        );
     }
 
     /**

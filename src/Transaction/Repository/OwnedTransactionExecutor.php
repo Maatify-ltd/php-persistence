@@ -46,7 +46,7 @@ use Throwable;
  * Delays before retry 1, 2 and 3: none, uniform 0-10 ms, uniform 0-20 ms. No
  * transaction (and no lock) is held while waiting.
  *
- * @internal Shared mechanism of the transaction runners; not part of the public API.
+ * @internal Shared owned-transaction mechanism for the transaction runners and raw Ordering.
  */
 final readonly class OwnedTransactionExecutor
 {
@@ -94,10 +94,11 @@ final readonly class OwnedTransactionExecutor
      * @template TResult
      *
      * @param callable(): TResult $callback
+     * @param bool $rollBackOnFalse Require an acknowledged rollback and an idle connection before returning false.
      *
      * @return TResult
      */
-    public function run(callable $callback): mixed
+    public function run(callable $callback, bool $rollBackOnFalse = false): mixed
     {
         $retry = 0;
 
@@ -121,6 +122,14 @@ final readonly class OwnedTransactionExecutor
                 $this->rollBackIfActive();
 
                 throw $throwable;
+            }
+
+            if ($rollBackOnFalse && $result === false) {
+                if (!$this->pdo->inTransaction() || !$this->rollBackToIdle()) {
+                    throw new TransactionExecutionException('Unable to confirm rollback of the incomplete operation.');
+                }
+
+                return $result;
             }
 
             try {
@@ -205,6 +214,11 @@ final readonly class OwnedTransactionExecutor
         }
 
         ($this->sleep)(($this->randomDelay)(0, $ceilingMicroseconds));
+    }
+
+    private function rollBackToIdle(): bool
+    {
+        return $this->pdo->rollBack() && !$this->pdo->inTransaction();
     }
 
     private function rollBackIfActive(): void

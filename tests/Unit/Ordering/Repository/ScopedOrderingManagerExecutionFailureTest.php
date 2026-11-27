@@ -110,7 +110,7 @@ final class ScopedOrderingManagerExecutionFailureTest extends TestCase
         $statement->expects(self::once())->method('fetchColumn')->with(1)->willReturn(PHP_INT_MAX . '0');
         $statement->expects(self::once())->method('closeCursor')->willReturn(true);
         $pdo = $this->createMock(PDO::class);
-        $pdo->method('inTransaction')->willReturn(false, false, true);
+        $pdo->method('inTransaction')->willReturn(false, true);
         $pdo->expects(self::once())->method('beginTransaction')->willReturn(true);
         $pdo->expects(self::once())->method('prepare')->willReturn($statement);
         $pdo->expects(self::once())->method('rollBack')->willReturn(true);
@@ -252,7 +252,7 @@ final class ScopedOrderingManagerExecutionFailureTest extends TestCase
         });
 
         $pdo = $this->createMock(PDO::class);
-        $pdo->method('inTransaction')->willReturn(false, false, true);
+        $pdo->method('inTransaction')->willReturn(false, true);
         $pdo->expects(self::once())->method('beginTransaction')->willReturn(true);
         $pdo->expects(self::never())->method('commit');
         $pdo->expects(self::once())->method('prepare')->willReturn($scopeRead);
@@ -305,7 +305,7 @@ final class ScopedOrderingManagerExecutionFailureTest extends TestCase
                 return 0;
             });
         } else {
-            $pdo->method('inTransaction')->willReturn(false, false, true);
+            $pdo->method('inTransaction')->willReturn(false, true);
             $pdo->expects(self::once())->method('beginTransaction')->willReturn(true);
             $pdo->expects(self::once())->method('rollBack')->willReturn(true);
             $pdo->expects(self::never())->method('exec');

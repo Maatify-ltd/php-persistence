@@ -162,13 +162,17 @@ final class SavepointScopeTest extends TestCase
         self::assertSame($failure, $this->catchThrowable(static fn() => $scope->undoOrFail()));
     }
 
-    public function testUndoOrFailIgnoresAFailingReleaseAfterASuccessfulRollbackTo(): void
+    public function testUndoOrFailPropagatesAFalseRawReleaseAfterASuccessfulRollbackTo(): void
     {
         $pdo = new SavepointTransactionPdo(transactionActive: true, execResults: [0, 0, false]);
 
-        SavepointScope::begin($pdo)->undoOrFail();
-
-        self::assertCount(3, $pdo->executedStatements);
+        $this->expectException(TransactionExecutionException::class);
+        try {
+            SavepointScope::begin($pdo)->undoOrFail();
+        } finally {
+            self::assertSame(['SAVEPOINT SP', 'ROLLBACK TO SAVEPOINT SP', 'RELEASE SAVEPOINT SP'], $this->normalize($pdo->executedStatements));
+            self::assertTrue($pdo->inTransaction());
+        }
     }
 
     public function testBeginFailsBeforeAnyMutationWhenTheDriverReportsNoActiveTransaction(): void

@@ -309,6 +309,8 @@ Use an InnoDB table for the locking and rollback behavior shown here. A failed m
 **Outputs:** `int` (next position) or `bool` (whether the move succeeded, including a no-op).
 When you configure `updatedAtColumn`, supply `updatedAtValue` as a valid `YYYY-MM-DD HH:MM:SS` timestamp with optional 1–6 fractional digits. For example, format a date-time object with `Y-m-d H:i:s` in the intended Host timezone. Omit the value when the column is absent. Both raw and protected moves apply this check before Ordering SQL and bind the accepted string unchanged. [Migration from RC.2](../decisions/DEC-033-validate-ordering-mutation-timestamps.md)
 
+For a raw move, `false` means the target was missing or the zero-row update was undone, with any required settlement confirmed. If PDO fails to confirm that settlement, handle `TransactionExecutionException` or the original driver throwable, then resolve the transaction and connection state before reuse. The Host retains final control of a transaction it supplied. [Migration from RC.2](../decisions/DEC-034-raw-ordering-settlement-failures.md)
+
 **Boundary:** `moveWithinScope()` always locks the whole scope and re-reads the current order from the database before deciding anything; it never trusts a caller-supplied "current order".
 
 ### Append the first item in an empty scope
