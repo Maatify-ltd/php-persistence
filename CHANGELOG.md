@@ -23,12 +23,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
 - Raw and protected `moveWithinScope()` validate `updatedAtValue` before issuing SQL. When `updatedAtColumn` is configured, provide a valid `YYYY-MM-DD HH:MM:SS` value with an optional 1–6 digit fraction. This narrows RC.2's driver-dependent acceptance. Convert other formats in the Host before calling the manager.
 - Raw `moveWithinScope()` now throws when settlement of an otherwise ordinary `false` result fails. This changes RC.2 behavior for an unconfirmed package-owned rollback or failed local savepoint release. Handle the existing `TransactionExecutionException` or the original driver throwable and resolve connection state before reuse. Normal results and Host transaction ownership continue to follow the [Ordering contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
+- **Breaking from RC.2:** Constructors reject a trailing LF in direct `PageResultDTO` sort keys, `SortWhitelist` keys and SQL identifier paths, pagination binding keys, and `ScopedOrderingConfig` table and column names. RC.2 could accept these inputs under its published patterns. Supply canonical names at the call site and match binding keys to the SQL placeholders. See the [migration guidance](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#15-rc2-constructor-input-migration).
 
 ### Fixed
 
 - Preserve the original transaction or savepoint failure when the cleanup state check also fails.
 - Attempt to release count and data cursors after pagination read, validation, or mapper failures while preserving the original error.
-- Reject terminal newlines in trusted SQL identifiers, named binding keys, decimal COUNT values and direct result sort keys.
+- Reject trailing LF in COUNT strings so they contain only decimal digits, as required by the RC.2 contract.
 
 ## [1.0.0-rc.2] - 2026-11-18
 

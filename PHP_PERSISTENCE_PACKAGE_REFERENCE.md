@@ -49,6 +49,19 @@ This package is a separate Composer package from the published `maatify/persiste
 
 The [README](README.md#installation) records the exact installation target and the condition for external Composer resolution. [`composer.json`](composer.json) governs the current package identity, PHP and extension requirements, and Composer dependencies.
 
+### 1.5 RC.2 constructor input migration
+
+RC.2 documented identifier patterns using `$` as the end anchor. In PHP, those patterns can match immediately before a final line feed (LF). The `1.0.0` target checks the entire supplied name, so constructors reject inputs with an LF that RC.2 could accept. This is a breaking change at the input boundary. Callers can use the same constructors and pass canonical names. The array and JSON shape of valid page results stays the same. See [DEC-035](docs/decisions/DEC-035-reject-terminal-lf-in-constructor-inputs.md).
+
+| Constructor input | Exception | Migration |
+| --- | --- | --- |
+| Direct `PageResultDTO` sort key | `PaginationExecutionException` | Supply the intended canonical sort key in `sortBy`, for example `id` when that is the intended key. |
+| `SortWhitelist` public keys and SQL identifier paths | `InvalidPaginationConfigurationException` | Correct the keys and trusted identifier path segments at their source. Use the corrected keys for the default and tie-breaker in `PaginationConfig`. |
+| `PdoPaginationQueryDescriptor` binding keys | `InvalidPaginationQueryException` | Use the exact bare name of each SQL placeholder in the corresponding parameter map. For example, use the map key `status` for `:status` in SQL. |
+| `ScopedOrderingConfig` table and column names | `InvalidOrderingConfigurationException` | Supply the intended trusted table or `schema.table` name and canonical column names. |
+
+The paginator still trims an Offset `PageRequest` sort key before whitelist lookup, as specified in [§5.3](#53-pdopaginatorpaginate). COUNT text returned by PDO must already consist of decimal digits within the documented range. A trailing LF in a COUNT string violates that published RC.2 requirement.
+
 ---
 
 ## 2. Source topology
