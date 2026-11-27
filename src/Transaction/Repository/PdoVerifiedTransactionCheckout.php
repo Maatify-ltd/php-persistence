@@ -6,7 +6,7 @@ namespace Maatify\PhpPersistence\Transaction\Repository;
 
 use Closure;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand;
 use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionSettlementDTO;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
@@ -81,7 +81,7 @@ final class PdoVerifiedTransactionCheckout
      * commits and Discard rolls back. The normal payload is returned after
      * acknowledgement of that end and confirmation of the same idle session.
      *
-     * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation
+     * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation
      */
     public function runOwned(Closure $operation): mixed
     {
@@ -165,7 +165,7 @@ final class PdoVerifiedTransactionCheckout
      * rollback to the savepoint and release. Both require continuity before
      * returning the payload. The Host still decides the outer end.
      *
-     * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation
+     * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation
      */
     public function runInHost(Closure $operation): mixed
     {
@@ -320,7 +320,7 @@ final class PdoVerifiedTransactionCheckout
             }
             $commit = false;
             if ($primary === null) {
-                if ($decision instanceof VerifiedTransactionDecisionDTO) {
+                if ($decision instanceof VerifiedTransactionDecisionCommand) {
                     $commit = $decision->isApply;
                     $payload = $decision->payload;
                 } else {

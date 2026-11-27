@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Transaction\DTO;
 
+use JsonSerializable;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum;
@@ -12,7 +13,7 @@ use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum;
  * Immutable local evidence that separates operation effects, whole-transaction
  * effects and PDO disposition. Later checkout actions publish a new snapshot.
  */
-final readonly class VerifiedTransactionSettlementDTO
+final readonly class VerifiedTransactionSettlementDTO implements JsonSerializable
 {
     /**
      * @param ?VerifiedTransactionOutcomeEnum $operationOutcome Effect of the operation, or null before an attempt records an effect.
@@ -31,4 +32,20 @@ final readonly class VerifiedTransactionSettlementDTO
         public ?VerifiedTransactionReasonEnum $checkoutReason,
         public ?ProtectedTransactionDispositionEnum $disposition,
     ) {}
+
+    /**
+     * Projects the recorded enum case names and keeps unrecorded fields null.
+     *
+     * @return array{operationOutcome: ?string, operationReason: ?string, transactionOutcome: ?string, checkoutReason: ?string, disposition: ?string}
+     */
+    public function jsonSerialize(): array
+    {
+        return [
+            'operationOutcome' => $this->operationOutcome?->name,
+            'operationReason' => $this->operationReason?->name,
+            'transactionOutcome' => $this->transactionOutcome?->name,
+            'checkoutReason' => $this->checkoutReason?->name,
+            'disposition' => $this->disposition?->name,
+        ];
+    }
 }

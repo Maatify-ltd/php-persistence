@@ -11,6 +11,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum as Effe
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotConnection;
+use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotRetirement;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PDO;
 use ReflectionProperty;
@@ -32,6 +33,8 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         $returned = $source->retireForHost();
         self::assertSame(Disposition::RETURNED_IDLE, $returned->disposition);
         self::assertSame($reference->get(), $returned->pdo);
+        self::assertSame(HostSnapshotRetirement::class, $returned::class);
+        self::assertNotContains(\JsonSerializable::class, new \ReflectionClass($returned)->getInterfaceNames());
         self::assertSame(State::RETIRED, $lease->state());
         self::assertFalse($returned->pdo->inTransaction());
         self::reject($source->checkout(...));

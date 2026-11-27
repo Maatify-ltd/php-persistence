@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Closure;
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
@@ -116,6 +118,41 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         }
         $checkout->discardForHost();
         self::assertSame($settlement, $checkout->settlement());
+    }
+
+    public function testInvalidMoveTimestampLeavesTheActiveCheckoutAndRowsUntouched(): void
+    {
+        $initial = '2026-01-01 00:00:00';
+        $first = $this->fixture->insertScoped('target', 1, 'first', null, $initial);
+        $second = $this->fixture->insertScoped('target', 2, 'second', null, $initial);
+        $table = $this->scopedTable;
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive(
+            $this->delegatedConnection(self::setting('PORT'), false),
+            new ProtectedTransactionCommandCatalog([
+                'read' => new ProtectedTransactionCommandPlan(
+                    "SELECT display_order, updated_at FROM `$table` WHERE id = :id",
+                    ['id'],
+                    1,
+                ),
+            ]),
+        );
+        $config = new ScopedOrderingConfig(table: $table, scopeColumn: 'scope_key', updatedAtColumn: 'updated_at');
+        $manager = new ProtectedScopedOrderingManager();
+        $checkout->begin();
+
+        $failure = self::failureOf(
+            fn() => $manager->moveWithinScope($checkout, $config, 'target', $second, 1, '2025-02-29 00:00:00'),
+        );
+        self::assertInstanceOf(InvalidOrderingOperationException::class, $failure);
+        self::assertNull($checkout->settlement());
+        self::assertSame([['display_order' => 2, 'updated_at' => $initial]], $checkout->runRegisteredCommand('read', ['id' => $second]));
+
+        $updated = '2024-02-29 23:59:59';
+        self::assertTrue($manager->moveWithinScope($checkout, $config, 'target', $second, 1, $updated));
+        self::assertSame([['display_order' => 1, 'updated_at' => $updated]], $checkout->runRegisteredCommand('read', ['id' => $second]));
+        $checkout->rollBack();
+        $checkout->returnForHost();
+        self::assertSame([$first => 1, $second => 2], $this->reader()->scopedOrdersById('target'));
     }
 
     public function testReleaseFailureSuppressesFalseAfterSuccessfulSavepointUndo(): void

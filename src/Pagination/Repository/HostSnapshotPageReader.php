@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
-use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotGrantRegistration;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Exception\PaginationExecutionException;
 

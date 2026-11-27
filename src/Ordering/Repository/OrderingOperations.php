@@ -704,9 +704,7 @@ final readonly class OrderingOperations
 
     /**
      * Ensures that timestamp configuration and the operation value are used
-     * consistently.
-     *
-     * @param string|null $updatedAtValue Timestamp value for the target mutation.
+     * consistently and the supplied timestamp has an exact SQL date-time format.
      */
     private function assertUpdatedAtUsage(
         ScopedOrderingConfig $config,
@@ -721,6 +719,15 @@ final readonly class OrderingOperations
         if ($config->updatedAtColumn !== null && $updatedAtValue === null) {
             throw new InvalidOrderingOperationException(
                 'An updated-at column requires an updated-at value.',
+            );
+        }
+
+        if ($updatedAtValue !== null && (
+            preg_match('/\A([0-9]{4})-([0-9]{2})-([0-9]{2}) (?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,6})?\z/', $updatedAtValue, $date) !== 1
+            || !checkdate((int) $date[2], (int) $date[3], (int) $date[1])
+        )) {
+            throw new InvalidOrderingOperationException(
+                'An updated-at value must be a valid YYYY-MM-DD HH:MM:SS timestamp with up to six fractional digits.',
             );
         }
     }

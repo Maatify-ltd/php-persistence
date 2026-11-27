@@ -58,6 +58,8 @@ Capabilities:
 - Transaction
 ```
 
+Representative paths are shown below. See the [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#2-source-topology) for the complete source inventory.
+
 ```text
 src/
 ├── Exception/PhpPersistenceExceptionInterface.php
@@ -74,9 +76,10 @@ src/
 │   ├── Exception/{InvalidPaginationConfigurationException,
 │   │              InvalidPaginationQueryException,
 │   │              PaginationExecutionException}.php
-│   ├── Repository/PdoPaginator.php
+│   ├── Repository/{HostSnapshotRetirement,PdoPaginator}.php
 │   └── ValueObject/SortWhitelist.php
 └── Transaction/
+    ├── Command/VerifiedTransactionDecisionCommand.php
     ├── Exception/{InvalidTransactionConfigurationException,
     │              TransactionExecutionException}.php
     └── Repository/{TransactionRunnerInterface,

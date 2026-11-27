@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Maatify\PhpPersistence\Pagination\Criteria;
+namespace Maatify\PhpPersistence\Pagination\Repository;
+
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPagePlan;
+use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
+use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
 
 /** @internal A source-private grant registration with immutable query inputs. */
 final class HostSnapshotGrantRegistration

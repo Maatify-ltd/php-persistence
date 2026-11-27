@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** Verified Owned and Host transactions against disposable InnoDB tables. */
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO as Decision;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand as Decision;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum as Reason;

@@ -6,7 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Regression;
 
 use Closure;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO as Decision;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand as Decision;
 use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionSettlementDTO as Settlement;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
@@ -87,6 +87,7 @@ final class VerifiedTransactionPublicApiTest extends TestCase
         self::assertFalse(Decision::discard(false)->isApply);
         self::assertFalse(Decision::discard(false)->payload);
         self::assertNull(Decision::discard()->payload);
+        self::assertNotContains(\JsonSerializable::class, $decision->getInterfaceNames());
 
         $settlement = new ReflectionClass(Settlement::class);
         self::assertTrue($settlement->isFinal() && $settlement->isReadOnly());
@@ -111,5 +112,19 @@ final class VerifiedTransactionPublicApiTest extends TestCase
             'RELEASE_UNCONFIRMED', 'COMMIT_OUTCOME_UNKNOWN', 'ROLLBACK_UNCONFIRMED', 'HANDOFF_UNCONFIRMED',
             'TRANSACTION_LOST', 'HOST_DISCARDED',
         ], array_column(Reason::cases(), 'name'));
+    }
+
+    public function testSettlementJsonPreservesPropertiesAsCaseNamesOrNull(): void
+    {
+        $settlement = new Settlement(Outcome::LOCAL_UNDONE, Reason::CALLBACK_FAILED, Outcome::UNKNOWN, null, Disposition::DISCARD_REQUIRED);
+
+        self::assertSame(Outcome::LOCAL_UNDONE, $settlement->operationOutcome);
+        self::assertSame([
+            'operationOutcome' => 'LOCAL_UNDONE',
+            'operationReason' => 'CALLBACK_FAILED',
+            'transactionOutcome' => 'UNKNOWN',
+            'checkoutReason' => null,
+            'disposition' => 'DISCARD_REQUIRED',
+        ], json_decode(json_encode($settlement, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
     }
 }

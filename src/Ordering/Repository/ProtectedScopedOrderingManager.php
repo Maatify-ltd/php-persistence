@@ -60,7 +60,9 @@ final readonly class ProtectedScopedOrderingManager
      * The positive target position is capped at the locked scope maximum,
      * with a minimum cap of 1. A null scope means global Ordering or the
      * configured nullable scope. Supply a timestamp exactly when an updated-at
-     * column is configured.
+     * column is configured. Use YYYY-MM-DD HH:MM:SS with an optional fraction of
+     * 1–6 digits. Invalid calendar and clock values are rejected before Ordering
+     * SQL is issued. The original string is bound to the target update.
      *
      * A successful move or no-op returns true. A missing row or an undone
      * zero-row update returns false. A mutating move uses a local savepoint.

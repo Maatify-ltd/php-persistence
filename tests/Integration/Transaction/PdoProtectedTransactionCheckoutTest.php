@@ -84,6 +84,10 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         self::assertFalse($pdo->inTransaction());
         $settlement = $checkout->settlement();
         self::assertSame(ProtectedTransactionDispositionEnum::REUSABLE, $settlement?->disposition);
+        self::assertSame([
+            'disposition' => 'REUSABLE',
+            'reason' => 'ROLLED_BACK',
+        ], json_decode(json_encode($settlement, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
         self::assertSame($pdo, $checkout->returnForHost());
         self::assertSame($settlement, $checkout->settlement());
     }

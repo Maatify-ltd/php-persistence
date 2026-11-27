@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Maatify\PhpPersistence\Pagination\Criteria;
+namespace Maatify\PhpPersistence\Pagination\Repository;
 
+use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
 use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum;
 

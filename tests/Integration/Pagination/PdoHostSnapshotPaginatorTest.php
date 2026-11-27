@@ -90,6 +90,10 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         self::assertSame(Reason::READ_FAILED, $broken->settlement()->reason);
         self::assertSame(Reason::READ_FAILED, $mapper->settlement()?->reason);
         self::assertSame(Reason::PAGE_COMPLETED, $success->settlement()?->reason);
+        self::assertSame([
+            'disposition' => 'RETURNED_TO_HOST',
+            'reason' => 'PAGE_COMPLETED',
+        ], json_decode(json_encode($success->settlement(), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function testMapperReentryCannotOverwriteTheOriginalAttemptOrFinishTheTransaction(): void

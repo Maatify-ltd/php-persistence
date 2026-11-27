@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
-use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotAttemptRecord;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotBindings;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
-use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotGrantRegistration;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageAttempt;
 use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPageGrant;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotPageSettlementDTO;
-use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotRetirementDTO;
 use Maatify\PhpPersistence\Pagination\DTO\PageResultDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotAccessModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum as State;
@@ -138,7 +135,7 @@ final class PdoHostSnapshotSource
      * and a resolved next-transaction setting. Otherwise the Host receives the
      * PDO for reconciliation. A held reservation or unresolved cursor blocks transfer.
      */
-    public function retireForHost(): HostSnapshotRetirementDTO
+    public function retireForHost(): HostSnapshotRetirement
     {
         $this->reserveRetirement();
         try {

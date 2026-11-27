@@ -66,6 +66,10 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         $outcome = $snapshot->connectionOutcome();
         self::assertNotNull($outcome);
         self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $outcome->disposition);
+        self::assertSame([
+            'disposition' => 'REUSABLE',
+            'diagnostic' => null,
+        ], json_decode(json_encode($outcome, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
         self::assertSame($outcome, $snapshot->connectionOutcome());
         self::assertTrue($mutationRan);
         self::assertSame(4, $result->total);

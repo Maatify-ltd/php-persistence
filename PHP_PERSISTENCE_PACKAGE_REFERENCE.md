@@ -26,7 +26,7 @@ The package offers three independent capabilities over a **caller-supplied `PDO`
 - It owns no table, schema, or domain-owned persisted state of its own. It operates entirely on tables the host application owns and names.
 - It contains no HTTP controllers, routes, middleware, permission checks, UI, or export logic.
 - Operation state is scoped to each call or operation object. The optional B source and the protected write checkout maintain their own reservation state across calls. The one-shot C1 operation retains its grant and terminal outcome on its own object, as specified by [DEC-018](docs/decisions/DEC-018-optional-delegated-snapshot-pagination.md).
-- B is a stateful, opt-in exception. The source maintains a shared reservation, checkout and transaction generation across calls. A process-local `WeakMap` prevents rebinding the same PDO while that object still exists. Each page attempt retains its own terminal settlement. See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md) and [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
+- B is a stateful, opt-in exception. The source maintains a shared reservation, checkout and transaction generation across calls. A process-local `WeakMap` prevents rebinding the same PDO while that object still exists. Each page attempt retains its own terminal settlement. See [DEC-032](docs/decisions/DEC-032-settlement-json-and-execution-contracts.md) and [§5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction).
 - A protected write checkout keeps one exclusive reservation, one Host-directed transaction, and its final settlement. Its registration is separate from Pagination checkout APIs. See [§5.2.1](#521-optional-protected-host-write-transaction).
 - It is not a connection factory and does not perform dependency injection wiring; a host wires it directly or through its own container.
 
@@ -82,11 +82,9 @@ src/
 ├── Pagination/
 │   ├── Config/PaginationConfig.php
 │   ├── Config/StaticSortPlan.php
-│   ├── Criteria/HostSnapshotAttemptRecord.php   (@internal)
 │   ├── Criteria/HostSnapshotBindings.php   (@internal)
 │   ├── Criteria/HostSnapshotCatalog.php
 │   ├── Criteria/HostSnapshotCommandPlan.php
-│   ├── Criteria/HostSnapshotGrantRegistration.php   (@internal)
 │   ├── Criteria/HostSnapshotPageAttempt.php
 │   ├── Criteria/HostSnapshotPageGrant.php
 │   ├── Criteria/HostSnapshotPagePlan.php
@@ -94,7 +92,6 @@ src/
 │   ├── Criteria/PageRequest.php
 │   ├── Criteria/PdoPaginationQueryDescriptor.php
 │   ├── DTO/HostSnapshotPageSettlementDTO.php
-│   ├── DTO/HostSnapshotRetirementDTO.php
 │   ├── DTO/KeysetPageResultDTO.php
 │   ├── DTO/MultiSortPageResultDTO.php
 │   ├── DTO/PageResultDTO.php
@@ -116,8 +113,11 @@ src/
 │   ├── Exception/InvalidPaginationQueryException.php
 │   ├── Exception/PaginationExecutionException.php
 │   ├── Exception/SnapshotPaginationException.php
+│   ├── Repository/HostSnapshotAttemptRecord.php   (@internal)
 │   ├── Repository/HostSnapshotConnection.php   (@internal)
+│   ├── Repository/HostSnapshotGrantRegistration.php   (@internal)
 │   ├── Repository/HostSnapshotPageReader.php   (@internal)
+│   ├── Repository/HostSnapshotRetirement.php
 │   ├── Repository/KeysetCursor.php   (@internal)
 │   ├── Repository/PdoHostSnapshotCheckout.php
 │   ├── Repository/PdoHostSnapshotPaginator.php
@@ -133,8 +133,8 @@ src/
 └── Transaction/
     ├── Criteria/ProtectedTransactionCommandCatalog.php
     ├── Criteria/ProtectedTransactionCommandPlan.php
+    ├── Command/VerifiedTransactionDecisionCommand.php
     ├── DTO/ProtectedTransactionSettlementDTO.php
-    ├── DTO/VerifiedTransactionDecisionDTO.php
     ├── DTO/VerifiedTransactionSettlementDTO.php
     ├── Enum/ProtectedTransactionDispositionEnum.php
     ├── Enum/ProtectedTransactionReasonEnum.php
@@ -260,7 +260,7 @@ public function discardForHost(): void
 
 `Criteria\ProtectedTransactionCommandCatalog::__construct(array $commands)` accepts a map of identifiers to `ProtectedTransactionCommandPlan` objects. A plan is constructed with `string $sql, array $parameterNames, ?int $maxRows = null`. A null bound requests affected-row count. A positive bound requests a list of associative result rows, with PDO column-key semantics, and rejects a result exceeding that bound. Bindings match the registered unique names exactly and carry strings, integers, booleans, or null. Names omit the colon. Plans accept statements beginning with SELECT, INSERT, UPDATE, DELETE, REPLACE or WITH, without semicolons. The Host warrants single-statement InnoDB behavior that preserves the session and transaction, including the behavior of any routines or triggers.
 
-`DTO\ProtectedTransactionSettlementDTO` is readonly and exposes `public ProtectedTransactionDispositionEnum $disposition` and `public ProtectedTransactionReasonEnum $reason`. See §5.2.1 for the dispositions and reasons.
+`DTO\ProtectedTransactionSettlementDTO` is readonly and exposes `public ProtectedTransactionDispositionEnum $disposition` and `public ProtectedTransactionReasonEnum $reason`. Its JSON object contains `disposition` and `reason` as strings matching the recorded enum case names. See §5.2.1 for the dispositions and reasons.
 
 #### Optional verified write checkout
 
@@ -268,11 +268,11 @@ public function discardForHost(): void
 
 ~~~php
 public static function attachExclusive(#[SensitiveParameter] PDO $pdo, ProtectedTransactionCommandCatalog $catalog): self
-/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation */
+/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation */
 public function runOwned(Closure $operation): mixed
 public function beginHost(): void
 public function runRegisteredCommand(string $commandId, array $bindings = []): int|array
-/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionDTO $operation */
+/** @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation */
 public function runInHost(Closure $operation): mixed
 public function commit(): void
 public function rollBack(): void
@@ -281,9 +281,9 @@ public function returnForHost(): PDO
 public function discardForHost(): void
 ~~~
 
-`Repository\VerifiedTransactionCommandsInterface` exposes only `runRegisteredCommand(string $commandId, array $bindings = []): int|array`. `DTO\VerifiedTransactionDecisionDTO` is final readonly with `bool $isApply` and `mixed $payload` and the factories `apply(mixed $payload = null): self` and `discard(mixed $payload = null): self`. The payload may be false or null and its identity is preserved.
+`Repository\VerifiedTransactionCommandsInterface` exposes only `runRegisteredCommand(string $commandId, array $bindings = []): int|array`. `Command\VerifiedTransactionDecisionCommand` is final readonly with `bool $isApply` and `mixed $payload` and the factories `apply(mixed $payload = null): self` and `discard(mixed $payload = null): self`. The payload may be false or null and its identity is preserved. The command is a PHP callback result with no JSON contract.
 
-`DTO\VerifiedTransactionSettlementDTO` is final readonly. Its constructor takes the public properties in order, without defaults.
+`DTO\VerifiedTransactionSettlementDTO` is final readonly. Its constructor takes the public properties in order, without defaults. Its JSON object uses the same five property names. Each populated enum field projects its case name as a string, and each unset field is null.
 
 | Property | Type |
 | --- | --- |
@@ -529,7 +529,7 @@ public function paginate(
 public function connectionOutcome(): ?SnapshotConnectionOutcomeDTO;
 ```
 
-- `DTO\SnapshotConnectionOutcomeDTO` is readonly. The constructor takes `SnapshotConnectionDispositionEnum $disposition` and `?string $diagnostic`, also available as public readonly properties. A `DISCARD` outcome requires a non-blank diagnostic. Use the enum for decisions and the diagnostic for safe failure-stage information.
+- `DTO\SnapshotConnectionOutcomeDTO` is readonly. The constructor takes `SnapshotConnectionDispositionEnum $disposition` and `?string $diagnostic`, also available as public readonly properties. A `DISCARD` outcome requires a non-blank diagnostic. Use the enum for decisions and the diagnostic for safe failure-stage information. Its JSON object contains `disposition` as the enum case name and `diagnostic` as a string or null.
 - `Enum\SnapshotConnectionDispositionEnum` has cases `UNCHANGED`, `REUSABLE` and `DISCARD`.
 - `connectionOutcome()` returns null before a terminal outcome and the same immutable DTO afterward. The accessor performs no I/O. The operation releases its own reference to the PDO and the outcome holds only the enum and diagnostic.
 
@@ -592,7 +592,7 @@ B provides a source, an exclusive checkout, and a one-shot authorization per rea
 // Repository\PdoHostSnapshotSource
 public static function attachExclusive(PDO $pdo, HostSnapshotCatalog $catalog): self;
 public function checkout(): PdoHostSnapshotCheckout;
-public function retireForHost(): HostSnapshotRetirementDTO;
+public function retireForHost(): HostSnapshotRetirement;
 public function discardForHost(): void;
 
 // Repository\PdoHostSnapshotCheckout
@@ -638,7 +638,7 @@ public function __construct(
 ```
 
 - The source issues the opaque checkout, grant, and attempt. These identities and the source reject cloning, serialization, and restoration. Members marked @internal are implementation details. Explicit B contract rejections use Pagination\Exception\HostSnapshotPaginationException and the package marker.
-- `DTO\HostSnapshotPageSettlementDTO` is readonly with two public fields: `disposition` (`Enum\HostSnapshotPageDispositionEnum`) and `reason` (`Enum\HostSnapshotPageSettlementReasonEnum`). See the [page settlement contract in §5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction) for their values and meaning. `DTO\HostSnapshotRetirementDTO` is readonly with public `HostSnapshotRetirementDispositionEnum disposition` and `PDO pdo` fields.
+- `DTO\HostSnapshotPageSettlementDTO` is readonly with two public fields: `disposition` (`Enum\HostSnapshotPageDispositionEnum`) and `reason` (`Enum\HostSnapshotPageSettlementReasonEnum`). Its JSON object contains `disposition` and `reason` as enum case names. See the [page settlement contract in §5.3.3](#533-optional-b-pagination-in-a-host-owned-transaction) for their values and meaning. `Repository\HostSnapshotRetirement` is readonly with public `HostSnapshotRetirementDispositionEnum disposition` and `PDO pdo` fields. It transfers the live connection in PHP with no JSON contract.
 - Checkout state is IDLE, TRANSACTION_ACTIVE, TRANSACTION_UNQUALIFIED, BUSY, QUARANTINED, RELEASED, or RETIRED. The access modes are READ_WRITE and READ_ONLY. Command result modes are AFFECTED_ROWS and BOUNDED_ROWS. Effects are INVALIDATE_GENERATION and PRESERVES_TRANSACTION.
 
 #### Pagination exceptions
@@ -772,9 +772,9 @@ PHP can load these classes and reach public members marked `@internal`. These im
 - **`Pagination\Repository\SnapshotReadResources`** — tracks and confirms release of C1 statement cursors.
 - **`Pagination\Repository\HostSnapshotConnection`** — tracks B's PDO and statement lifetimes, executes SQL, and verifies session state.
 - **`Pagination\Repository\HostSnapshotPageReader`** — reads the registered page and releases statement resources before mapping.
-- **`Pagination\Criteria\HostSnapshotAttemptRecord`** — holds one attempt's state and published settlement.
+- **`Pagination\Repository\HostSnapshotAttemptRecord`** — holds one attempt's state and published settlement.
 - **`Pagination\Criteria\HostSnapshotBindings`** — validates registered parameter names and freezes typed binding values.
-- **`Pagination\Criteria\HostSnapshotGrantRegistration`** — binds a registered read and request to the source's checkout identity and transaction generation.
+- **`Pagination\Repository\HostSnapshotGrantRegistration`** — binds a registered read and request to the source's checkout identity and transaction generation.
 - **`Pagination\Exception\HostSnapshotRowLimitExceededException`** — signals that a result exceeded its row bound. B handles it during cleanup and reports the applicable public pagination exception.
 - **`Transaction\Repository\OwnedTransactionExecutor`** — the shared begin/callback/commit-with-replay mechanism behind both Transaction runners. Exposes `public const MAX_DEADLOCK_RETRIES = 3`, which is the same bound documented publicly through the runners' `$maxDeadlockRetries` constructor parameter (§3.2); this constant is not a separate contract.
 - **`Ordering\Repository\OrderingOperations`** — shared Ordering SQL and validation behind both managers.
@@ -840,7 +840,7 @@ The reservation spans registered commands, protected Ordering, finish and dispos
 
 #### 5.2.2 Optional verified apply and discard
 
-[DEC-022](docs/decisions/DEC-022-verified-apply-discard.md) defines one exclusive delegation for one transaction. The Host supplies an exact PDO or Pdo\Mysql object from pdo_mysql with native prepares, exception mode, the default statement class, no persistence and autocommit enabled. Supply it idle, with no pending transaction settings or resources and multi-statements disabled at construction. Keep raw aliases out of use, including through pools, reconnect, multiplexing or simultaneous enrollment in another capability. The package reserves the PDO object between Verified and Protected Transaction checkouts. Pagination registries remain separate. A trusted plan must preserve the same session and transaction, including the effects of its routines and triggers. The API does not establish safety for an external alias, a non-transactional side effect or a transaction-changing command.
+[DEC-032](docs/decisions/DEC-032-settlement-json-and-execution-contracts.md) defines one exclusive delegation for one transaction. The Host supplies an exact PDO or Pdo\Mysql object from pdo_mysql with native prepares, exception mode, the default statement class, no persistence and autocommit enabled. Supply it idle, with no pending transaction settings or resources and multi-statements disabled at construction. Keep raw aliases out of use, including through pools, reconnect, multiplexing or simultaneous enrollment in another capability. The package reserves the PDO object between Verified and Protected Transaction checkouts. Pagination registries remain separate. A trusted plan must preserve the same session and transaction, including the effects of its routines and triggers. The API does not establish safety for an external alias, a non-transactional side effect or a transaction-changing command.
 
 Attachment performs no SQL. A refusal leaves the Host in control. The first start qualifies the session under reservation and verifies the qualified generation before work. The existing Catalog and Plan are used for both modes. Registered commands bind the exact named scalar values. The interface exposes a count or bounded rows, never a statement or PDO. The scope is valid only in the invoking Fiber or root context and closes before finalization. Reentry, stale scopes and a second operation are rejected before SQL. The checkout does not replay callbacks.
 
@@ -940,7 +940,7 @@ try {
 // the Host may explicitly discard that connection.
 ```
 
-See [DEC-020](docs/decisions/DEC-020-optional-host-transaction-snapshot-pagination.md).
+See [DEC-032](docs/decisions/DEC-032-settlement-json-and-execution-contracts.md).
 
 ### 5.3.4 Optional static composite Offset pagination
 
@@ -970,7 +970,9 @@ Existing `paginate()`, static sort, C1, B, and Keyset calls keep their own resul
 
 The host owns the table schema. The locking and rollback behavior described below requires a transactional storage engine that provides row locks and savepoints. Integration tests use InnoDB on MySQL and MariaDB. On a nontransactional table, a failed move can leave earlier shifts in place.
 
-`$updatedAtValue` must be null if and only if `updatedAtColumn` is null. When configured, the timestamp is written only to the target row when it actually moves. All four methods first validate scope usage (`$scopeValue` consistent with `$config->scopeColumn`/`$config->nullableScope`); `getNextPosition`, `getNextPositionForUpdate`, and `moveWithinScope` throw `InvalidOrderingOperationException` on misuse, while `rowExistsInScope` additionally just returns `false` for `$id <= 0` without throwing (`moveWithinScope` throws `InvalidOrderingOperationException` for `$id <= 0` or `$newOrder <= 0`).
+`$updatedAtValue` must be null if and only if `updatedAtColumn` is null. When configured, raw and protected moves require a valid Gregorian date and 24-hour time in `YYYY-MM-DD HH:MM:SS` format, with an optional decimal point and 1–6 fractional-second digits. Invalid values raise `InvalidOrderingOperationException` before Ordering SQL. The accepted string is bound unchanged and is written only to the target row when it actually moves. Format the value in the intended Host timezone and choose precision supported by the underlying column. [DEC-033](docs/decisions/DEC-033-validate-ordering-mutation-timestamps.md) records this change from RC.2, which passed a supplied string through to the driver.
+
+All four methods first validate scope usage (`$scopeValue` consistent with `$config->scopeColumn`/`$config->nullableScope`); `getNextPosition`, `getNextPositionForUpdate`, and `moveWithinScope` throw `InvalidOrderingOperationException` on misuse, while `rowExistsInScope` additionally just returns `false` for `$id <= 0` without throwing (`moveWithinScope` throws `InvalidOrderingOperationException` for `$id <= 0` or `$newOrder <= 0`).
 
 The host selects the PDO error mode. Ordering uses it as configured, including `ERRMODE_EXCEPTION`, `ERRMODE_SILENT`, and `ERRMODE_WARNING`. A statement failure reported through a return value raises `OrderingExecutionException`. In warning mode, PDO can also emit its usual warning. Any throwable from PDO or the host's warning handler propagates unchanged. A successful empty scope or missing row keeps the result documented below.
 

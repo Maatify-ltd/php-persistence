@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Maatify\PhpPersistence\Transaction\DTO;
+namespace Maatify\PhpPersistence\Transaction\Command;
 
 /**
  * An explicit transaction decision with an independent application payload.
  * Payloads, including false, null and objects, pass through unchanged when
  * the checkout confirms the requested effect.
  */
-final readonly class VerifiedTransactionDecisionDTO
+final readonly class VerifiedTransactionDecisionCommand
 {
     private function __construct(public bool $isApply, public mixed $payload) {}
 

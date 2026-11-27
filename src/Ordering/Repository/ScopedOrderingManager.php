@@ -215,9 +215,9 @@ final readonly class ScopedOrderingManager
      * the server.
      *
      * @param int|string|null $scopeValue Required when config has a non-null scope column; null means global ordering or the configured nullable scope.
-     * @param string|null $updatedAtValue Timestamp value bound to the target update when updatedAtColumn is configured.
+     * @param string|null $updatedAtValue Valid YYYY-MM-DD HH:MM:SS with an optional fraction of 1–6 digits when configured. The original value is bound.
      *
-     * @throws InvalidOrderingOperationException When id/order/scope arguments are invalid.
+     * @throws InvalidOrderingOperationException When the row ID, order, scope or timestamp is invalid.
      * @throws OrderingExecutionException When a statement fails without throwing or a stored order cannot be represented as a PHP integer.
      * @throws Throwable When a PDO/database operation throws.
      */

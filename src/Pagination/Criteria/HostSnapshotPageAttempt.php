@@ -10,6 +10,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as S
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
+use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotAttemptRecord;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use WeakReference;
 

@@ -11,7 +11,7 @@ use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog as Catalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan as Plan;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO as Decision;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand as Decision;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum as Reason;
