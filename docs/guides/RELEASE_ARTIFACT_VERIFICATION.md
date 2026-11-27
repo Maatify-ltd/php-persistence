@@ -11,7 +11,13 @@ composer release:verify -- --target=1.0.0-rc.2 --sha="$QUALIFIED_SHA"
 
 The verifier creates an isolated checkout of the selected commit. It generates a VCS archive with `git archive` and a Composer archive with `composer archive`, independently of each other. The verification checks the actual entries and bytes, including required consumer files, the full runtime source, manifest identity and production PSR-4 mapping, and repository-only or sensitive paths. The log records the target, commit, tree, and a file inventory and SHA-256 for each generated archive. The temporary workspace is removed when verification ends. The sensitive-path and private-key checks are structural. The Lead reviews release claims, changelog allocation, and the contents for sensitive data in context.
 
-The CI archive job checks out `v1.0.0-rc.2` and verifies it against the recorded qualified SHA. The other jobs continue to verify the pull request or pushed commit. Qualification for a future release requires Full Applicable CI and Release Artifact Verification on the same actual, Owner-authorized `main` candidate commit for that target. The [Consumer Verification Harness](CONSUMER_VERIFICATION.md) separately exercises runtime consumption.
+The CI archive job checks out `v1.0.0-rc.2` and verifies it against the recorded qualified SHA. The other jobs continue to verify the pull request or pushed commit. Keep the archive result with the evidence for RC.2 and its qualified SHA.
+
+## Release evidence handoff
+
+For first-Stable eligibility, follow [Library Presentation Standard §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md#141-first-stable-release-gate). When using an exception, obtain Owner approval and an indexed `ACTIVE` decision before qualification. Include an immutable reference to that decision alongside the candidate SHA.
+
+Before requesting publication authorization, record `maatify/php-persistence`, the exact target version, and the actual `main` candidate SHA. Attach separate passing results for [Full Applicable CI](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#24-release-sha-qualification), the [Consumer Verification Harness](CONSUMER_VERIFICATION.md), and [Release Artifact Verification](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#25-release-artifact-verification) for that candidate, along with Strict Lead Acceptance. After external publication, attach [Published Artifact Verification](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md#26-published-artifact-verification) for the published target and qualified SHA.
 
 ## Published Artifact Verification
 
