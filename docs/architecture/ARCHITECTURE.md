@@ -114,7 +114,7 @@ Exceptions: the package defines named exceptions for configuration, execution-co
 
 ## 7. Successor intent and the standards boundary
 
-The package is intended to replace `maatify/persistence` in the future ([DEC-006](../decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)). The pinned [Package Building Standard §11](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md#11-shared-ordering-and-pagination-utilities) names `maatify/php-persistence` as the normative owner of shared PDO Ordering and Pagination mechanics. Stable consumption requires a verified, published Major 1 release at or above `1.0.0`. Release, consumer migration and the legacy package lifecycle require separate authorization.
+The package is intended to replace `maatify/persistence` in the future ([DEC-030](../decisions/DEC-030-successor-transition-before-first-stable.md)). The pinned [Package Building Standard §11](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md#11-shared-ordering-and-pagination-utilities) names `maatify/php-persistence` as the normative owner of shared PDO Ordering and Pagination mechanics. Stable consumption requires a verified, published Major 1 release at or above `1.0.0`. Release, consumer migration and the legacy package lifecycle require separate authorization.
 
 Coexistence rules are in [DEC-005](../decisions/DEC-005-coexistence-with-legacy-package.md): both packages can be installed; no `replace`, `provide`, `conflict`, `class_alias` or bridge.
 

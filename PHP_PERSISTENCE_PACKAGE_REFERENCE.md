@@ -45,7 +45,7 @@ This package is a separate Composer package from the published `maatify/persiste
 - Both packages can be installed together in one Composer root; their namespaces do not collide.
 - `composer.json` declares no `replace`, `provide`, or `conflict` against `maatify/persistence`, and the package ships no `class_alias`, bridge, or adapter between the two type systems.
 - Published legacy `v1.4.0` and the unpublished legacy `main` used as source provenance are distinct baselines ([DEC-007](docs/decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md)). This package has its own namespace and public API.
-- Consumer migration from `maatify/persistence` to this package is explicitly **not** addressed by this document and needs its own separate authorization ([DEC-006](docs/decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)).
+- Consumer migration from `maatify/persistence` to this package is explicitly **not** addressed by this document and needs its own separate authorization ([DEC-030](docs/decisions/DEC-030-successor-transition-before-first-stable.md)).
 
 ### 1.4 Release Candidate target
 
