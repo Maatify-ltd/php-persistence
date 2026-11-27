@@ -16,15 +16,20 @@ This guide covers the Stable `1.0.0` target. Follow the [installation instructio
 | Capability | Primary call | Walkthrough | Example |
 |---|---|---|---|
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
+| Transaction · Optional protected Host write checkout | `PdoProtectedTransactionCheckout::attachExclusive()` then `begin()` and `runRegisteredCommand()` | [Protected Host write checkout](#optional-protected-host-write-checkout) | Walkthrough only |
 | Transaction · Optional verified checkout | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Pagination · Optional static composite sort | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
 | Pagination · Optional dynamic sort | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
+| Pagination · Optional delegated snapshot (C1) | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | [C1 snapshot pagination](#optional-c1-snapshot-pagination) | [examples/pagination_snapshot_usage.php](../../examples/pagination_snapshot_usage.php) |
+| Pagination · Optional Host transaction snapshot (B) | `PdoHostSnapshotSource::attachExclusive()` then `PdoHostSnapshotPaginator::paginate()` with an authorized page attempt | [B pagination in a Host transaction](#optional-b-pagination-in-a-host-transaction) | Walkthrough only |
+| Pagination · Optional forward-only Keyset | `PdoKeysetPaginator::paginate()` | [Forward-only Keyset pagination](#optional-forward-only-keyset-pagination) | [examples/pagination_keyset_usage.php](../../examples/pagination_keyset_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
+| Ordering · Optional protected UNIQUE-safe lists (B1) | `ProtectedScopedOrderingManager::getNextUniquePositionForAppend()`, `moveUniqueWithinScope()`, or `deleteUniqueWithinScope()` | [Protected UNIQUE-safe Ordering B1](#protected-unique-safe-ordering-b1) | [examples/ordering_unique_usage.php](../../examples/ordering_unique_usage.php) |
 
 ## Run the examples from a 1.0.0 install
 
-After [installing the exact version](../../README.md#installation), create an `examples/` directory in your Composer project and copy the example PHP files from `vendor/maatify/php-persistence/examples/` into it, including `_bootstrap.php`. The scripts then load that project's Composer autoloader. Run the script linked in the capability map. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`.
+After [installing the exact version](../../README.md#installation), choose a row with a linked PHP file in the capability map. Create an `examples/` directory in your Composer project and copy that file and `_bootstrap.php` from `vendor/maatify/php-persistence/examples/`. Run the copied file with PHP from your project root so it loads your Composer autoloader. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`. For rows marked “Walkthrough only,” follow the linked steps in your Host integration.
 
 ## Run the published RC.2 examples from a clean install
 
@@ -137,6 +142,16 @@ try {
 
 Use `PdoSavepointTransactionRunner` instead of `PdoTransactionRunner` when the same code is also called from inside a larger caller-owned transaction and you need operation-local, best-effort rollback while the caller’s transaction remains active. See [Package Reference §5.1–§5.2 and §7](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#5-behavior-contracts) for the full ownership and deadlock-replay rules, including why replay only ever applies to a package-owned transaction.
 
+### Optional protected Host write checkout
+
+Use a protected checkout when the Host needs to keep transaction control while routing access to one delegated write connection through registered commands. For example, an invoice service can register an `invoice.updateStatus` command with parameters `id` and `status`.
+
+1. Build a `ProtectedTransactionCommandCatalog` from trusted `ProtectedTransactionCommandPlan` entries. Delegate an eligible idle PDO through `PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog)` and keep raw aliases out of use.
+2. Call `$checkout->begin()`. Execute the registered operation through `$checkout->runRegisteredCommand('invoice.updateStatus', ['id' => $invoiceId, 'status' => $status])`. Check the affected-row result against the Host's business rule. For guarded Ordering within the same transaction, use the [protected Ordering path](#protected-ordering-and-domain-constraints).
+3. Inspect `settlement()` after an error. A `null` settlement means the checkout has yet to record a terminal outcome. The Host ends a confirmed active transaction with `commit()` or `rollBack()` before any handoff. Read the terminal settlement after attempting to end it. On `REUSABLE`, retrieve the same connection once with `returnForHost()`. On `DISCARD_REQUIRED`, stop issuing SQL, call `discardForHost()`, and reconcile any uncertain database effect before deciding whether to repeat the work.
+
+See the [protected Host write contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction) for PDO eligibility, failure reasons and handoff.
+
 ### Optional verified checkout (C2)
 
 Use Verified Checkout when your callback needs to choose whether to keep or undo provisional InnoDB writes and you need confirmation of the required transaction or savepoint control before receiving its payload.
@@ -227,7 +242,7 @@ See [Package Reference §3.3 and §5.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.
 | Request-selected sort priority | `paginateWithDynamicSort()` | Same Offset reads. The Host allowlists keys, configures a unique tie, and keeps input adaptation. |
 | One consistent page on a delegated idle reader | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | C1 owns one read-only transaction. The Host handles the checkout outcome before reuse. |
 | Pages that include earlier writes in the same Host transaction | [B pagination](#optional-b-pagination-in-a-host-transaction) on an idle, exclusively delegated PDO | The Host starts the transaction through the checkout. Registered writes and page reads share the confirmed transaction. |
-| Forward continuation without counts | `PdoKeysetPaginator::paginate()` | Keyset v1 seeks on one immutable, unique positive integer ID. The authenticated cursor binds the query and Host scope. The Host owns the connection and signing keys. [Runnable example](../../examples/pagination_keyset_usage.php) |
+| Forward continuation without counts | [Keyset pagination](#optional-forward-only-keyset-pagination) | Keyset v1 seeks on one immutable, unique positive integer ID. The authenticated cursor binds the query and Host scope. The Host owns the connection and signing keys. |
 
 Separate Offset requests can drift across writes even with a unique tie. Counts can dominate query cost depending on filters, joins and indexes. Keyset continuation has a separate result contract with no numbered-page or total-count metadata.
 
@@ -257,7 +272,7 @@ Use C1 when all reads for one page can run through the same eligible InnoDB conn
 2. Create the one-shot operation with `PdoSnapshotPaginator::forExclusiveRead($pdo)` and call `paginate()`.
 3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `REUSABLE` after confirmed cleanup, retains its policy for `UNCHANGED`, and retires a `DISCARD` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
 
-The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the candidate package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
+The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the installed package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
 
 ### Optional B pagination in a Host transaction
 
@@ -268,7 +283,13 @@ Use B when the Host needs eligible page reads, including its earlier writes, wit
 3. **Read** — Call `$checkout->authorizePage($queryId, $bindings, $request)`, pass the grant to `$checkout->newAttempt()`, and use `(new PdoHostSnapshotPaginator())->paginate($attempt)` to receive a `PageResultDTO`.
 4. **Boundary** — Eligible page reads share the InnoDB read view within the confirmed transaction and can see the Host's own writes in that transaction. A later transaction has its own read view. Inspect `$attempt->settlement()` after return or exception. The Host directs `commit()` or `rollBack()` on the checkout and handles handoff or discard. If B cannot confirm that startup consumed the isolation setting, the Host must reconcile the connection before reuse.
 
-See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) for confirmation and handoff rules. The [installed consumer verification](CONSUMER_VERIFICATION.md) exercises a registered write followed by a page in the same transaction.
+See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) for a page-attempt example, confirmation and handoff rules. The [installed consumer verification](CONSUMER_VERIFICATION.md) exercises a registered write followed by a page in the same transaction.
+
+### Optional forward-only Keyset pagination
+
+Build a trusted `KeysetQueryDescriptor` for the eligible InnoDB table and supply a deployment-managed signing keyring to `PdoKeysetPaginator`. On the first `paginate()` call, pass the Host's PDO, query, authorized scope, matching typed bindings and mapper. When `nextCursor` is present, pass it to the next call with the same registration, scope, bindings and effective limit.
+
+The cursor binds the continuation to that context. The Host authorizes each request and controls the connection, read view and signing keys. See the [Keyset contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#532-optional-forward-only-keyset-pagination) and the [runnable example](../../examples/pagination_keyset_usage.php).
 
 ---
 
