@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `composer-package`
-- **Profile Version:** `4.0.0`
+- **Profile Version:** `5.0.0`
 - **Purpose / Applicability:** مكتبات PHP/Composer المستقلة القابلة لإعادة الاستخدام والتوزيع ضمن منظومة Maatify.
 - **Extends:** `None`
 
@@ -20,10 +20,13 @@
 - [Documentation Lifecycle Standard](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md)
 - [PHP Source Documentation Standard](../php/PHP_SOURCE_DOCUMENTATION_STANDARD.md)
 - [PHP Coding Style Standard](../php/PHP_CODING_STYLE_STANDARD.md)
+- [Public Contract Evolution Standard](../contracts/PUBLIC_CONTRACT_EVOLUTION_STANDARD_AR.md)
 
 لا ينقل هذا Profile محتوى أي Standard إلى ملف Profile. وتظل تغطية وجودة توثيق PHP العامة مملوكة حصريًا لـ [PHP Source Documentation Standard](../php/PHP_SOURCE_DOCUMENTATION_STANDARD.md)، ويظل عقد تنسيق PHP مملوكًا حصريًا لـ [PHP Coding Style Standard](../php/PHP_CODING_STYLE_STANDARD.md).
 
 ## Conditional Applicability
+
+تدخل Public Contract Evolution Standard أعلاه بوصفها Candidate Required Standard؛ ويحدد انطباقها canonical في Stage 2 وجود Published Public/Consumer Contract في الـScope الفعلي، وفق الـStandard نفسها. لا يوسع هذا Profile ذلك الانطباق ولا يضيقه.
 
 تدخل External Provider Verification Standard أعلاه بوصفها Candidate Required Standard؛ ويحدد انطباقها canonical في Stage 2 دخولها إلى Final Resolved Applicable Standards Set، وفق ملكية الـScope الفعلية لعقد provider-specific. يظل العقد مملوكًا للـStandard نفسها، ولا يوسعه هذا Profile.
 

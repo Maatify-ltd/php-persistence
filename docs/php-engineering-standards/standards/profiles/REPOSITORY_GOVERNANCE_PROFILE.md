@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `repository-governance`
-- **Profile Version:** `3.0.0`
+- **Profile Version:** `4.0.0`
 - **Purpose / Applicability:** إدارة التعاون، دورة Phase، والحوكمة التشغيلية، وحوكمة القرارات الدائمة في Repository تتبع Maatify engineering workflow.
 - **Extends:** `None`
 
@@ -15,16 +15,19 @@
 - [GitHub Phase Stack Workflow](../GITHUB_PHASE_STACK_WORKFLOW_AR.md)
 - [Documentation Lifecycle Standard](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md)
 - [Decision Governance Standard](../governance/DECISION_GOVERNANCE_STANDARD_AR.md)
+- [Public Contract Evolution Standard](../contracts/PUBLIC_CONTRACT_EVOLUTION_STANDARD_AR.md)
 
 لا يضم هذا Profile Package أو Module standards.
 
 ## Conditional Applicability
 
+تدخل Public Contract Evolution Standard أعلاه بوصفها Candidate Required Standard؛ ويحدد انطباقها canonical في Stage 2 وجود Published Public/Consumer Contract في الـScope الفعلي، وفق الـStandard نفسها. لا يوسع هذا Profile ذلك الانطباق ولا يضيقه.
+
 لا يقدم هذا Profile أي override مستقل لقابلية انطباق المعايير الهندسية. يحتفظ كل Standard مطلوب بقواعده canonical applicability الخاصة به. لا يوسع Profile تلك القواعد ولا يضيقها. وتظل تفاصيل الأدوار ودورة Phase مملوكة للملفين المشار إليهما.
 
 ## Resolved Dependency Behavior
 
-لا يرث هذا Profile Profile آخر، ومعاييره المباشرة هي المعايير الأربعة المدرجة أعلاه دون غيرها. لا توجد composition موروثة هنا. تظل آلية Adoption والحل مملوكة لـ [STANDARDS_ADOPTION_STANDARD_AR.md](../STANDARDS_ADOPTION_STANDARD_AR.md).
+لا يرث هذا Profile Profile آخر، ومعاييره المباشرة هي المعايير الخمسة المدرجة أعلاه دون غيرها. لا توجد composition موروثة هنا. تظل آلية Adoption والحل مملوكة لـ [STANDARDS_ADOPTION_STANDARD_AR.md](../STANDARDS_ADOPTION_STANDARD_AR.md).
 
 ## Scope Notes
 

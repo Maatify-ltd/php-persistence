@@ -110,7 +110,7 @@ B has 26 files: 24 public plus 2 `@internal`. Of the 24 public types in B, 3 are
 | Ordering `moveWithinScope` | Outcome changes in caller-owned transactions (B-03, B-04), originating only in unreleased legacy `main` | Read the behavior contract |
 | `OrderingTransactionException` | Removed; the legacy code does not throw it | Delete `catch` clauses |
 
-Consumer migration itself needs separate authorization ([DEC-006](../decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)).
+Consumer migration itself needs separate authorization ([DEC-030](../decisions/DEC-030-successor-transition-before-first-stable.md)).
 
 ## 6. Public API inventory
 

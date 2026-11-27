@@ -2,13 +2,15 @@
 
 - **Decision ID:** `DEC-006`
 - **Title:** Successor intent and the boundary with central standards ownership
-- **Status:** `ACTIVE`
+- **Status:** `SUPERSEDED`
 - **Date:** `2026-10-27`
 - **Decision Authority:** `Project Owner` — M-1 in [Issue #5, comment 6384957447](https://github.com/Maatify/php-persistence/issues/5#issuecomment-6384957447) and the confirmation in [Issue #5, comment 6441236923](https://github.com/Maatify/php-persistence/issues/5#issuecomment-6441236923).
 - **Scope / Concern:** The intended future relation to `maatify/persistence`, and what this repository may and may not state about shared-capability ownership.
 - **Supersedes:** `—`
-- **Superseded By:** `—`
+- **Superseded By:** [DEC-030](./DEC-030-successor-transition-before-first-stable.md)
 - **Canonical Contract / Current Owner:** The current normative owner of shared Ordering and Pagination remains the pinned [Package Building Standard](../php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md), section "Shared Ordering and Pagination Utilities", which names `maatify/persistence`. This record does not replace it.
+
+> **Historical record.** The present-tense statements and the Canonical Contract / Current Owner field refer to the [Package Building Standard §11 at the original pin](https://github.com/Maatify-ltd/php-engineering-standards/blob/ebcf55b0591db61d18a1407bc3effef0197b388f/standards/packages/PACKAGE_BUILDING_STANDARD.md#11-shared-ordering-and-pagination-utilities). [DEC-030](./DEC-030-successor-transition-before-first-stable.md) records the current decision and its governing contract.
 
 ## Context
 

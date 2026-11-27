@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-library-presentation`
-- **Standard Version:** `5.0.0`
+- **Standard Version:** `7.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Normative Language
@@ -162,7 +162,11 @@ By default, the README header MUST contain:
 
 # {PACKAGE_DISPLAY_NAME}
 
-![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://www.maatify.dev/company-profile/maatify_logo_white.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
+  <img alt="Maatify.dev" src="https://www.maatify.dev/company-profile/maatify_logo_dark.svg">
+</picture>
 
 {BADGE_AREA}
 
@@ -306,6 +310,8 @@ For a standalone reusable Package, the documentation row MUST cover Usage Guide,
 
 For an embedded Base Artifact Root, the artifact-local row MUST cover Usage Guide, Examples, Package Reference, and Changelog. Host-level Security, Contributing, and other governance files MUST NOT be copied into every Base Artifact merely through inheritance.
 
+When `std-public-contract-evolution` §8.1 requires an Artifact Root `DEPRECATIONS.md`, the artifact's existing consumer-facing documentation MUST link directly to it from the artifact-local README or canonical Package Reference. The registry owns the retirement inventory. The Package Reference remains the public API and behavior reference, and the CHANGELOG remains release history.
+
 ### 8.5 Badge Accuracy and Style
 
 Every badge MUST refer to the current artifact, use the correct Composer identity and repository slug, link to the correct local file or actual external page, avoid other libraries, and claim only a proven quality or publication state. README badge groups MUST use the default/small Shields style unless an intentional non-default exception is documented; governance-specific `for-the-badge` exceptions remain limited to Section 13.
@@ -319,7 +325,7 @@ Templates are state-specific, not one universal badge set. The following example
 [![Status](https://img.shields.io/badge/Status-Development-blue)](README.md)
 [![PHP](https://img.shields.io/badge/PHP-{MINIMUM_PHP_VERSION}-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-{LICENSE}-green)](LICENSE)
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify-ltd)
 ```
 
 ### Live Published Distribution README
@@ -328,7 +334,7 @@ Templates are state-specific, not one universal badge set. The following example
 [![Version](https://img.shields.io/badge/Version-{PUBLISHED_VERSION}-blue)]({DISTRIBUTION_URL})
 [![PHP](https://img.shields.io/badge/PHP-{MINIMUM_PHP_VERSION}-8892BF)](composer.json)
 [![License](https://img.shields.io/badge/License-{LICENSE}-green)](LICENSE)
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify-ltd)
 ```
 
 Registry, download, and Install badges are appended only when the selected registry actually supports them and the publication-state matrix permits them. The exact package identity and version MUST be used in any install command.
@@ -532,8 +538,8 @@ Defaults to starting with:
 ```markdown
 # Code of Conduct — {COMPOSER_PACKAGE_NAME}
 
-[![Maatify {PACKAGE_BADGE_NAME}](https://img.shields.io/badge/Maatify-{PACKAGE_BADGE_TOKEN}-blue?style=for-the-badge)](https://github.com/Maatify/{REPOSITORY_SLUG})
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify)
+[![Maatify {PACKAGE_BADGE_NAME}](https://img.shields.io/badge/Maatify-{PACKAGE_BADGE_TOKEN}-blue?style=for-the-badge)]({REPOSITORY_URL})
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify-ltd)
 ```
 
 ### 13.2 `SECURITY.md`
@@ -541,14 +547,14 @@ Defaults to starting with:
 ```markdown
 # Security Policy
 
-[![Maatify {PACKAGE_BADGE_NAME}](https://img.shields.io/badge/Maatify-{PACKAGE_BADGE_TOKEN}-blue?style=for-the-badge)](https://github.com/Maatify/{REPOSITORY_SLUG})
-[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify)
+[![Maatify {PACKAGE_BADGE_NAME}](https://img.shields.io/badge/Maatify-{PACKAGE_BADGE_TOKEN}-blue?style=for-the-badge)]({REPOSITORY_URL})
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-9C27B0?style=for-the-badge)](https://github.com/Maatify-ltd)
 ```
 
 ### Mandatory Rules
 * `style=for-the-badge` MUST be used in these two locations.
-* The first badge MUST point to the current repository.
-* The Ecosystem badge MUST point to `https://github.com/Maatify`.
+* The first badge MUST point to the current canonical repository URL. Replace `{REPOSITORY_URL}` with that full URL.
+* The Ecosystem badge MUST point to the Maatify Ltd. GitHub organization at `https://github.com/Maatify-ltd`.
 * The name or repository link of another library MUST NOT be used.
 * A third badge MUST NOT be added without a documented decision.
 * The large Maatify logo MUST NOT be added inside these files.
@@ -567,27 +573,57 @@ Unless a subsequent decision alters this Standard.
 
 ## 14. First Stable Release Lifecycle and SECURITY Presentation States
 
-**Publication State Definition:** For this Standard and cross-Standard use, a package/version is Published only when that exact package identity and exact version are externally resolvable and installable by an external consumer through an actual recognized Composer distribution source. Packagist MAY be such a source, but it is not the only possible source. A branch, commit, tag, GitHub Release, Draft PR, successful CI run, local path repository, documentation claim, or Git tag without evidence of external Composer resolution and installation does not by itself establish Published state. This definition clarifies publication state and does not replace or weaken the release lifecycle, exact tagged RC installation, Consumer Verification Harness, two independent Real Host validations, release evidence, or owner release authorization below.
+**Publication State Definition:** For this Standard and cross-Standard use, a package/version is Published only when that exact package identity and exact version are externally resolvable and installable by an external consumer through an actual recognized Composer distribution source. Packagist MAY be such a source, but it is not the only possible source. A branch, commit, tag, GitHub Release, Draft PR, successful CI run, local path repository, documentation claim, or Git tag without evidence of external Composer resolution and installation does not by itself establish Published state. Use this definition for actual Publication in either first-Stable path under Section 14.1.
 
 ### 14.1 First Stable Release Gate
 
-This gate applies only to a package that has never published a Stable release. Its required sequence is:
+This gate applies only to the first Stable target of a package that has never published a Stable release. RC releases and later Stable releases follow their own applicable release controls. The package MUST satisfy the default path or a valid Owner-authorized exception path for first-Stable eligibility. Both paths remain subject to Section 14.1.4.
+
+#### 14.1.1 Default Path
 
 ```text
-Development
-→ SemVer RC
-→ Consumer Verification Harness
-→ Real Host Validation in 2+ independent projects/Hosts
-→ Stable
+Published exact SemVer RC for the intended Stable target
+→ Consumer Verification Harness on that published RC
+→ Real Host Validation on that same RC in 2+ independent real projects/Hosts
+→ First-Stable gate satisfied
 ```
 
-An exact SemVer RC target MUST be an actual SemVer pre-release of the intended Stable version, such as `1.0.0-rc.1`, and MAY exist during Release Preparation before Publication. To satisfy this First Stable Release Gate's SemVer RC step, that exact target MUST be Published and externally resolvable and installable by a consumer through the package's approved distribution source. For a Composer library, consumers MUST be able to resolve and install that exact version through its actual Composer distribution source. A branch, Draft PR, successful CI run, documentation state, local path repository, or unpublished tag MUST NOT satisfy the First Stable Release Gate's SemVer RC step. An RC target's existence before Publication does not satisfy that gate step.
+The exact RC MUST be a SemVer pre-release of the intended Stable version, such as `1.0.0-rc.1`, and MUST be Published and externally resolvable and installable through the package's approved Composer distribution source. An unpublished RC target MAY be prepared. A branch, Draft PR, successful CI run, documentation state, local path repository, or unpublished tag MUST NOT satisfy the RC step.
 
-For this first-Stable sequence, the Consumer Verification Harness MUST verify the exact published RC after it becomes externally consumable. The Harness's test semantics remain owned by the [Testing Standard](../testing/TESTING_STANDARD.md). Real Host Validation MUST then use that same RC in at least two independent real projects/Hosts. Reusing one Harness twice or testing multiple environments of one Host does not satisfy the two-Host requirement. Release readiness MUST retain verifiable evidence that identifies the RC version and each Host validation.
+The Consumer Verification Harness MUST pass on that exact RC after Publication. Real Host Validation MUST then use that same RC in at least two independent real projects/Hosts. A Harness run, fixture, or additional environment of the same Host MUST NOT be counted as a separate real Host. Retain verifiable evidence identifying the exact RC, the Harness run evidence, and each independent Host validation.
 
-CI success and Consumer Verification Harness success alone MUST NOT authorize the first Stable release. Until the published RC, Harness, and both independent Host validations have passed, the package MUST remain Pre-Stable. The two-Host requirement applies only before the first Stable release; it is not retroactive for packages that already have a published Stable release and MUST NOT be repeated as a condition for later patch, minor, or Stable releases.
+#### 14.1.2 Owner-Authorized Exception Path
 
-Tagging, releasing, publishing, and owner approval remain governed by the applicable release controls. This Standard does not authorize those actions.
+For one exact first-Stable target, the Owner MAY expressly except the requirement for a published RC, part or all of the Real Host Validation requirement, or both. An engineering or business rationale and an evidence-based risk assessment are required. Impossibility of publication or of obtaining real projects need not be shown. An approval that expressly covers the full Host requirement MAY allow zero validated Hosts.
+
+The remaining RC and Host requirements MUST be met on their original terms. With no published RC, validation on a published RC cannot be claimed. The decision MUST explicitly cover every unmet RC or Host requirement, including any Host validation that cannot be completed because the RC is absent. An exception for one requirement does not extend to the other. Without valid approval for each unmet requirement, the first-Stable gate remains blocked unless the default path is satisfied.
+
+If Harness proof on the exact published RC is unavailable under this path, the Harness MUST prove consumption of the exact Stable candidate as a Composer dependency from a controlled local or temporary path, VCS, or isolated artifact source permitted by the applicable contracts. The evidence MUST identify the package, target, candidate SHA, and installed content and prove that the consumed content matches the candidate. This proves candidate consumption only. External Publication, published-RC installation, and Published Artifact Verification require their own evidence. A failed mandatory Harness or an unresolved material defect still blocks acceptance.
+
+#### 14.1.3 Exception Record and Evidence
+
+The exception MUST be expressly approved by the Owner and recorded in an `ACTIVE` library-local Decision Record under `docs/decisions/`, with a matching entry in `docs/decisions/DECISIONS_INDEX.md` under `std-decision-governance`. The approval and record MUST be in place before Final Release Acceptance and before release qualification. The record MUST identify:
+
+- the package identity and Artifact Scope, and the exact first-Stable target;
+- the specific RC or Host requirements excepted and the validation actually completed;
+- the reason, the Lead's impact and residual-risk assessment, the available evidence, and the candidate verification plan with any applicable constraints or mitigations;
+- the Owner approval date and verifiable approval reference.
+
+Use authorized, access-controlled evidence locations for sensitive Host details. A pending request, a `PROPOSED` decision, or a blanket, undocumented, or mismatched approval cannot open this path.
+
+Release Acceptance and qualification evidence MUST tie the applicable approved record to the exact candidate state for the target. Use an immutable reference to the approved record and the exact candidate SHA in the evidence. The SHA need not appear in a record committed within that same tree. Changes to the target, candidate content, exception scope, or material risk require reassessment, repetition of affected verification and review, and renewed Owner approval where the approved basis is affected. Approval is specific to the documented case and does not carry forward automatically.
+
+Release review MUST identify each unmet default step, the approved exception that covers it, and the evidence for the remaining requirements. An excepted step MUST NOT be reported as passed or treated as inherently inapplicable. The Lead MAY record `PASS` for compliance with the exception path only after all remaining requirements are met. Release review verdicts remain governed by `std-ai-collaboration-workflow` §13.1.2.
+
+#### 14.1.4 Controls Required in Both Paths
+
+Both paths MUST pass the Consumer Verification Harness under [Testing Standard §3.4](../testing/TESTING_STANDARD.md#34-consumer-verification-harness) and [CI Workflow Standard §2.2](CI_WORKFLOW_STANDARD.md#22-consumer-verification-harness-gate). Full Applicable CI, including the applicable Harness gate, MUST run on the final candidate. Evidence from an RC or earlier candidate MAY support review only where its continued validity for the exact state is demonstrated under the applicable evidence contract. Required verification on the final candidate still applies.
+
+Mandatory Pre-Release Strict Lead Acceptance under `std-ai-collaboration-workflow` §13.1.2 and all applicable engineering quality gates MUST pass, including applicable Unit, Integration, System/E2E, Regression, Security, and dependency verification. A material `FAIL` or `UNRESOLVED` remains blocking. CI or Harness success alone does not authorize release.
+
+Both paths remain subject to exact-target qualification under [CI Workflow Standard §§2.4–2.6](CI_WORKFLOW_STANDARD.md#24-release-sha-qualification) and release controls in Section 20.1. Full Applicable CI and Release Artifact Verification MUST pass on the exact candidate main SHA before Owner Release Authorization and any Tag, Release, or Publish action. Published Artifact Verification and applicable live Publication State reconciliation follow external Publication. The exception approval, Strict Lead Acceptance, and Owner Release Authorization are separate requirements.
+
+Applicable public-contract, deprecation and retirement (including `DEPRECATIONS.md`), SemVer, and dependency stability requirements remain binding. This exception covers only first-Stable eligibility for the library itself. It grants no permission to use a pre-release dependency in a Stable consumer where the applicable dependency contract prohibits it. A library may use this path only when the canonical contract applicable to that library permits it. The exception cannot change a Standard's applicability, authorize an Adoption or Upgrade, alter pins or a manifest, or resolve structural invalidity.
 
 ### 14.2 Development State
 When neither a SemVer RC nor a Stable release has been published, `SECURITY.md` MAY state that there is currently no supported Stable release line. When a SemVer RC has been published, Section 14.3 applies; an RC does not become a Stable release or a supported Stable line.
@@ -596,7 +632,7 @@ When neither a SemVer RC nor a Stable release has been published, `SECURITY.md` 
 An exact SemVer RC target, such as `1.0.0-rc.1`, MAY be selected and prepared before Publication. A **Published SemVer RC State** exists only after that exact version is Published and available to external consumers through the approved distribution channel. Live default-branch `SECURITY.md` MUST describe actual publication/support state and MUST NOT present the target Stable version as already published. In a release artifact, `SECURITY.md` MAY state that it represents Release Candidate `X` and does not establish a Stable support line without claiming that `X` has already been published. An RC artifact MUST NOT identify `X-1` as the current RC identity of that artifact. A SemVer RC does not establish a new supported Stable line; existing published Stable support lines remain governed by the actual support policy.
 
 ### 14.4 First-Stable Gate-Specific Preparation State
-After the SemVer RC, Consumer Verification Harness, and Real Host Validation steps in Section 14.1 have passed, release-facing files MAY be prepared internally for the exact target Stable version while awaiting owner approval and publication. This is a first-Stable gate-specific instance of the general exact-target Release Preparation state in Section 8.1.1; it does not define Release Preparation generally. It MUST NOT be called a Release Candidate. The exact Stable Release Target may exist before Publication. Until the Stable version satisfies the Publication State Definition, the files and their PR metadata MUST NOT claim that the target is Published, externally resolvable or installable as a Published package/version through the approved distribution source, or that it establishes Stable support. A tag, GitHub Release, or other visible source surface MAY be reported when it actually exists, but MUST NOT be presented as evidence that the package/version is Published. A planned date MUST NOT be presented as an actual published release date. The target Stable support wording MUST be synchronized with the actual policy before publication.
+General exact-target Release Preparation under Section 8.1.1 MAY begin before the first-Stable gate is satisfied, including preparation of the exact Stable candidate for verification. Once the requirements of the selected path in Sections 14.1.1–14.1.3 are met, the prepared target MAY be described as having satisfied first-Stable eligibility. Report qualification and authorization separately under Sections 14.1.4 and 20.1. This gate-specific state MUST NOT be called a Release Candidate. Until the Stable version satisfies the Publication State Definition, release-facing files and PR metadata MUST NOT claim that the target is Published, externally resolvable or installable as a Published package/version, or that it establishes Stable support. A tag, GitHub Release, or other visible source surface MAY be reported when it actually exists. Publication requires the external evidence defined above. A planned date MUST NOT be presented as an actual published release date. The target Stable support wording MUST be synchronized with the actual policy before publication.
 
 ### 14.5 Published Stable State
 After the Stable tag is published and the version is available to consumers through the approved distribution channel, the Security Policy enters the Published Stable State. It MUST be prepared for the actual supported release lines.
@@ -643,6 +679,8 @@ A Major release MUST be used only for a genuine breaking public-contract change 
 Internal refactors, implementation cleanup, documentation or presentation changes, naming normalization by itself, and compatible additive capabilities MUST NOT justify a Major version bump.
 
 When a breaking public-contract change makes a Major release unavoidable, its compatibility impact and migration path MUST be explicit, reviewed decisions. The Major bump MUST NOT follow automatically from a modernization, refactor, cleanup, or naming change.
+
+Compatibility classification, staged replacement, deprecation, and retirement of a Published Public/Consumer Contract are owned by `std-public-contract-evolution`, when that Standard applies to the Scope. This section remains the owner of Major version selection and does not duplicate that lifecycle.
 
 ## 15. CHANGELOG Presentation Standard
 
@@ -779,11 +817,15 @@ Any PR performing SemVer Release Preparation for an exact target MUST contain:
 * A Title identifying the exact SemVer target, actual preparation state, and actual Publication State.
 * A Body describing the actual changes.
 * A Scope confirmation.
-* When the PR crosses the first-Stable boundary governed by Section 14.1, verifiable references to the published RC, Consumer Verification Harness, and both independent Host validations.
 * A release-control statement confirming that no Merge, Tag, Release, or distribution publication occurs without owner approval.
 * Accurate wording that distinguishes the exact target, actual preparation state, and actual Publication State. It MUST NOT claim that a target is Published before the Publication State Definition is met.
 
-PR metadata MUST NOT describe a prepared target version as already published. When the PR crosses the first-Stable boundary governed by Section 14.1, its body MUST say that the Stable release is not yet published, identify the actual published RC, and state that Stable publication awaits owner approval. Version and date wording MUST match what is known; an unknown date MUST NOT be represented as a committed release date.
+PR metadata MUST NOT describe a prepared target version as already published. At the first-Stable boundary under Section 14.1, the PR body MUST identify the exact Stable target, state that it is unpublished, and state that publication requires separate Owner Release Authorization. It MUST identify the selected path and the actual RC and Host validation status, including no published RC or zero validated Hosts where applicable.
+
+* Default path: the verifiable references to the exact published RC, Harness, and both independent Host validations identify the path and document those stages.
+* Exception path: identify the path explicitly and reference the approved local decision and the evidence for the requirements that were satisfied.
+
+Reference the applicable Harness, Lead review, and CI evidence as it becomes available. Existing PR reviews and linked checks can provide those review and CI references. Where details are sensitive, keep the verifiable evidence in an authorized location and keep any public summary non-disclosing. Version and date wording MUST match what is known. An unknown date MUST NOT be represented as a committed release date.
 
 If the PR scope changes, the Title and Body MUST be updated to remain accurate.
 
@@ -799,6 +841,7 @@ approved integration
 → Full Applicable CI on the same SHA
 → Release Artifact Verification on the same SHA
 → that same SHA becomes the release-qualified SHA
+→ explicit Owner Release Authorization for that exact target and SHA
 → Tag and Release targeting that exact SHA
 → external exact-version publication verification
 → two independent post-publication obligations:
@@ -811,11 +854,13 @@ Publication State and Published Artifact Verification are separate facts. The cu
 
 When PAV fails on artifact integrity while current external evidence still proves exact `X` resolvable and installable, `X` remains Published and publication integrity is NOT PASS. When PAV exposes credible evidence that exact `X` no longer resolves or installs, or otherwise contradicts the current Publication State, canonical Publication-State re-verification under this Section MUST be triggered. The operational determination is `RE-VERIFY` until that canonical check establishes the actual current state; this is a pending verification condition, not a second Publication-State authority or an inference that X is Published or Unpublished. The live/default-branch presentation MUST represent the state established by canonical re-verification. A PAV failure alone MUST NOT suppress synchronization when a static live claim is stale; when no static live claim became stale, no content synchronization is required solely for freshness.
 
+If the live default-branch Package Reference states a publication status, it MUST report the verified status of the exact version it names. After publication, update any stale preparation status on the default branch. In an immutable release artifact, a preparation status is allowed when expressly dated or scoped to qualification.
+
 Historical release facts, including that `X` was actually published on a particular date, remain historical facts if current availability later changes. A later Publication-State change MUST NOT rewrite release history to imply `X` was never released or alter its immutable tag. A tracked artifact correction requires a new exact release identity.
 
 Presentation MUST NOT make a tag or Release appear qualified by CI that ran on an older SHA. A later commit intended for the same release requires new qualification. The tag/release surface is a consumer-facing projection of the qualified commit; it does not own CI evidence or create release authorization.
 
-Release Artifact Verification MUST prove that the target README identity/install target, CHANGELOG allocation and `[Unreleased]` boundary, SECURITY lifecycle/support wording, Composer manifest, required distributed consumer/release files, and actual archive/distribution behavior are consistent on the release-qualified SHA. It MUST rule out previous-release-as-current artifact claims and false pre-publication claims. Deterministic structural checks MAY be automated; claims whose truth depends on context require semantic review under the Documentation Lifecycle Standard. CI execution and local command parity are owned by `CI_WORKFLOW_STANDARD.md`.
+Release Artifact Verification MUST prove that the target README identity/install target, CHANGELOG allocation and `[Unreleased]` boundary, SECURITY lifecycle/support wording, Composer manifest, required distributed consumer/release files, and actual archive/distribution behavior are consistent on the release-qualified SHA. It MUST rule out previous-release-as-current artifact claims and false pre-publication claims. When §8.4 applies to `DEPRECATIONS.md`, the required file set includes that registry, and Release Artifact Verification MUST check that the documentation link resolves in the exact target artifact. The registry's publication-safety criteria and verification of its distributed contents are owned by `std-public-contract-evolution` §11.2. Deterministic structural checks MAY be automated; claims whose truth depends on context require semantic review under the Documentation Lifecycle Standard. CI execution and local command parity are owned by `CI_WORKFLOW_STANDARD.md`.
 
 After external publication, Published Artifact Verification MUST install the exact version into a clean external Composer root and prove that Composer resolves that exact version, the installed package corresponds to the intended tagged release, required files are present, and its release-facing content is self-consistent with that version and manifest. A passing runtime Consumer Verification Harness does not substitute for this distribution-identity/content evidence.
 
@@ -862,21 +907,21 @@ An explicit search for reference repository names MUST be conducted before submi
 
 ## 23. Release Presentation and First Stable Readiness Checklist
 
-* [ ] The first-Stable gate is applied only when the package has no previously published Stable release.
-* [ ] The First Stable Release Gate's SemVer RC step is counted as satisfied only when the exact RC target is Published and externally resolvable/installable through the approved distribution source; an RC target may exist before Publication without satisfying the step.
-* [ ] The Consumer Verification Harness passed against that exact published RC.
-* [ ] Real Host Validation passed against that same RC in at least two independent projects/Hosts, and verifiable evidence for both is retained.
-* [ ] The same Harness was not counted twice, and two environments of one Host were not counted as two projects/Hosts.
+* [ ] The first-Stable gate applies to the first Stable target only.
+* [ ] Default path, when used: the exact published RC, Harness on that RC, and two independent real Host validations on the same RC are evidenced under Section 14.1.1.
+* [ ] Exception path, when used: a valid indexed local Owner decision covers each unmet RC or Host requirement for the exact target. Remaining requirements are satisfied and recorded under Sections 14.1.2–14.1.3.
+* [ ] Harness evidence meets the applicable Testing and CI contracts. When required by Section 14.1.2, controlled Composer consumption proves the exact Stable candidate with no claim of Publication or Published Artifact Verification.
+* [ ] Both first-Stable paths require Strict Lead Acceptance, Full Applicable CI and Release Artifact Verification on the exact candidate main SHA, and separate Owner Release Authorization under Section 14.1.4.
 * [ ] Release Target, Release Preparation, Publication State, Release Qualification, and Stable Support are represented as separate facts.
 * [ ] The release-qualified SHA already presents the exact target as its immutable artifact identity without claiming pre-publication availability.
 * [ ] The immutable artifact README fixes its exact artifact identity and time-scopes every static Publication State, including an unpublished-at-qualification or prior-version fact; it contains no unqualified static Publication/current/latest claim that could become false after the target is published. Any dynamic live-state display satisfies Section 8.1.2 and cannot replace or falsify artifact identity.
 * [ ] Release Artifact Verification passes on the exact SHA before Tag/Release authorization; post-publication Published Artifact Verification confirms exact Composer-distributed identity/content independently of runtime Consumer Verification. PAV alone does not establish Publication State: an integrity failure with current availability still proven leaves the version Published with integrity NOT PASS, while credible contradictory availability evidence triggers canonical Publication-State re-verification before the live presentation is updated.
-* [ ] When applicable, post-qualification First-Stable preparation is identified as a gate-specific preparation state, not as another Release Candidate.
+* [ ] First-Stable gate-specific preparation reflects the actual status of the selected path under Section 14.4 and is described as preparation for a Stable target.
 * [ ] Before the Stable tag and release exist, README, CHANGELOG, SECURITY, badges, and PR metadata do not claim a published or supported Stable version.
-* [ ] The two-Host gate is not imposed on already-Stable packages or later patch, minor, or Stable releases.
 * [ ] README header and Maatify identity are present.
 * [ ] `docs/guides/USAGE_GUIDE.md`, root `examples/`, Package Reference, and Quick Usage links are present for every applicable reusable Package/Base Artifact.
 * [ ] The `llms.txt` verification checklist in Section 10.4 passes for every applicable reusable Package/Base Artifact.
+* [ ] The applicable retirement registry is discoverable through the artifact's existing documentation. Where Composer delivery applies, the exact release artifact contains the registry and its contents and links pass the publication-safety checks owned by `std-public-contract-evolution` §11.2 (Sections 8.4 and 20.1).
 * [ ] Usage Guide fit/requirements/non-goals, capability map, walkthrough boundaries, and Public Contract links are accurate; no fixed example count is assumed.
 * [ ] Every applicable reusable Package/Base Artifact README contains a clearly labeled `Public Runtime API` overview proportionate to the artifact's actual capabilities; it is not treated as a conditional section.
 * [ ] The `Public Runtime API` overview is accurate, consumer-facing, and linked to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract without duplicating the full reference.
@@ -898,7 +943,7 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] Author block uses visible `<br>` line breaks.
 * [ ] The canonical PHP-library footer is the final README element.
 * [ ] Composer and GitHub metadata are accurate.
-* [ ] PR title and body identify the exact target, actual preparation state, and actual Publication State; first-Stable evidence is included only at the applicable first-Stable boundary.
+* [ ] PR title and body identify the exact target, actual preparation state, and actual Publication State. At the first-Stable boundary, the PR records the path, actual RC and Host evidence, and applicable references under Section 20.
 * [ ] No foreign package names or URLs remain.
 * [ ] No `composer.lock` was introduced when the library does not track it.
 * [ ] CI Gate is successful.
@@ -919,9 +964,59 @@ This Standard explicitly does NOT force:
 * Runtime changes during presentation work.
 * `llms-full.txt`, generated full-context files, or a README badge/link requirement for `llms.txt`.
 
+## 25. License Presentation
+
+For new Maatify-owned PHP libraries, the default is the Maatify Proprietary License with written authorization available at no charge. A different license requires an explicit Owner decision for that repository. Existing approved licenses remain in force until an explicit repository license decision changes them.
+
+For libraries using the Maatify Proprietary License model, the root `LICENSE` MUST contain the approved terms, including:
+
+* The copyright holder’s confirmed legal name, applicable copyright year, and proprietary status. Public source visibility does not grant an open-source license.
+* The requirement to obtain written authorization before use, the applicable restrictions, and any permitted exceptions in the approved terms.
+* The no-charge license request process and the licensing contact.
+* The license-holder register and the use of the designated contact details for license administration, security advisories, and critical update notices.
+* The approved warranty disclaimer and limitation of liability.
+
+Use **Maatify Ltd.** for the copyright holder and licensor wherever Maatify Ltd. holds the rights. Use that legal name consistently in the license terms and in any README text that identifies the holder or licensor. Confirm ownership separately from the repository’s GitHub organization. Apply any correction on the default branch for the next release and preserve the LICENSE distributed with each published version.
+
+For libraries using the Maatify Proprietary License model, the README MUST link the `Proprietary` license badge to the relative path `LICENSE`. Its short `License` section MUST state that written authorization is required before use and available free of charge, provide the request contact, explain what contact details to provide and why, and link to `LICENSE` for the terms. Composer metadata follows [the Composer Package Standard](COMPOSER_PACKAGE_STANDARD.md#104-license).
+
+Example README section:
+
+```markdown
+## License
+
+This package is proprietary. Obtain written authorization before use by
+requesting a free license from [support@maatify.dev](mailto:support@maatify.dev).
+Include your organization name, if applicable, and an email address for the person who should
+receive security advisories and critical update notices. Maatify Ltd. uses those
+details to administer licenses and send those notices. See [LICENSE](LICENSE)
+for the terms.
+```
+
 ## Version History
+
+### `7.0.0`
+
+- Issue #209 (`DEC-056`): require discovery and release-artifact inclusion of the registry when required by `std-public-contract-evolution`. A previously compliant artifact can lack the registry link or omit the file. `NORMATIVE / BREAKING_CONTRACT_CHANGE` (Major).
+- Owner-approved Mutable Candidate `7.0.0` from Frozen Baseline `6.0.0`, artifact blob `778a1706cdd1a079ca284c3c266250e0fd4a7cce` at completed VALID Upgrade Adoption Commit `1f560795397f24bddcc3d09b982ff93a77f7154e`. The cumulative delta includes the later §14.6 pointer (Patch class). [Owner Version Finalization on 2026-11-24](https://github.com/Maatify-ltd/php-engineering-standards/pull/210#issuecomment-7127402843).
+
+- Issue #211 (`DEC-057`): add a bounded, Owner-authorized first-Stable eligibility path for the RC publication and Real Host requirements while retaining the default path and mandatory quality and distribution gates. `NORMATIVE / BACKWARD_COMPATIBLE_CONTRACT_CHANGE` (Minor) for this change alone. The Owner finalized the cumulative Mutable Candidate at `7.0.0` from the same Frozen Baseline `6.0.0` because the earlier retirement-registry requirement has Major impact. The candidate remains mutable pending a completed VALID Adoption or Upgrade. [Owner approval on 2026-11-24](https://github.com/Maatify-ltd/php-engineering-standards/pull/212#issuecomment-7128818272).
+
+### `6.0.0`
+
+- Add a one-sentence pointer in §14.6 to `std-public-contract-evolution` for the contract-evolution lifecycle. `CLARIFICATION / NO_CONTRACT_CHANGE` (Patch class): no obligation or permission changes; absorbed in the existing Mutable Candidate calculated from the Frozen Version Baseline. No Version Finalization, Freeze, release, or Adoption is claimed.
+
+- `DEC-051` and related presentation updates: require the current Ecosystem badge destination, clarify publication status in the live Package Reference, and require confirmed legal identity in license presentation. The updated badge destination is a breaking presentation requirement. The highest cumulative impact remains Major from Frozen Baseline `5.0.1`.
+
+- `DEC-050`: `NORMATIVE / BREAKING_CONTRACT_CHANGE` (Major). Establish the proprietary no-charge authorization default for new Maatify-owned PHP libraries and require the corresponding LICENSE and README content when this model applies. Existing approved licenses remain in force.
+- Mutable Candidate `6.0.0`, calculated from Frozen Version Baseline `5.0.1`, artifact blob `cc936b98c6d591b3750e63b56162701ad0764d03` at completed VALID Adoption Commit `c5d70cbe005fc26c38a7218967efe991194e76d6` (consumer identity withheld per `DEC-042`).
+
+### `5.0.1`
+
+- `CLARIFICATION / NO_CONTRACT_CHANGE`: update the canonical README header template to select the Maatify logo for the reader's color scheme while preserving the rest of the header contract.
 
 ### `5.0.0`
 
-- Frozen baseline `4.0.0`, artifact blob `25d4d75d7f23934b3e204a28f1dbc7d06ca63c04` (Maatify/php-paymob completed VALID adoption; upstream commit `5f872d3ef7da847cba3f82fee124a19c22f1c5c4`).
+- Frozen baseline `4.0.0`, artifact blob `25d4d75d7f23934b3e204a28f1dbc7d06ca63c04` (a consumer repository's completed VALID adoption, identity withheld per `DEC-042`; upstream commit `5f872d3ef7da847cba3f82fee124a19c22f1c5c4`).
+- Issue #168 (`DEC-042`): consumer-identity neutralization of the preceding frozen-baseline evidence line only; `EDITORIAL / NO_CONTRACT_CHANGE` (Patch), absorbed in the existing Mutable Candidate calculated from the Frozen Version Baseline; no additional bump, freeze, release, or adoption. The artifact blob and commit hashes are unchanged.
 - `NORMATIVE / BREAKING_CONTRACT_CHANGE`: require exact-target release-facing self-consistency before qualification, separate immutable Release Artifact identity from live Publication State, require target allocation in CHANGELOG before tagging, and prohibit retagging a published version as remediation; existing package release workflows may otherwise qualify a stale artifact.
