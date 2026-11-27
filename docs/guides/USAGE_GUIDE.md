@@ -16,20 +16,22 @@ This guide covers the Stable `1.0.0` target. Follow the [installation instructio
 | Capability | Primary call | Walkthrough | Example |
 |---|---|---|---|
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
-| Transaction · Optional protected Host write checkout | `PdoProtectedTransactionCheckout::attachExclusive()` then `begin()` and `runRegisteredCommand()` | [Protected Host write checkout](#optional-protected-host-write-checkout) | Walkthrough only |
+| Transaction · Optional protected Host write checkout | `PdoProtectedTransactionCheckout::attachExclusive()` then `begin()` and `runRegisteredCommand()` | [Protected Host write checkout](#optional-protected-host-write-checkout) | [Protected checkout in the B1 example](../../examples/ordering_unique_usage.php) |
 | Transaction · Optional verified checkout | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Pagination · Optional static composite sort | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
 | Pagination · Optional dynamic sort | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
 | Pagination · Optional delegated snapshot (C1) | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | [C1 snapshot pagination](#optional-c1-snapshot-pagination) | [examples/pagination_snapshot_usage.php](../../examples/pagination_snapshot_usage.php) |
-| Pagination · Optional Host transaction snapshot (B) | `PdoHostSnapshotSource::attachExclusive()` then `PdoHostSnapshotPaginator::paginate()` with an authorized page attempt | [B pagination in a Host transaction](#optional-b-pagination-in-a-host-transaction) | Walkthrough only |
+| Pagination · Optional Host transaction snapshot (B) | `PdoHostSnapshotSource::attachExclusive()` then `PdoHostSnapshotPaginator::paginate()` with an authorized page attempt | [B pagination in a Host transaction](#optional-b-pagination-in-a-host-transaction) | [Inline Host B page-attempt example](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) |
 | Pagination · Optional forward-only Keyset | `PdoKeysetPaginator::paginate()` | [Forward-only Keyset pagination](#optional-forward-only-keyset-pagination) | [examples/pagination_keyset_usage.php](../../examples/pagination_keyset_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 | Ordering · Optional protected UNIQUE-safe lists (B1) | `ProtectedScopedOrderingManager::getNextUniquePositionForAppend()`, `moveUniqueWithinScope()`, or `deleteUniqueWithinScope()` | [Protected UNIQUE-safe Ordering B1](#protected-unique-safe-ordering-b1) | [examples/ordering_unique_usage.php](../../examples/ordering_unique_usage.php) |
 
 ## Run the examples from a 1.0.0 install
 
-After [installing the exact version](../../README.md#installation), choose a row with a linked PHP file in the capability map. Create an `examples/` directory in your Composer project and copy that file and `_bootstrap.php` from `vendor/maatify/php-persistence/examples/`. Run the copied file with PHP from your project root so it loads your Composer autoloader. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`. For rows marked “Walkthrough only,” follow the linked steps in your Host integration.
+After [installing the exact version](../../README.md#installation), choose a row with a linked PHP file in the capability map. Create an `examples/` directory in your Composer project and copy that file and `_bootstrap.php` from `vendor/maatify/php-persistence/examples/`. Run the copied file with PHP from your project root so it loads your Composer autoloader. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`.
+
+The inline Host Snapshot B example runs inside a Host integration. Use the [Host B walkthrough](#optional-b-pagination-in-a-host-transaction) to prepare an eligible idle `pdo_mysql` connection for exclusive delegation, register an InnoDB page plan, and build the source and paginator. The Host completes the transaction and handles connection handoff or discard.
 
 ## Run the published RC.2 examples from a clean install
 
