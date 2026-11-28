@@ -80,10 +80,11 @@ final class PdoVerifiedTransactionCheckout
      * Starts the single Owned transaction from an unused checkout. Apply
      * commits and Discard rolls back. The normal payload is returned after
      * acknowledgement of that end and confirmation of the same idle session.
-     * When the callback throws and rollback is confirmed, the original error
-     * escapes with a rolled-back, reusable settlement. An unconfirmed cleanup
-     * still preserves the callback error and publishes a discard-required
-     * settlement. Check settlement() before returning or discarding the PDO.
+     * When the callback throws, acknowledged rollback and confirmation of
+     * the same idle session yield a rolled-back, reusable settlement. The
+     * original error escapes. An unconfirmed cleanup still preserves the
+     * callback error and publishes a discard-required settlement. Check
+     * settlement() before returning or discarding the PDO.
      *
      * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation
      */
@@ -168,11 +169,11 @@ final class PdoVerifiedTransactionCheckout
      * Apply requires acknowledged release. Discard requires acknowledged
      * rollback to the savepoint and release. Both require continuity before
      * returning the payload. The Host still decides the outer end.
-     * When the callback throws and local undo and release are confirmed, the
-     * original error escapes with a locally undone settlement and the Host
-     * can continue its transaction. If settlement fails, the same callback
-     * error escapes with a discard-required settlement. Check settlement()
-     * before continuing the Host transaction or reusing the connection.
+     * When the callback throws, acknowledged local undo and release plus
+     * confirmed session continuity allow the Host to continue its transaction.
+     * The original error escapes with a locally undone settlement. If settlement
+     * fails, that error escapes with a discard-required settlement. Check
+     * settlement() before continuing the transaction or reusing the connection.
      *
      * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation
      */
