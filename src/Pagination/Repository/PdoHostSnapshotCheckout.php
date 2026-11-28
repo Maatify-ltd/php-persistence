@@ -35,7 +35,9 @@ final readonly class PdoHostSnapshotCheckout
     /**
      * Starts and confirms a new REPEATABLE READ generation on an idle checkout.
      * The access mode defaults to READ WRITE. Isolation applies to this
-     * transaction, leaving session defaults under Host control.
+     * transaction, leaving session defaults under Host control. An unavailable
+     * checkout is rejected before reservation. A session check or start failure
+     * after reservation quarantines the source and propagates the failure.
      */
     public function beginRepeatableRead(HostSnapshotAccessModeEnum $mode = HostSnapshotAccessModeEnum::READ_WRITE): void
     {

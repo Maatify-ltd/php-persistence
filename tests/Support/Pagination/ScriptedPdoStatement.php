@@ -9,6 +9,12 @@ use PDO;
 use PDOStatement;
 use Throwable;
 
+/**
+ * Records PDO statement calls and feeds scripted outcomes to pagination tests.
+ * A fetch consumes one queue entry. Supply false explicitly to end the result,
+ * or a throwable to simulate a driver error. An exhausted queue raises
+ * LogicException because the fixture did not account for the fetch.
+ */
 final class ScriptedPdoStatement extends PDOStatement
 {
     /** @var list<array{parameter: string, value: mixed, type: int}> */

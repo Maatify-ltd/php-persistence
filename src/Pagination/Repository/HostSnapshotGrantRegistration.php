@@ -8,7 +8,13 @@ use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotPagePlan;
 use Maatify\PhpPersistence\Pagination\Criteria\PageRequest;
 use Maatify\PhpPersistence\Pagination\Criteria\PdoPaginationQueryDescriptor;
 
-/** @internal A source-private grant registration with immutable query inputs. */
+/**
+ * A grant registration with immutable inputs for one authorized page.
+ * The source compares the captured checkout and transaction generation by
+ * object identity to prevent admission in a different checkout or generation.
+ *
+ * @internal
+ */
 final class HostSnapshotGrantRegistration
 {
     /** Set when an attempt is admitted under the shared reservation, before database I/O. */

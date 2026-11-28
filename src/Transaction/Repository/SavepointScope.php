@@ -151,6 +151,10 @@ final readonly class SavepointScope
         }
     }
 
+    /**
+     * Turns a failed best-effort control command into false. A protected receiver
+     * keeps its recorded failure so the enclosing operation can settle it.
+     */
     private function tryControlStatement(string $sql): bool
     {
         try {

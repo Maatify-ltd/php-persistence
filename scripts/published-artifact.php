@@ -110,6 +110,10 @@ function publishedPackageEvidence(array $entry): array
     ];
 }
 
+/**
+ * Returns a recognizable version string for diagnostics, null when absent,
+ * or the redaction marker when the supplied value fails the evidence format.
+ */
 function publishedVersionEvidence(mixed $version): ?string
 {
     return publishedSafeValue($version, '~\A(?:dev-main|v?[0-9]{1,8}(?:\.[0-9]{1,8}){1,3}(?:-(?:alpha|beta|rc)[.-]?[0-9]{1,8})?)\z~i');

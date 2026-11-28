@@ -110,6 +110,10 @@ final class ProtectedTransactionStatement
         return $this->driver()->errorCode();
     }
 
+    /**
+     * Returns the driver's affected-row count while the receiver is available.
+     * A driver error records the first failure for settlement and is rethrown.
+     */
     public function rowCount(): int
     {
         $statement = $this->driver();
