@@ -10,14 +10,15 @@ inputs needed to independently verify the gate, archive identities and findings.
   from `c1dbb2da062a35c45638abf2bcb2ae210140eb5d`.
 - [Roadmap and release gates](https://github.com/Maatify-ltd/php-persistence/issues/65)
   and [Batch 6 handoff](https://github.com/Maatify-ltd/php-persistence/issues/65#issuecomment-7234977176).
-- Verdict: **REQUEST CHANGES** for local audit parity before closing this batch.
+- Baseline verdict: **REQUEST CHANGES** for local audit parity. The candidate
+  correction below needs fresh review and CI evidence on its exact HEAD.
 
 ## Compliance and evidence
 
 | Standard section | Result | Evidence |
 | --- | --- | --- |
 | §§1–2, 2.3 | PASS | The Composer artifact owns the deterministic checks. The full run for the Batch 6 integration boundary reports 31 required successes. Stable terminal gate and distinct jobs make the failure boundary explicit. |
-| §2.1 Local parity | FAIL, F108-19 | The local map provides Composer validation, unconstrained-by-lock resolution, real platform checks, strict PSR-4, syntax, whitespace, analysis, style, test/fixture orchestration, lint and per-target archive invocations. It omits the equivalent effective-policy preflight for dependency audit. |
+| §2.1 Local parity | F108-19 correction implemented | The local map provides Composer validation, unconstrained-by-lock resolution, real platform checks, strict PSR-4, syntax, whitespace, analysis, style, test/fixture orchestration, lint and per-target archive invocations. The correction uses the same dependency-audit command locally and in Compat. |
 | §2.2 Consumer Verification | PASS | The workflow calls `composer test:consumer` on PHP 8.4 and 8.6, MySQL 8.4.13 and MariaDB 11.8.9. Each job uses the repository lifecycle and clean production consumers. Logs record eight lifecycles and 16 installs of the exact candidate for coexistence/differential. The terminal gate requires the jobs. See [Consumer Verification](../../docs/guides/CONSUMER_VERIFICATION.md). |
 | §2.4 SHA qualification | Gate documented, pending #88 | The [handoff](../../docs/guides/RELEASE_ARTIFACT_VERIFICATION.md#release-evidence-handoff) requires actual selected `main` SHA, Full CI and target-specific RAV. The current evidence covers the review branch. |
 | §2.5 Release Artifact Verification | PASS for the reviewed target | The Stable verifier runs against explicit SHA and target. The RC.2 job uses a separate tag checkout and its own verifier. The current [guide](../../docs/guides/RELEASE_ARTIFACT_VERIFICATION.md) supplies equivalent local invocations. Exact install target, undated Stable changelog allocation and the dated security/support snapshot were checked in context. |
@@ -27,20 +28,20 @@ inputs needed to independently verify the gate, archive identities and findings.
 | §§5–6 | PASS | `composer validate --strict`, temporary lock during resolution, latest and lowest across each PHP minor, real `composer check-platform-reqs`, strict PSR-4. No committed lock, vendor directory or cache artifacts. |
 | §§7–7.1 | PASS for CI matrix; release security evidence pending #88 | Six Compat jobs recorded stable PHP `8.4.28`, `8.5.13` and `8.6.0`. Across 29 PHP jobs the common action verified actual CLI and applicable floors. The constraint probe accepts the pinned floors, rejects adjacent lower patches and exercises the forward range without running those interpreters. Official security evidence for admitting PHP 8.6 must be recorded at release qualification as specified in the [CI guide](../../docs/architecture/CI_AND_INTEGRATION.md#31-code-style-on-php-86). |
 | §8 | PASS | PHP syntax checks cover tracked PHP, PHPStan max checks the configured source/test/script/example paths with no suppressions, Git checks whitespace against the empty tree, full format check runs on 8.4–8.5 and required PER-CS on 8.6 under DEC-028. Unit, Regression, Integration and four smoke cells ran. Smoke ran nine examples per cell with production autoload; the bootstrap is shared support. |
-| §9 | PASS in actual CI, local parity finding above | Six jobs used Composer 2.10.3, checked bypass environment and effective advisories/malware/abandonment policy, then audited non-interactively. DEC-016 covers only the exact legacy fixture in an isolated coexistence project. |
+| §9 | PASS on the CI baseline; correction CI pending | Six baseline jobs used Composer 2.10.3, checked bypass environment and effective advisories/malware/abandonment policy, then audited non-interactively. The shared command below replaces those workflow steps. DEC-016 covers only the exact legacy fixture in an isolated coexistence project. |
 | §10 | PASS | Pinned checksum-verified actionlint 1.7.12 checks the sole tracked workflow. Local lint also passed with actionlint 1.7.12. |
 | §11, §18 | PASS | Shared Compose definition, explicit seven version/digest nodes, readiness, fresh project IDs, loopback endpoint and fixture-owned teardown. Required Integration covers the endpoint versions on PHP minimum/latest. Logs show 15 cells, 60 runs of 523 tests, 60 clean residue checks and 30 verified teardowns. See [CI and Integration](../../docs/architecture/CI_AND_INTEGRATION.md) and DEC-008/013/027. |
 | §§12–13 | PASS | External actions use full SHA pins. The workflow grants read-only contents, drops persisted checkout credentials and uses test-owned services. Composer/actionlint downloads are pinned and checksum-checked. Required jobs set timeouts; the concurrency policy cancels superseded PR runs and preserves protected-branch runs. |
 | §§14–15 | N/A | Required checks have no dependency on restored caches or coverage artifacts. |
-| §19 checklist | REQUEST CHANGES | Active failure is F108-19. Later exact-`main` qualification and post-publication execution follow #88 and the release handoff. |
+| §19 checklist | Fresh review pending | F108-19 has a candidate correction. Exact-`main` qualification and post-publication execution follow #88 and the release handoff. |
 
 ## F108-19 — local dependency audit omits the CI policy preflight
 
-The [CI workflow](../../.github/workflows/ci.yml#L117-L131) fails before
+The baseline [CI workflow](https://github.com/Maatify-ltd/php-persistence/blob/cf07db569a43b6afe19d93b25694bb3a5487b183/.github/workflows/ci.yml#L117-L131) fails before
 audit when the configured bypass environment is present and requires the
 effective Composer advisories, malware and abandonment policy to match
-specific values. The [CI parity table](../../docs/architecture/CI_AND_INTEGRATION.md#1-local-and-ci-parity)
-and [contribution commands](../../CONTRIBUTING.md#local-verification) give
+specific values. The baseline [CI parity table](https://github.com/Maatify-ltd/php-persistence/blob/cf07db569a43b6afe19d93b25694bb3a5487b183/docs/architecture/CI_AND_INTEGRATION.md#1-local-and-ci-parity)
+and [contribution commands](https://github.com/Maatify-ltd/php-persistence/blob/cf07db569a43b6afe19d93b25694bb3a5487b183/CONTRIBUTING.md#local-verification) give
 only `composer audit --no-interaction --abandoned=fail`. The historical
 checks in [Quality Tooling §6](../../docs/architecture/QUALITY_TOOLING.md#6-dependency-policy-verification-composer-2103)
 print the policy and describe isolated experiments; they do not document an
@@ -53,6 +54,17 @@ unchanged. This shows different local and CI acceptance semantics under
 §§2.1 and 9. Close the finding by using a shared fail-closed check or an
 equivalent documented local sequence and prove that the normal and weakened
 configurations yield the same outcomes locally and in CI.
+
+### F108-19 correction on Draft #111
+
+[Local verification](../../CONTRIBUTING.md#local-verification) and the Compat
+workflow run the same [dependency audit command](../../scripts/dependency-audit.php).
+It rejects weakening environment values and effective Composer configuration,
+validates the root lock, and runs the non-interactive audit with development
+dependencies included. It rejects caller arguments and returns Composer's
+nonzero audit status. The [CLI regression](../Regression/DependencyAuditCommandTest.php)
+checks that preflight failures stop before the audit and verifies the exact
+Composer invocation and status propagation.
 
 ## Recheck the exact evidence
 

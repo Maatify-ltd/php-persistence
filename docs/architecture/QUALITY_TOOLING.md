@@ -54,7 +54,7 @@ These requirements guided the original CI setup. The [test matrix in CI and Inte
 
 - PHP: the oldest supported minor, `8.4`, and the latest released minor allowed by `^8.4`, for Unit, Regression and Integration (implemented in WU-5: [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)).
 - Dependencies: a latest-compatible resolution and a lowest-supported resolution (`composer update --prefer-lowest --prefer-stable`) on PHP 8.4, running analysis and tests.
-- Composer: run the dependency-policy audit with Composer 2.10 or later (CI Workflow Standard §5.1), provisioned deterministically by the CI tooling. `composer.json` carries `config.policy` (advisories block and audit `fail`, malware block with scope `all` and audit `fail`, abandoned audit `fail`). The local verification of this policy with Composer 2.10.3 is recorded in section 6.
+- Composer: run `php scripts/dependency-audit.php` after resolving dependencies with Composer 2.10 or later (CI Workflow Standard §5.1). The [CI parity guide](CI_AND_INTEGRATION.md#1-local-and-ci-parity) documents the required gate. Section 6 records the original WU-4 policy experiments with Composer 2.10.3.
 - Database services, matrix cells and pinned images per [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md) and [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (DEC-009 covers the optional protected write checkout).
 - A required gate job, workflow lint, immutable action pinning, and the whitespace check (`git diff --check`).
 
