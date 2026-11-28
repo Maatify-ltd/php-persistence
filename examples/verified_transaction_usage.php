@@ -99,6 +99,7 @@ try {
                 $commands->runRegisteredCommand('insert', ['id' => 5, 'value' => 20]);
                 throw $domain;
             });
+            throw new RuntimeException('Expected the original callback exception.');
         } catch (DomainException $caught) {
             php_persistence_example_assert($caught === $domain, 'The original error must escape.');
             $snapshot = $checkout->settlement();

@@ -135,9 +135,9 @@ try {
     php_persistence_example_assert($missing === false, 'moving a non-existent row must return false, not throw');
     echo "Boundary -> moveWithinScope() for a non-existent row returned false (no exception)\n";
 
-    // Boundary: moveWithinScope() only ever participates in a caller-owned
-    // transaction; it never commits or finally rolls it back. The caller alone
-    // decides the outcome of the surrounding transaction.
+    // Boundary: moveWithinScope() starts and owns a transaction on an idle
+    // connection. When a caller transaction is active, the move participates
+    // in it and the caller alone decides its final outcome.
     php_persistence_example_assert($pdo->beginTransaction(), 'failed to begin the caller-owned transaction');
     try {
         $participatingMove = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 1, newOrder: 1);
