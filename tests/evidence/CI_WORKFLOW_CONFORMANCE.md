@@ -10,8 +10,9 @@ inputs needed to independently verify the gate, archive identities and findings.
   from `c1dbb2da062a35c45638abf2bcb2ae210140eb5d`.
 - [Roadmap and release gates](https://github.com/Maatify-ltd/php-persistence/issues/65)
   and [Batch 6 handoff](https://github.com/Maatify-ltd/php-persistence/issues/65#issuecomment-7234977176).
-- Baseline verdict: **REQUEST CHANGES** for local audit parity. The candidate
-  correction below needs fresh review and CI evidence on its exact HEAD.
+- Baseline verdict: **REQUEST CHANGES** for local audit parity. The correction
+  has its own [review on #111](https://github.com/Maatify-ltd/php-persistence/pull/111)
+  and [exact-HEAD CI checks](https://github.com/Maatify-ltd/php-persistence/pull/111/checks).
 
 ## Compliance and evidence
 
@@ -28,12 +29,12 @@ inputs needed to independently verify the gate, archive identities and findings.
 | §§5–6 | PASS | `composer validate --strict`, temporary lock during resolution, latest and lowest across each PHP minor, real `composer check-platform-reqs`, strict PSR-4. No committed lock, vendor directory or cache artifacts. |
 | §§7–7.1 | PASS for CI matrix; release security evidence pending #88 | Six Compat jobs recorded stable PHP `8.4.28`, `8.5.13` and `8.6.0`. Across 29 PHP jobs the common action verified actual CLI and applicable floors. The constraint probe accepts the pinned floors, rejects adjacent lower patches and exercises the forward range without running those interpreters. Official security evidence for admitting PHP 8.6 must be recorded at release qualification as specified in the [CI guide](../../docs/architecture/CI_AND_INTEGRATION.md#31-code-style-on-php-86). |
 | §8 | PASS | PHP syntax checks cover tracked PHP, PHPStan max checks the configured source/test/script/example paths with no suppressions, Git checks whitespace against the empty tree, full format check runs on 8.4–8.5 and required PER-CS on 8.6 under DEC-028. Unit, Regression, Integration and four smoke cells ran. Smoke ran nine examples per cell with production autoload; the bootstrap is shared support. |
-| §9 | PASS on the CI baseline; correction CI pending | Six baseline jobs used Composer 2.10.3, checked bypass environment and effective advisories/malware/abandonment policy, then audited non-interactively. The shared command below replaces those workflow steps. DEC-016 covers only the exact legacy fixture in an isolated coexistence project. |
+| §9 | PASS on the CI baseline | Six baseline jobs used Composer 2.10.3, checked bypass environment and effective advisories/malware/abandonment policy, then audited non-interactively. The shared command below replaces those workflow steps. DEC-016 covers only the exact legacy fixture in an isolated coexistence project. See the [correction's CI checks](https://github.com/Maatify-ltd/php-persistence/pull/111/checks) for runs on #111. |
 | §10 | PASS | Pinned checksum-verified actionlint 1.7.12 checks the sole tracked workflow. Local lint also passed with actionlint 1.7.12. |
 | §11, §18 | PASS | Shared Compose definition, explicit seven version/digest nodes, readiness, fresh project IDs, loopback endpoint and fixture-owned teardown. Required Integration covers the endpoint versions on PHP minimum/latest. Logs show 15 cells, 60 runs of 523 tests, 60 clean residue checks and 30 verified teardowns. See [CI and Integration](../../docs/architecture/CI_AND_INTEGRATION.md) and DEC-008/013/027. |
 | §§12–13 | PASS | External actions use full SHA pins. The workflow grants read-only contents, drops persisted checkout credentials and uses test-owned services. Composer/actionlint downloads are pinned and checksum-checked. Required jobs set timeouts; the concurrency policy cancels superseded PR runs and preserves protected-branch runs. |
 | §§14–15 | N/A | Required checks have no dependency on restored caches or coverage artifacts. |
-| §19 checklist | Fresh review pending | F108-19 has a candidate correction. Exact-`main` qualification and post-publication execution follow #88 and the release handoff. |
+| §19 checklist | See [#111 review](https://github.com/Maatify-ltd/php-persistence/pull/111) | Track F108-19 acceptance on #111 and the roadmap handoff in [#65](https://github.com/Maatify-ltd/php-persistence/issues/65). Exact-`main` qualification and post-publication execution follow #88 and the release handoff. |
 
 ## F108-19 — local dependency audit omits the CI policy preflight
 
@@ -55,7 +56,7 @@ unchanged. This shows different local and CI acceptance semantics under
 equivalent documented local sequence and prove that the normal and weakened
 configurations yield the same outcomes locally and in CI.
 
-### F108-19 correction on Draft #111
+### F108-19 correction on #111
 
 [Local verification](../../CONTRIBUTING.md#local-verification) and the Compat
 workflow run the same [dependency audit command](../../scripts/dependency-audit.php).
