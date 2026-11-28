@@ -961,20 +961,7 @@ An attempt is `New`, `Running`, or `Terminal`. settlement() returns null before 
 
 **Release, retirement, and discard.** release() makes the source available to another checkout only after confirmed idle status and resolution of pending settings and resources. retireForHost() permanently invalidates the source and transfers the same PDO after confirmed resource release. `ReturnedIdle` certifies the known idle state. `ReturnedForReconciliation` asks the Host to resolve the connection before further circulation. An unresolved resource prevents transfer. The Host can call discardForHost() to permanently invalidate the source and drop the library's references. This call initiates zero explicit SQL, state probes, or transaction-end commands. PDO or its driver may automatically send ROLLBACK or perform other I/O or close the session when the last reference is released. The caller does not receive an acknowledgement of transaction outcome, timing, or server closure. A retirement or discard request while a reservation is held is rejected.
 
-```php
-$checkout = $source->checkout();
-$checkout->beginRepeatableRead();
-$grant = $checkout->authorizePage('items', ['tenant' => 7], new PageRequest());
-$attempt = $checkout->newAttempt($grant);
-try {
-    $page = $paginator->paginate($attempt);
-} finally {
-    $settlement = $attempt->settlement();
-}
-// The Host uses $settlement on either path and explicitly ends its transaction.
-// The Host can reconcile after a classified handoff. Unresolved resources prevent handoff;
-// the Host may explicitly discard that connection.
-```
+See the [Host Snapshot B example](examples/pagination_host_snapshot_usage.php) for a read-only page attempt, qualified rollback on read failure, and explicit connection disposition.
 
 See [DEC-036](docs/decisions/DEC-036-pascalcase-enums-and-stable-settlement-json.md).
 
@@ -1223,7 +1210,7 @@ A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its leg
 
 - [README.md](README.md) — quick overview, installation/access status, requirements.
 - [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) — capability map, walkthroughs, and the boundaries of each capability before its examples.
-- [examples/](examples/) — runnable, Public-API-only examples for all three capabilities.
+- [examples/](examples/) — standalone and Host-dependent examples using only the Public API across all three capabilities.
 - [llms.txt](llms.txt) — AI consumer navigation map.
 - [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md), [CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md), [BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md), [DATABASE_SUPPORT_AND_TEST_POLICY.md](docs/architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md), [CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) — design, legacy-mapping, and test-matrix detail, dated and framed as historical/evidence records rather than a second current contract.
 - [docs/decisions/DECISIONS_INDEX.md](docs/decisions/DECISIONS_INDEX.md) — durable decisions this reference applies.

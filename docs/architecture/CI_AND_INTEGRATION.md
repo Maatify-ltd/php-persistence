@@ -95,7 +95,7 @@ composer examples:smoke
 PP_DB_CELL=mariadb-11.8.9 composer examples:smoke
 ```
 
-CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4 and on PHP 8.6. This smoke matrix is separate from the capability Integration matrix below.
+CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4 and on PHP 8.6. This smoke matrix is separate from the capability Integration matrix below. The [Host Snapshot B example](../../examples/pagination_host_snapshot_usage.php) requires an application-owned source and registered page plan. It runs under the PHP syntax and static-analysis gates, with Host B behavior exercised independently in the installed Consumer Verification Harness.
 
 On each of PHP 8.4 and 8.6, [Consumer verification](../guides/CONSUMER_VERIFICATION.md) runs two fresh lifecycles per engine on MySQL 8.4.13 and MariaDB 11.8.9, with separate production Composer roots.
 
