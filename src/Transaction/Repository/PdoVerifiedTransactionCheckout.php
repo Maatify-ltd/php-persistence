@@ -169,11 +169,12 @@ final class PdoVerifiedTransactionCheckout
      * Apply requires acknowledged release. Discard requires acknowledged
      * rollback to the savepoint and release. Both require continuity before
      * returning the payload. The Host still decides the outer end.
-     * When the callback throws, acknowledged local undo and release plus
-     * confirmed session continuity allow the Host to continue its transaction.
-     * The original error escapes with a locally undone settlement. If settlement
-     * fails, that error escapes with a discard-required settlement. Check
-     * settlement() before continuing the transaction or reusing the connection.
+     * When the callback throws, its original Throwable escapes whether local
+     * settlement succeeds or fails. Acknowledged local undo and release with
+     * confirmed session continuity record a locally undone settlement and let
+     * the Host continue its transaction. Failed settlement records the
+     * DiscardRequired disposition. Check settlement() before continuing the
+     * transaction or reusing the connection.
      *
      * @param Closure(VerifiedTransactionCommandsInterface): VerifiedTransactionDecisionCommand $operation
      */

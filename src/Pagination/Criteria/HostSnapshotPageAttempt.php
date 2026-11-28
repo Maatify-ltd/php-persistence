@@ -34,9 +34,9 @@ final readonly class HostSnapshotPageAttempt
     }
 
     /**
-     * Reads the recorded state without database I/O. An attempt starts NEW,
-     * becomes RUNNING on admission, and becomes TERMINAL when settled. An
-     * attempt rejected before admission can go directly from NEW to TERMINAL
+     * Reads the recorded state without database I/O. An attempt starts New,
+     * becomes Running on admission, and becomes Terminal when settled. An
+     * attempt rejected before admission can go directly from New to Terminal
      * without performing database I/O.
      */
     public function state(): State

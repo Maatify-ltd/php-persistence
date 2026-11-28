@@ -8,6 +8,7 @@ use Maatify\PhpPersistence\Tooling\IntegrationResidueShadow;
 use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use PDO;
 use PDOException;
+use PDOStatement;
 use PHPUnit\Framework\Attributes\TestWith;
 use SensitiveParameter;
 
@@ -87,7 +88,9 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
             $readerRow = $this->ownedRow($rows, $readerProcess);
             $writerBinding = $this->binding($observer, $row);
             $readerBinding = $this->binding($observer, $readerRow);
-            self::assertSame('0', $this->scalar($observer, 'SELECT COUNT(*) FROM performance_schema.data_locks WHERE THREAD_ID=' . $readerBinding['thread']));
+            $writerLocks = $this->controlledLocks($observer, [$writerBinding['thread']]);
+            self::assertContains($table, array_column($writerLocks, 'OBJECT_NAME'), 'The active writer holds a fixture lock.');
+            self::assertSame([], $this->controlledLocks($observer, [$readerBinding['thread']]), 'The reader owns no locks, even while the writer holds them.');
 
             $live = IntegrationResidueShadow::observe($observer, 'mysql', [$row, $readerRow]);
             self::assertSame(['LIVE', 'UNKNOWN'], array_column($live['transactions'], 'state'));
@@ -104,16 +107,16 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
             self::assertSame('UNKNOWN', $otherActive['state']);
             self::assertTrue($reader->rollBack());
 
-            // The controlled proof covers all three owned actors. On a
-            // shared harness service other threads can have no transaction
-            // event, so a global observation cannot assert the same coverage.
+            // The controlled proof uses the same three actors for events
+            // and locks. The global observer and residue gate keep their scope.
             $participants = [$process, $readerProcess, $contenderProcess];
             $before = $this->controlledEvents($observer, $participants);
-            self::assertSame('0', $this->scalar($observer, 'SELECT COUNT(*) FROM performance_schema.data_locks'));
+            $locks = $this->controlledLocks($observer, array_column($before, 'thread'));
             $after = $this->controlledEvents($observer, $participants);
+            self::assertSame([], $locks, 'A controlled participant still owns a lock after settlement.');
             // Supply the real pre-end row so timing of the cache refresh does
             // not decide whether the test reaches the failing residue gate.
-            $stale = IntegrationResidueShadow::classify([$row], $before, $after, [], [], $bindings);
+            $stale = IntegrationResidueShadow::classify([$row], $before, $after, $locks, [], $bindings);
             $this->assertOriginalGate($stale, [$row], 'STALE_CONFIRMED');
             $unbound = IntegrationResidueShadow::observe($observer, 'mysql', [$row]);
             $this->assertOriginalGate($unbound, [$row], 'UNKNOWN');
@@ -258,6 +261,42 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
         self::assertCount(count($participants), $events);
 
         return $events;
+    }
+
+    /**
+     * Samples locks for exactly the selected fixture threads. The bounded
+     * failure evidence identifies locks without recording row data.
+     *
+     * @param list<string> $threads
+     * @return list<array<string, mixed>>
+     */
+    private function controlledLocks(PDO $observer, array $threads): array
+    {
+        self::assertNotEmpty($threads);
+        self::assertCount(count($threads), array_unique($threads));
+        foreach ($threads as $thread) {
+            self::assertMatchesRegularExpression('/\A[1-9][0-9]*\z/', $thread);
+        }
+        $parameters = implode(', ', array_fill(0, count($threads), 'CAST(? AS UNSIGNED)'));
+        $statement = $observer->prepare(
+            'SELECT THREAD_ID, ENGINE_TRANSACTION_ID, SHA2(ENGINE_LOCK_ID, 256) AS LOCK_ID_SHA256,'
+                . ' OBJECT_SCHEMA, OBJECT_NAME, INDEX_NAME, LOCK_TYPE, LOCK_MODE, LOCK_STATUS'
+                . " FROM performance_schema.data_locks WHERE THREAD_ID IN ($parameters)"
+                . ' ORDER BY THREAD_ID, ENGINE_LOCK_ID LIMIT 10',
+        );
+        self::assertInstanceOf(PDOStatement::class, $statement);
+        try {
+            self::assertTrue($statement->execute($threads));
+
+            $locks = [];
+            while (($lock = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+                $locks[] = $lock;
+            }
+
+            return $locks;
+        } finally {
+            self::assertTrue($statement->closeCursor());
+        }
     }
 
     /** @return array{instrument: string, consumers: array<string, string>} */

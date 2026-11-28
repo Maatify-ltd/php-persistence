@@ -92,7 +92,7 @@ final class PdoSnapshotPaginator
                     $this->finishTransaction($pdo, $resources, $session, 'ROLLBACK AND NO CHAIN NO RELEASE');
                     $disposition = SnapshotConnectionDispositionEnum::Reusable;
                 } catch (Throwable) {
-                    // The checkout remains DISCARD. Preserve the original read failure.
+                    // The disposition remains Discard. Preserve the original read failure.
                 }
 
                 throw $failure;
