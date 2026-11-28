@@ -21,8 +21,10 @@ use Throwable;
  * pdo_mysql connection and a trusted, non-locking InnoDB page plan. The source
  * has no other checkout or user during this call. The Host keeps the original
  * PDO out of circulation while it is delegated to the source. The example
- * discards the source on failure or unconfirmed reuse after commit. The Host
- * drops any retained PDO reference after discard.
+ * discards the source if commit leaves reuse unconfirmed. On failure it
+ * attempts discard and rethrows the original failure. After discard or a
+ * thrown failure, the Host keeps the PDO out of circulation and drops any
+ * retained reference even if discard could not complete.
  *
  * @param string $queryId Identifier of the registered page plan.
  * @param array<string, string|int|bool|null> $bindings Exact named bindings for the plan.
