@@ -419,6 +419,10 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "\$a = \$b\n    |> trim(...) |> strtoupper(...);\n",
                 'each line starts with the operator',
             ],
+            'multiple inline operators on different lines form a split chain' => [
+                "\$result = \$source |> makeCallable(\n    \$argument,\n) |> trim(...);\n",
+                'each line starts with the operator',
+            ],
             'single-line comment comes before a pipe on the continuation line' => [
                 "\$a = \$b\n    /* stage */ |> trim(...);\n",
                 'each line starts with the operator',
@@ -478,8 +482,8 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'pipe after a concatenation continuation is indented from the start' => [
                 "\$a = \$b\n    . ' suffix'\n    |> trim(...);\n",
             ],
-            'multiline operand preserves the inline operators around it' => [
-                "\$a = \$b |> makeCallable(\n    'source',\n) |> trim(...);\n",
+            'inline operator before a multiline right operand' => [
+                "\$a = \$b |> makeCallable(\n    'source',\n);\n",
             ],
             'inline operator after a multiline left operand' => [
                 "\$a = fetch(\n    \$argument,\n) |> trim(...);\n",

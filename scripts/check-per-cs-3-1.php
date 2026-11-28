@@ -502,7 +502,9 @@ function checkPipe(string $file, array $tokens, array $sig, array $lines): array
     }
 
     foreach (pipeChains($sig, $pipe) as $chain) {
-        $split = false;
+        $first = $chain[0];
+        $last = $chain[count($chain) - 1];
+        $split = $sig[$first]['line'] !== $sig[$last]['line'];
         foreach ($chain as $i) {
             if (firstOnLine($sig, $i) || (isset($sig[$i + 1]) && endsLine($sig[$i], $sig[$i + 1]))) {
                 $split = true;
@@ -513,7 +515,7 @@ function checkPipe(string $file, array $tokens, array $sig, array $lines): array
             continue;
         }
 
-        $start = operatorExpressionStart($sig, $chain[0], extraBoundaries: PIPE_CHAIN_BOUNDARIES);
+        $start = operatorExpressionStart($sig, $first, extraBoundaries: PIPE_CHAIN_BOUNDARIES);
         $indent = indentOf($lines, $sig[$start]['line']) + 4;
         foreach ($chain as $i) {
             $token = $sig[$i];
