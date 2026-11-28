@@ -303,6 +303,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         [$seed, $table] = $this->connectWithPaginationTable();
         $this->insertMultiTenantDataset($seed, $table);
         $reader = $this->unbufferedReader();
+        $readerId = (int) $this->scalar($reader, 'SELECT CONNECTION_ID()');
         $closeAttempts = 0;
         $closeFailure = new RuntimeException('cursor close failed');
         $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [
@@ -345,7 +346,9 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             self::assertSame('cursor-release', $outcome->diagnostic);
             self::assertFalse($source->canCheckout());
         } finally {
-            self::endFixtureTransaction($reader);
+            // The discarded connection may still own an unbuffered cursor.
+            // Tear down the owned session through the separate fixture connection.
+            $seed->exec('KILL CONNECTION ' . $readerId);
         }
     }
 

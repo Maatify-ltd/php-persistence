@@ -16,17 +16,15 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Proves, with a scripted PDO, which {@see \Maatify\PhpPersistence\Transaction\Repository\SavepointScope}
- * method moveWithinScope() calls for a given target-write outcome inside a caller-owned (participating)
- * transaction: releaseOrUndo() on success, undoOrFail() when the target write reports zero affected rows
- * after a real range shift (B-04). The helper's own control-statement failure precedence
- * (SAVEPOINT/RELEASE/ROLLBACK TO false-or-throwing) is already characterized in isolation by
- * tests/Unit/Transaction/Repository/SavepointScopeTest.php (WU-6, DEC-011 item 2); this test exists only
- * because the "false after a real shift" outcome cannot be reproduced on a real connection without a
- * database privilege this project's Integration environment does not grant a CREATE TRIGGER (confirmed
- * against mysql:8.4.13: error 1419/1458) — see ScopedOrderingManagerLazySavepointTest (Integration) for
- * the real-server scenarios (C06, C13, C14, S1-S7, the nested-runner case and a genuine deadlock) that
- * remain provable there.
+ * Exercises raw moveWithinScope() with scripted PDO to verify owned rollback
+ * and Host savepoint control sequences. Returning false requires confirmed
+ * settlement. A cleanup failure preserves the original Throwable.
+ *
+ * SavepointScopeTest covers the shared savepoint helper in isolation.
+ * ScopedOrderingManagerSettlementTest exercises the public operation on
+ * InnoDB. It uses the disposable admin for trigger setup only, then runs the
+ * real shift and zero-row target UPDATE through the application PDO. It
+ * verifies affected rows, Host ownership, and pending versus committed data.
  */
 final class ScopedOrderingManagerSavepointWiringTest extends TestCase
 {

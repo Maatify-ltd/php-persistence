@@ -25,19 +25,17 @@ use Throwable;
  * commits, fully rolls back or retries the caller's transaction.
  *
  * Ported from legacy tests/Integration/Pdo/Ordering/ScopedOrderingManagerLazySavepointTest.php
- * (1f6a7aa, provenance gate recorded in the WU-8 pull request), with two differences forced by
- * this project's actual database privilege level (confirmed against mysql:8.4.13: the
- * Integration Compose service grants the application user `GRANT ALL PRIVILEGES` on its own
- * database only, not SUPER, and binlog is ON by default):
+ * (1f6a7aa, provenance gate recorded in the WU-8 pull request). The original
+ * port adapted two cases to the application account's privileges. On MySQL
+ * 8.4.13, the account has privileges on its own database, and binlog is on.
  *
  * - legacy's "false after the shifts" scenario (C04) and the matching client-injected variant
  *   (S5) both need the target write itself to report zero affected rows without throwing, which
  *   legacy achieved with a BEFORE UPDATE trigger that rewrites NEW back to OLD; CREATE TRIGGER
- *   needs SUPER or `log_bin_trust_function_creators=ON`, neither available here (error
- *   1419/1458). That exact wiring — moveWithinScope() calling SavepointScope::undoOrFail() when
- *   the target write reports zero affected rows — is instead proven in
- *   tests/Unit/Ordering/Repository/ScopedOrderingManagerSavepointWiringTest.php with a scripted
- *   PDO, the same way WU-6 characterizes the shared helper's own statement sequence.
+ *   needs SUPER or `log_bin_trust_function_creators=ON`. The application account
+ *   received errors 1419/1458. ScopedOrderingManagerSettlementTest uses the
+ *   disposable fixture admin for trigger setup and the application PDO for the move. The
+ *   Unit wiring tests still cover the shared helper's statement sequence.
  * - legacy's lock-wait/deadlock (C07/C10) scenarios used a second AUDIT table that a trigger on
  *   the target update also touched, to land the failure strictly inside the savepoint window.
  *   Without a trigger, every row the shift/target update will touch is already exclusively
@@ -486,9 +484,8 @@ final class ScopedOrderingManagerLazySavepointTest extends IntegrationTestCase
         $faulty->rollBack();
     }
 
-    // S5 ("false result never survives a failed undo") needs the target write itself to
-    // return rowCount()=0 without throwing, which legacy achieved with the same neutralizing
-    // trigger as C04; it is proven instead in ScopedOrderingManagerSavepointWiringTest (Unit).
+    // ScopedOrderingManagerSettlementTest covers S5 through the raw public
+    // manager. A fixture trigger makes the real target UPDATE affect zero rows.
 
     public function testS6ReleaseReturningFalseUndoesTheMoveAndFails(): void
     {
