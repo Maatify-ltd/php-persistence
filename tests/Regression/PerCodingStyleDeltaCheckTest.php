@@ -106,6 +106,9 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'expression closing braces and class literals can finish an operand' => [
                 "\$x = match (1) {\n    default => 1,\n}\n    + 2;\n\$klass = SomeClass::class\n    ?? 'fallback';\n",
             ],
+            'dynamic variables can finish an operand' => [
+                "\$value = \${\$name}\n    + 2;\n",
+            ],
             'types and references do not act as bitwise operators' => [
                 "function &sample(\n    (First&Second)|Third \$arg,\n    ?int &\$ref,\n): First|Second {\n    \$target = &\$ref;\n\n    return \$target;\n}\n",
             ],
@@ -218,6 +221,10 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'binary subtraction remains binary after a closure brace' => [
                 "\$x = function () {}\n- 2;\n",
                 'each split operator continuation must be indented once (-)',
+            ],
+            'binary addition remains binary after a dynamic variable brace' => [
+                "\$value = \${\$name}\n+ 2;\n",
+                'each split operator continuation must be indented once (+)',
             ],
             'operator after a comment does not start the continuation' => [
                 "\$x = \$left\n    /* comment */ + \$right;\n",

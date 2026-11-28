@@ -874,7 +874,7 @@ function endsBraceOperand(array $sig, int $close): bool
         return false;
     }
     if (in_array($sig[$open]['id'], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)
-        || in_array($sig[$open - 1]['id'] ?? null, [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, '\$'], true)
+        || in_array($sig[$open - 1]['id'] ?? null, [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, '$'], true)
     ) {
         return true;
     }
