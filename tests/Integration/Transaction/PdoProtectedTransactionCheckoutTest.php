@@ -17,6 +17,7 @@ use Closure;
 use Error;
 use PDO;
 use Pdo\Mysql;
+use PDOException;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
 use WeakReference;
@@ -362,22 +363,42 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $owner = $this->connect();
         $table = $this->createTable($owner);
         $owner->exec("INSERT INTO `$table` (id, v) VALUES (1, 10)");
+        $delegatedSessionId = null;
         $owner->beginTransaction();
         try {
             $owner->exec("UPDATE `$table` SET v = 20 WHERE id = 1");
             $pdo = $this->delegatedConnection();
             $pdo->exec('SET SESSION innodb_lock_wait_timeout = 1');
+            $delegatedSessionId = (int) $this->scalar($pdo, 'SELECT CONNECTION_ID()');
             $checkout = PdoProtectedTransactionCheckout::attachExclusive($pdo, new ProtectedTransactionCommandCatalog([
                 'write' => new ProtectedTransactionCommandPlan("UPDATE `$table` SET v = 30 WHERE id = 1", []),
             ]));
             unset($pdo);
             $checkout->begin();
             self::assertSame(1205, self::driverCode(self::failureOf(static fn() => $checkout->runRegisteredCommand('write'))));
-            self::assertSame(ProtectedTransactionReasonEnum::OperationUnconfirmed, $checkout->settlement()?->reason);
+            $settlement = $checkout->settlement();
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
+            self::assertSame(ProtectedTransactionReasonEnum::OperationUnconfirmed, $settlement->reason);
             $this->reject(static fn() => $checkout->runRegisteredCommand('write'));
             $checkout->discardForHost();
+            self::assertSame($settlement, $checkout->settlement());
+            $this->reject(static fn() => $checkout->discardForHost());
         } finally {
-            $owner->rollBack();
+            try {
+                $owner->rollBack();
+            } finally {
+                if ($delegatedSessionId !== null) {
+                    // Release the fixture session if it outlives the checkout discard.
+                    try {
+                        $owner->exec('KILL CONNECTION ' . $delegatedSessionId);
+                    } catch (PDOException $failure) {
+                        // PDO may already have closed the session on discard.
+                        if (self::driverCode($failure) !== 1094) {
+                            throw $failure;
+                        }
+                    }
+                }
+            }
         }
         self::assertSame([10], $this->values($owner, $table));
     }
