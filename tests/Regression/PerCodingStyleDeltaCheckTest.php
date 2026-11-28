@@ -16,26 +16,30 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
     /**
      * @return array{int, string} exit status and standard error output
      */
-    private static function check(string $source): array
+    private static function check(string $source, string $filename = 'Suit.php'): array
     {
-        $file = tempnam(sys_get_temp_dir(), 'percs');
-        self::assertIsString($file);
-        file_put_contents($file, "<?php\n\ndeclare(strict_types=1);\n\n" . $source);
+        $directory = sys_get_temp_dir() . '/percs-' . bin2hex(random_bytes(8));
+        self::assertTrue(mkdir($directory, 0700));
+        $file = $directory . '/' . $filename;
 
-        $process = proc_open(
-            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-        );
-        self::assertIsResource($process);
-        stream_get_contents($pipes[1]);
-        $errors = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $status = proc_close($process);
-        unlink($file);
+        try {
+            file_put_contents($file, "<?php\n\ndeclare(strict_types=1);\n\n" . $source);
+            $process = proc_open(
+                [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file],
+                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $pipes,
+            );
+            self::assertIsResource($process);
+            stream_get_contents($pipes[1]);
+            $errors = (string) stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
 
-        return [$status, $errors];
+            return [proc_close($process), $errors];
+        } finally {
+            unlink($file);
+            rmdir($directory);
+        }
     }
 
     /**
@@ -70,11 +74,20 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "switch (\$a) {\n    case 1:\n        \$b = 1; /* Deliberate fall-through */\n    default:\n        break;\n}\n",
             ],
             'enum whose method declares an anonymous class with a protected method' => [
-                "enum Suit\n{\n    case Hearts;\n\n    public function f(): object\n    {\n        return new class {\n            protected function g(): void {}\n        };\n    }\n}\n",
+                "namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    public function f(): object\n    {\n        return new class {\n            protected function g(): void {}\n        };\n    }\n}\n",
+            ],
+            'PascalCase enum and uppercase constant' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case DarkBlue;\n\n    private const DEFAULT_COLOR = self::DarkBlue;\n}\n",
+            ],
+            'named class and methods with magic and anonymous methods' => [
+                "namespace Fixture;\n\nfinal class Suit\n{\n    public function __construct() {}\n\n    public function makeColor(): object\n    {\n        return new class {\n            public function colorCode(): int\n            {\n                return 1;\n            }\n        };\n    }\n}\n",
+            ],
+            'global helper function and embedded fixture are not method declarations' => [
+                "function helper_name(): string\n{\n    return 'enum Test { case BAD_STYLE; }';\n}\n",
             ],
             'ternary inside a case label' => ["switch (\$a) {\n    case \$b ? 1 : 2:\n        break;\n}\n"],
             'enum with private constant and method' => [
-                "enum Suit: string\n{\n    case Hearts = 'H';\n\n    private const X = 1;\n\n    private function f(): void {}\n}\n",
+                "namespace Fixture;\n\nenum Suit: string\n{\n    case Hearts = 'H';\n\n    private const X = 1;\n\n    private function f(): void {}\n}\n",
             ],
         ];
     }
@@ -119,13 +132,45 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "switch (\$a) {\n    case 1:\n        \$b = 1;\n        // set b\n    case 2:\n        break;\n}\n",
                 'must end with a terminating statement',
             ],
-            'enum with protected constant' => ["enum Suit\n{\n    case Hearts;\n\n    protected const X = 1;\n}\n", 'private instead of protected'],
+            'enum with protected constant' => ["namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected const X = 1;\n}\n", 'private instead of protected'],
             'enum with protected method next to an anonymous class' => [
-                "enum Suit\n{\n    case Hearts;\n\n    protected function f(): object\n    {\n        return new class {};\n    }\n}\n",
+                "namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected function f(): object\n    {\n        return new class {};\n    }\n}\n",
                 'private instead of protected',
             ],
+            'enum case with underscores' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case DARK_BLUE;\n}\n",
+                'enum case names must use PascalCase',
+            ],
+            'enum case in uppercase' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case BLUE;\n}\n",
+                'enum case names must use PascalCase',
+            ],
+            'snake case method' => [
+                "namespace Fixture;\n\nfinal class Suit\n{\n    public function color_code(): void {}\n}\n",
+                'method names must use camelCase',
+            ],
+            'snake case method in an anonymous class with constructor arguments' => [
+                "\$v = new class(1) {\n    public function __construct(int \$n) {}\n\n    public function color_code(): void {}\n};\n",
+                'method names must use camelCase',
+            ],
+            'named global class' => [
+                "final class Suit {}\n",
+                'require a formal namespace',
+            ],
+            'class declared in the explicit global namespace' => [
+                "namespace {\n    final class Suit {}\n}\n",
+                'require a formal namespace',
+            ],
+            'a declaration in the wrong file' => [
+                "namespace Fixture;\n\nfinal class Color {}\n",
+                'must match its filename',
+            ],
+            'two named declarations' => [
+                "namespace Fixture;\n\nfinal class Suit {}\n\nfinal class Color {}\n",
+                'must be in its own file',
+            ],
             'switch with alternative syntax' => ["switch (\$a):\n    case 1:\n        break;\nendswitch;\n", 'alternative syntax'],
-            'enum with protected member' => ["enum Suit\n{\n    case Hearts;\n\n    protected function f(): void {}\n}\n", 'private instead of protected'],
+            'enum with protected member' => ["namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected function f(): void {}\n}\n", 'private instead of protected'],
             'anonymous class attribute on the new line' => ["\$o = new #[Foo] class {};\n", 'start on the line after new'],
             'anonymous class attribute not indented' => ["\$o = new\n#[Foo]\nclass {};\n", 'indented once'],
             'anonymous class declaration not on a new line' => ["\$o = new\n    #[Foo] class {};\n", 'starts on a new line'],
@@ -149,6 +194,14 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         return [
             'no space around the operator' => ["\$a = \$b|>trim(...);\n", 'needs a space before and after'],
             'operator at the end of the line' => ["\$a = \$b |>\n    trim(...);\n", 'each line starts with the operator'],
+            'first operator is inline in a later split chain' => [
+                "\$a = \$b |> trim(...)\n    |> strtoupper(...);\n",
+                'each line starts with the operator',
+            ],
+            'two operators share a line in a split chain' => [
+                "\$a = \$b\n    |> trim(...) |> strtoupper(...);\n",
+                'each line starts with the operator',
+            ],
             'continuation line not indented' => ["\$a = \$b\n|> trim(...);\n", 'must be indented'],
         ];
     }
@@ -177,6 +230,22 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
 
             return;
         }
+        self::assertSame(1, $status);
+        self::assertStringContainsString('pipe operator requires a PHP version', $errors);
+    }
+
+    public function testIndependentPipeArgumentsKeepTheirOwnLayout(): void
+    {
+        [$status, $errors] = self::check(
+            "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n",
+        );
+
+        if (PHP_VERSION_ID >= 80500) {
+            self::assertSame(0, $status, $errors);
+
+            return;
+        }
+
         self::assertSame(1, $status);
         self::assertStringContainsString('pipe operator requires a PHP version', $errors);
     }

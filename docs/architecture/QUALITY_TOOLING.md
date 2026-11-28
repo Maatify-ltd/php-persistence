@@ -19,7 +19,7 @@ The constraints are caret ranges, not patch pins. Versions actually resolved on 
 |---|---|
 | `composer analyse` | PHPStan, level `max`, over `src`, `tests`, `scripts`, and `examples` |
 | `composer format` | Mutating formatter (`php-cs-fixer fix`) |
-| `composer format:check` | Non-mutating formatter check, then the PER-CS 3.1 delta check |
+| `composer format:check` | Non-mutating formatter check, then the supplemental PER-CS 3.1 check |
 | `composer test` | Unit, Regression, and Integration |
 | `composer test:unit` | The `unit` suite |
 | `composer test:regression` | The `regression` suite |
@@ -28,22 +28,23 @@ The constraints are caret ranges, not patch pins. Versions actually resolved on 
 
 ## 3. PER Coding Style 3.1 coverage
 
-The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as the baseline and requires the combined verification surface to cover all of it. PHP CS Fixer implements PER Coding Style only up to 3.0: version 3.95.27 lists `@PER-CS3x0` as its newest versioned set (`php-cs-fixer list-sets`), and its upstream repository has no 3.1 set. PHP CS Fixer 3.95.32 also refuses to run on PHP 8.6, so in CI the formatter runs on PHP 8.4 and 8.5 and the PHP 8.6 cells run the 3.1 verifier alone ([CI_AND_INTEGRATION.md §3.1](./CI_AND_INTEGRATION.md#31-code-style-on-php-86)). The formatter therefore verifies the 3.0 baseline, and `scripts/check-per-cs-3-1.php` verifies the eight changes of 3.1 listed in the PHP-FIG [migration document](https://www.php-fig.org/per/coding-style/meta/migration-3.1/) on the token stream:
+The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as the baseline and requires the combined verification surface to cover all of it. PHP CS Fixer implements PER Coding Style only up to 3.0: version 3.95.27 lists `@PER-CS3x0` as its newest versioned set (`php-cs-fixer list-sets`), and its upstream repository has no 3.1 set. PHP CS Fixer 3.95.32 also refuses to run on PHP 8.6, so in CI the formatter runs on PHP 8.4 and 8.5 and the PHP 8.6 cells run the 3.1 verifier alone ([CI_AND_INTEGRATION.md §3.1](./CI_AND_INTEGRATION.md#31-code-style-on-php-86)). The formatter checks the rules implemented in its 3.0 preset. The supplemental token verifier implements the 3.1 changes in the PHP-FIG [migration document](https://www.php-fig.org/per/coding-style/meta/migration-3.1/) and fills identified gaps in the baseline:
 
-| 3.1 change | Verification |
+| Requirement | Verification |
 |---|---|
 | `clone` always with parentheses | script: `clone` must be followed by `(` |
 | `case` body not wrapped in braces; every non-empty `case` ends with a terminating statement, also the last; multi-line `case` condition in parentheses with `)` and `:` alone on the last line | script: parses every `switch` block, accepts conforming switches and rejects the others. A non-empty case that falls through to the next case is accepted only with a clear comment ("No break", "Deliberate fall-through"), as the specification requires; the last case must always terminate |
 | Pipe operator `\|>` spaced on both sides | script: checks spacing when the tokenizer supports the operator (PHP 8.5+); on PHP 8.4 the syntax does not parse, so the syntax check rejects it first |
-| Split pipe chain starts each line with the operator, continuation lines indented | script, same condition as above |
+| Split pipe chain starts each line with one operator and indents continuation lines | script: checks all operators in the same expression, including an inline first operator in a split chain. Separate arguments and nested chains are checked independently |
 | Empty closure written as `{}` after one space on the same line | script |
 | Attributes on anonymous classes start on the line after `new`, indented once, class declaration on its own line with the same indentation | script |
-| Enum constants follow the `private` instead of `protected` rule (as methods already did) | script: no `protected` member at the level of an `enum` body; method bodies and classes nested inside the enum are not enum members and are not checked by this rule |
+| Enum cases use PascalCase and non-public enum members use `private` | script: checks direct enum cases, constants and methods. An uppercase enum constant is valid; nested anonymous class methods keep their own visibility rules |
+| PSR-1 named declarations and method names | script: a named class, interface, trait or enum has a formal namespace and its own, case-matching source file. Methods use camelCase except for PHP magic methods. Anonymous classes and standalone functions retain their applicable rules. Composer autoload and entry-point tests establish discovery |
 | Opening bracket of a multi-line array not alone on its line, in all contexts | script |
 
 Scope: the script scans every PHP file of the repository except `vendor`, `docs`, `.git` and tool caches, so the root configuration file `.php-cs-fixer.php` and `scripts/` are included. `tests/Regression/PerCodingStyleDeltaCheckTest.php` has an accepting and a rejecting case for each rule and asserts the scan scope.
 
-Limits that remain: the script is a repository-owned verifier written for these eight rules and is not the PHP-FIG reference implementation. The pipe-operator rules cannot be exercised on PHP 8.4. Their fixtures (`PerCodingStyleDeltaCheckTest`: a conforming chain, no spaces, operator at the end of a line, unindented continuation) assert the real rules on PHP 8.5 and assert that the verifier refuses the operator on earlier versions; the PHP 8.5 CI cells run the real-rule branch (WU-5). The rest of the 3.1 text is covered by the 3.0 rules the formatter implements. When PHP CS Fixer ships a 3.1 rule set, the configuration moves to it and the script is reduced to what the set does not cover.
+Limits that remain: the script is a repository-owned supplemental verifier and is not the PHP-FIG reference implementation. The pipe-operator rules cannot be exercised on PHP 8.4. Their fixtures (`PerCodingStyleDeltaCheckTest`: a conforming chain, no spaces, operator at the end of a line, unindented continuation) assert the real rules on PHP 8.5 and assert that the verifier refuses the operator on earlier versions; the PHP 8.5 CI cells run the real-rule branch (WU-5). A passing check proves the configured rules for the files it scanned. The full normative reference remains PHP-FIG PER Coding Style 3.1. Before switching to a future formatter preset, verify each supplemental rule against it and retain coverage for any rule it omits.
 
 ## 4. Historical planning inputs for WU-5
 

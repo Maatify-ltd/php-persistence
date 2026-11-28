@@ -3,11 +3,10 @@
 declare(strict_types=1);
 
 /**
- * Verifies the PHP-FIG PER Coding Style 3.1 rules that PHP CS Fixer cannot check.
+ * Verifies PHP-FIG PER Coding Style 3.1 requirements beyond the formatter's preset.
  *
- * PHP CS Fixer implements PER Coding Style up to 3.0. The eight changes of 3.1
- * (https://www.php-fig.org/per/coding-style/meta/migration-3.1/) are verified here
- * on the token stream of every repository-owned PHP file:
+ * The token checks cover the 3.1 changes and declaration rules inherited
+ * from the baseline, including PSR-1 namespace, file, and method naming rules:
  *
  *  1. clone is written with parentheses;
  *  2. switch: a case body is not wrapped in braces, every non-empty case ends with a
@@ -20,7 +19,7 @@ declare(strict_types=1);
  *  5. a closure with an empty body is written as " {}" on one line;
  *  6. attributes on an anonymous class start on the line after "new", are indented once,
  *     and the class declaration starts on its own line with the same indentation;
- *  7. enum members use private instead of protected;
+ *  7. enum cases use PascalCase and non-public enum members use private;
  *  8. the opening bracket of a multi-line array does not stand alone on its line.
  *
  * Usage: php scripts/check-per-cs-3-1.php [path ...]
@@ -30,6 +29,10 @@ declare(strict_types=1);
 
 const TERMINATORS = [T_BREAK, T_CONTINUE, T_RETURN, T_THROW, T_GOTO, T_EXIT];
 const EXPRESSION_PREVIOUS = [T_VARIABLE, ')', ']', T_STRING, T_CONSTANT_ENCAPSED_STRING, T_STATIC, T_NS_SEPARATOR];
+const MAGIC_METHODS = [
+    '__construct', '__destruct', '__call', '__callStatic', '__get', '__set', '__isset', '__unset',
+    '__sleep', '__wakeup', '__serialize', '__unserialize', '__toString', '__invoke', '__set_state', '__clone', '__debugInfo',
+];
 
 /**
  * @param string $source
@@ -359,6 +362,39 @@ function endsWithTerminator(array $sig, int $first, int $semicolon): bool
 }
 
 /**
+ * Collects operator token positions by expression. A separator finishes the
+ * current chain without combining separate arguments, branches, or statements.
+ * Nested expressions have their own chains.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $tokens
+ * @return list<non-empty-list<int>>
+ */
+function pipeChains(array $tokens, int $pipe): array
+{
+    $chains = [];
+    $active = [];
+    $depth = 0;
+    foreach ($tokens as $i => $token) {
+        $id = $token['id'];
+        if ($id === $pipe) {
+            $active[$depth][] = $i;
+        } elseif (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $depth++;
+        } elseif (in_array($id, [')', ']', '}', ',', ';', '?', ':', '=', T_DOUBLE_ARROW, T_CLOSE_TAG], true)) {
+            if (isset($active[$depth])) {
+                $chains[] = $active[$depth];
+                unset($active[$depth]);
+            }
+            if (in_array($id, [')', ']', '}'], true)) {
+                $depth--;
+            }
+        }
+    }
+
+    return [...$chains, ...array_values($active)];
+}
+
+/**
  * @param list<array{id: int|string, text: string, line: int}> $tokens
  * @param list<string> $lines
  * @return list<string>
@@ -367,44 +403,52 @@ function checkPipe(string $file, array $tokens, array $lines): array
 {
     $findings = [];
     $pipe = defined('T_PIPE') ? constant('T_PIPE') : null;
-    $count = count($tokens);
-    $baseIndent = 0;
-    $lastLineChecked = 0;
-
-    for ($i = 0; $i < $count; $i++) {
-        $token = $tokens[$i];
-        $isPipe = $pipe !== null && $token['id'] === $pipe;
-        if ($pipe === null && $token['id'] === '|' && ($tokens[$i + 1]['id'] ?? null) === '>') {
-            $findings[] = $file . ':' . $token['line'] . ': pipe operator requires a PHP version that supports it';
-
-            continue;
-        }
-        if (!$isPipe) {
-            continue;
-        }
-        $before = $tokens[$i - 1] ?? null;
-        $after = $tokens[$i + 1] ?? null;
-        if ($before === null || $before['id'] !== T_WHITESPACE || $after === null || $after['id'] !== T_WHITESPACE) {
-            $findings[] = $file . ':' . $token['line'] . ': the pipe operator needs a space before and after';
-
-            continue;
-        }
-        if (str_contains($after['text'], "\n")) {
-            $findings[] = $file . ':' . $token['line'] . ': in a split pipe chain each line starts with the operator';
-        }
-        if (str_contains($before['text'], "\n") && $token['line'] !== $lastLineChecked) {
-            $lastLineChecked = $token['line'];
-            $pipeIndent = indentOf($lines, $token['line']);
-            for ($line = $token['line'] - 1; $line >= 1; $line--) {
-                if (!str_starts_with(ltrim($lines[$line - 1] ?? ''), '|>')) {
-                    $baseIndent = indentOf($lines, $line);
-
-                    break;
-                }
+    if (!is_int($pipe)) {
+        foreach ($tokens as $i => $token) {
+            if ($token['id'] === '|' && ($tokens[$i + 1]['id'] ?? null) === '>') {
+                $findings[] = $file . ':' . $token['line'] . ': pipe operator requires a PHP version that supports it';
             }
-            if ($pipeIndent <= $baseIndent) {
-                $findings[] = $file . ':' . $token['line'] . ': continuation lines of a pipe chain must be indented';
+        }
+
+        return $findings;
+    }
+
+    foreach (pipeChains($tokens, $pipe) as $chain) {
+        $first = $chain[0];
+        $firstLine = $tokens[$first]['line'];
+        $last = $chain[count($chain) - 1];
+        $split = $firstLine !== $tokens[$last]['line'];
+        foreach ($chain as $i) {
+            $before = $tokens[$i - 1] ?? null;
+            $after = $tokens[$i + 1] ?? null;
+            $line = $tokens[$i]['line'];
+            if (($before['id'] ?? null) !== T_WHITESPACE || ($after['id'] ?? null) !== T_WHITESPACE) {
+                $findings[] = $file . ':' . $line . ': the pipe operator needs a space before and after';
             }
+            $split = $split || str_contains($before['text'] ?? '', "\n") || str_contains($after['text'] ?? '', "\n");
+        }
+        if (!$split) {
+            continue;
+        }
+
+        $left = $first - 1;
+        while ($left >= 0 && in_array($tokens[$left]['id'], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+            $left--;
+        }
+        $leftLine = $left < 0 ? $firstLine : $tokens[$left]['line'] + substr_count($tokens[$left]['text'], "\n");
+        $baseIndent = indentOf($lines, $leftLine);
+        $previousOperatorLine = null;
+        foreach ($chain as $i) {
+            $line = $tokens[$i]['line'];
+            if (!str_starts_with(ltrim($lines[$line - 1] ?? '', " \t"), '|>')
+                || str_contains($tokens[$i + 1]['text'] ?? '', "\n")
+                || $line === $previousOperatorLine
+            ) {
+                $findings[] = $file . ':' . $line . ': in a split pipe chain each line starts with the operator';
+            } elseif (indentOf($lines, $line) <= $baseIndent) {
+                $findings[] = $file . ':' . $line . ': continuation lines of a pipe chain must be indented';
+            }
+            $previousOperatorLine = $line;
         }
     }
 
@@ -524,40 +568,122 @@ function checkAnonymousClassAttributes(string $file, array $sig, array $lines): 
     return $findings;
 }
 
+/** Checks a declared PascalCase name, allowing an intentional one-letter name. */
+function usesPascalCase(string $name): bool
+{
+    return preg_match('/\A[A-Z][a-zA-Z0-9]*\z/', $name) === 1
+        && (strlen($name) === 1 || preg_match('/[a-z]/', $name) === 1);
+}
+
 /**
+ * Finds the opening class body brace, skipping anonymous constructor arguments.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function classBodyStart(array $sig, int $start): ?int
+{
+    $i = $start + 1;
+    if (($sig[$i]['id'] ?? null) === '(') {
+        $close = matching($sig, $i);
+        if ($close === null) {
+            return null;
+        }
+        $i = $close + 1;
+    }
+    for (; isset($sig[$i]) && !in_array($sig[$i]['id'], [';', '}'], true); $i++) {
+        if ($sig[$i]['id'] === '{') {
+            return $i;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Inspects direct declarations in one class body, excluding nested blocks,
+ * arguments and attributes. The outer scan finds nested anonymous classes.
+ *
  * @param list<array{id: int|string, text: string, line: int}> $sig
  * @return list<string>
  */
-function checkEnumMembers(string $file, array $sig): array
+function checkClassBody(string $file, array $sig, int $open, int $close, bool $isEnum): array
 {
     $findings = [];
+    for ($i = $open + 1; $i < $close; $i++) {
+        $token = $sig[$i];
+        $id = $token['id'];
+        if ($id === T_FUNCTION) {
+            $nameIndex = ($sig[$i + 1]['text'] ?? '') === '&' ? $i + 2 : $i + 1;
+            $name = $sig[$nameIndex] ?? null;
+            if ($name !== null && $name['id'] !== '('
+                && !in_array($name['text'], MAGIC_METHODS, true)
+                && preg_match('/\A[a-z][a-zA-Z0-9]*\z/', $name['text']) !== 1
+            ) {
+                $findings[] = $file . ':' . $name['line'] . ': method names must use camelCase';
+            }
+        } elseif ($isEnum && $id === T_CASE && isset($sig[$i + 1])) {
+            if (!usesPascalCase($sig[$i + 1]['text'])) {
+                $findings[] = $file . ':' . $token['line'] . ': enum case names must use PascalCase';
+            }
+        } elseif ($isEnum && $id === T_PROTECTED) {
+            $findings[] = $file . ':' . $token['line'] . ': enum members use private instead of protected';
+        } elseif (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $i = matching($sig, $i) ?? $i;
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * Checks PSR-1 named class-like declarations and methods, and enum case style
+ * from PER Coding Style 3.1. Standalone functions and anonymous class names
+ * are outside the named declaration checks.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkDeclarations(string $file, array $sig): array
+{
+    $findings = [];
+    $hasNamespace = false;
+    $namedTypes = 0;
     foreach ($sig as $i => $token) {
-        if ($token['id'] !== T_ENUM || ($sig[$i + 1]['id'] ?? null) !== T_STRING) {
+        $id = $token['id'];
+        $next = $sig[$i + 1]['id'] ?? null;
+        if ($id === T_NAMESPACE && in_array($next, [T_STRING, T_NAME_QUALIFIED, '{'], true)) {
+            $hasNamespace = $next !== '{';
+
             continue;
         }
-        $open = null;
-        for ($k = $i + 2; $k < count($sig); $k++) {
-            if ($sig[$k]['id'] === '{') {
-                $open = $k;
-
-                break;
-            }
+        if (!in_array($id, [T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM], true)
+            || ($sig[$i - 1]['id'] ?? null) === T_DOUBLE_COLON
+            || ($next !== T_STRING && !($id === T_CLASS && in_array($next, ['{', '(', T_EXTENDS, T_IMPLEMENTS], true)))
+        ) {
+            continue;
         }
+        $open = classBodyStart($sig, $i);
         $close = $open === null ? null : matching($sig, $open);
         if ($open === null || $close === null) {
             continue;
         }
-        for ($k = $open + 1; $k < $close; $k++) {
-            if ($sig[$k]['id'] === '{') {
-                // Method bodies and nested classes are not members of the enum.
-                $k = matching($sig, $k) ?? $k;
-
-                continue;
+        if ($next === T_STRING) {
+            $name = $sig[$i + 1]['text'];
+            $location = $file . ':' . $token['line'] . ': ';
+            if (++$namedTypes > 1) {
+                $findings[] = $location . 'each named class-like declaration must be in its own file';
             }
-            if ($sig[$k]['id'] === T_PROTECTED) {
-                $findings[] = $file . ':' . $sig[$k]['line'] . ': enum members use private instead of protected';
+            if (!$hasNamespace) {
+                $findings[] = $location . 'named class-like declarations require a formal namespace';
+            }
+            if (!usesPascalCase($name)) {
+                $findings[] = $location . 'named class-like declarations must use PascalCase';
+            }
+            if (basename($file) !== $name . '.php') {
+                $findings[] = $location . 'a named class-like declaration must match its filename';
             }
         }
+        array_push($findings, ...checkClassBody($file, $sig, $open, $close, $id === T_ENUM));
     }
 
     return $findings;
@@ -607,7 +733,7 @@ function checkSource(string $file, string $source): array
         ...checkPipe($file, $tokens, $lines),
         ...checkEmptyClosure($file, $tokens, $sig),
         ...checkAnonymousClassAttributes($file, $sig, $lines),
-        ...checkEnumMembers($file, $sig),
+        ...checkDeclarations($file, $sig),
         ...checkArrayBrackets($file, $sig),
     ];
 }
