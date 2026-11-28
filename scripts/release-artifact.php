@@ -22,6 +22,7 @@ const RELEASE_FILES = [
     'examples/ordering_unique_usage.php',
     'examples/pagination_basic_usage.php',
     'examples/pagination_dynamic_sort_usage.php',
+    'examples/pagination_host_snapshot_usage.php',
     'examples/pagination_keyset_usage.php',
     'examples/pagination_snapshot_usage.php',
     'examples/pagination_static_sort_usage.php',

@@ -108,7 +108,7 @@ $orderId = $runner->run(function () use ($pdo): int {
 });
 ```
 
-See [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) for a capability map covering Transaction, Pagination, and Ordering, each with its own `Input → Public Call → Result → Boundary` walkthrough, and [examples/](examples/) for complete, runnable scripts.
+See [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) for a capability map covering Transaction, Pagination, and Ordering, each with its own `Input → Public Call → Result → Boundary` walkthrough, and [examples/](examples/) for standalone scripts and the Host Snapshot B integration example.
 
 ## Public Runtime API
 
@@ -147,13 +147,13 @@ Table and column identifiers passed to `ScopedOrderingConfig` and sort-key ident
 
 ## Examples
 
-Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The [opt-in Snapshot example](examples/pagination_snapshot_usage.php) shows a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage.
+Runnable [examples](examples/) cover Transaction, Pagination and Ordering on a real MySQL/MariaDB connection. The [opt-in Snapshot example](examples/pagination_snapshot_usage.php) shows a single page with Host-owned connection settlement. See the [C1 contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) for eligibility and usage. The [Host Snapshot B example](examples/pagination_host_snapshot_usage.php) requires an application-owned PDO and page-plan catalog.
 
 ## Documentation
 
 - [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](PHP_PERSISTENCE_PACKAGE_REFERENCE.md) — canonical Public Runtime API, behavior, and exception contract.
 - [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) — capability map and walkthroughs.
-- [examples/](examples/) — runnable examples.
+- [examples/](examples/) — standalone and Host-dependent examples.
 - [CHANGELOG.md](CHANGELOG.md) · [SECURITY.md](SECURITY.md) · [CONTRIBUTING.md](CONTRIBUTING.md)
 - [llms.txt](llms.txt) — AI consumer navigation map.
 - [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) — design and topology (dated design record).
@@ -174,19 +174,20 @@ composer format:check   # PER-CS 3.1, non-mutating
 composer test:unit      # no Docker needed
 composer test:regression
 composer test:integration   # needs Docker; starts a disposable MySQL/MariaDB service
-composer examples:smoke     # needs Docker; smoke-executes examples/ against a real engine
+composer examples:smoke     # needs Docker; runs standalone examples against a real engine
 ```
 
 See [docs/architecture/QUALITY_TOOLING.md](docs/architecture/QUALITY_TOOLING.md), [docs/architecture/CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md), and [CONTRIBUTING.md](CONTRIBUTING.md) for the full local-verification contract.
 
 ## License
 
-This package is proprietary. For use under the terms on this branch, request
-a free written license from [support@maatify.dev](mailto:support@maatify.dev).
+This package is proprietary. Under the terms on this branch, obtain written
+authorization from Maatify Ltd. before use, subject to the exceptions in
+[LICENSE](LICENSE). Request a free written license from [support@maatify.dev](mailto:support@maatify.dev).
 Include your organization name, if applicable, and an email address for
 security advisories and critical update notices. Maatify Ltd. uses these details
-to administer licenses and send those notices. See [LICENSE](LICENSE) for
-the terms. Published versions carry their own license file.
+to administer licenses and send those notices. Published versions carry their
+own license file.
 
 ## 👤 Author
 

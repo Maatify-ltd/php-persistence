@@ -24,7 +24,7 @@ See [Packagist](https://packagist.org/packages/maatify/php-persistence) for curr
 support@maatify.dev
 ```
 
-Maatify publishes this private vulnerability-reporting address in its [security reporting instructions](https://github.com/Maatify/persistence/blob/main/SECURITY.md). It is also the contact in this repository’s [LICENSE](LICENSE). Include the affected file(s) or capability (Transaction, Pagination, or Ordering), the commit SHA you observed it on, and, where possible, a minimal reproduction.
+This private contact is listed in this package's [LICENSE](LICENSE). Include the affected file(s) or capability (Transaction, Pagination, or Ordering), the commit SHA you observed it on, and, where possible, a minimal reproduction.
 
 ## Scope
 

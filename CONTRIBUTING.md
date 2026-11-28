@@ -37,7 +37,7 @@ composer whitespace             # git diff --check
 composer test:unit             # no Docker needed
 composer test:regression       # no Docker needed
 composer test:integration      # needs Docker; starts a disposable MySQL/MariaDB service
-composer examples:smoke        # needs Docker; smoke-executes examples/ against a real engine
+composer examples:smoke        # needs Docker; runs standalone examples against a real engine
 composer test:consumer         # needs Docker; two fresh external Composer verification runs
 actionlint .github/workflows/*.yml
 ```

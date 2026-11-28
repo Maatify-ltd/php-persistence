@@ -961,20 +961,7 @@ An attempt is `New`, `Running`, or `Terminal`. settlement() returns null before 
 
 **Release, retirement, and discard.** release() makes the source available to another checkout only after confirmed idle status and resolution of pending settings and resources. retireForHost() permanently invalidates the source and transfers the same PDO after confirmed resource release. `ReturnedIdle` certifies the known idle state. `ReturnedForReconciliation` asks the Host to resolve the connection before further circulation. An unresolved resource prevents transfer. The Host can call discardForHost() to permanently invalidate the source and drop the library's references. This call initiates zero explicit SQL, state probes, or transaction-end commands. PDO or its driver may automatically send ROLLBACK or perform other I/O or close the session when the last reference is released. The caller does not receive an acknowledgement of transaction outcome, timing, or server closure. A retirement or discard request while a reservation is held is rejected.
 
-```php
-$checkout = $source->checkout();
-$checkout->beginRepeatableRead();
-$grant = $checkout->authorizePage('items', ['tenant' => 7], new PageRequest());
-$attempt = $checkout->newAttempt($grant);
-try {
-    $page = $paginator->paginate($attempt);
-} finally {
-    $settlement = $attempt->settlement();
-}
-// The Host uses $settlement on either path and explicitly ends its transaction.
-// The Host can reconcile after a classified handoff. Unresolved resources prevent handoff;
-// the Host may explicitly discard that connection.
-```
+See the [Host Snapshot B example](examples/pagination_host_snapshot_usage.php) for a read-only page attempt, qualified rollback on read failure, and explicit connection disposition.
 
 See [DEC-036](docs/decisions/DEC-036-pascalcase-enums-and-stable-settlement-json.md).
 
