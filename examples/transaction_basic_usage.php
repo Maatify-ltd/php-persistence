@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 /**
- * Transaction capability: PdoTransactionRunner.
+ * Transaction capability: PdoTransactionRunner and PdoSavepointTransactionRunner.
  *
  * Demonstrates both outcomes of run():
  * - a package-owned transaction that commits and returns the callback's result;
  * - a package-owned transaction that fails and is rolled back, with the
  *   callback's own exception rethrown unchanged.
+ *
+ * The caller-owned example shows a failed callback with successful local
+ * undo, followed by the caller committing its earlier write.
  *
  * Run standalone: php examples/transaction_basic_usage.php
  * Requires a real MySQL/MariaDB connection; see examples/_bootstrap.php.
@@ -18,6 +21,7 @@ require __DIR__ . '/../vendor/autoload.php';
 require __DIR__ . '/_bootstrap.php';
 
 use Maatify\PhpPersistence\Transaction\Exception\InvalidTransactionConfigurationException;
+use Maatify\PhpPersistence\Transaction\Repository\PdoSavepointTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 
 $pdo = php_persistence_example_connect();
@@ -84,6 +88,53 @@ try {
     )->fetchColumn();
     php_persistence_example_assert(php_persistence_example_to_int($totalRows) === 1, 'the failed callback was not fully rolled back');
     echo "Boundary -> the second insert was rolled back; only the first committed row remains\n";
+
+    echo "Input -> the caller writes an invoice before running savepoint-local work\n";
+    php_persistence_example_assert($pdo->beginTransaction(), 'failed to begin the caller transaction');
+    $insert = php_persistence_example_require_statement(
+        $pdo->prepare("INSERT INTO {$quotedTable} (total_cents) VALUES (:total)"),
+        'failed to prepare the caller transaction insert',
+    );
+    php_persistence_example_assert($insert->execute(['total' => 2500]), 'failed to insert the earlier caller invoice');
+
+    $localFailure = new RuntimeException('simulated failure after a savepoint-local insert');
+    $originalFailureCaught = false;
+    try {
+        (new PdoSavepointTransactionRunner($pdo))->run(static function () use ($insert, $localFailure): never {
+            php_persistence_example_assert($insert->execute(['total' => 300]), 'failed to insert the savepoint-local invoice');
+
+            throw $localFailure;
+        });
+    } catch (RuntimeException $caught) {
+        if ($caught !== $localFailure) {
+            throw $caught;
+        }
+        $originalFailureCaught = true;
+    }
+
+    php_persistence_example_assert($originalFailureCaught, 'the original savepoint callback exception did not escape');
+    php_persistence_example_assert($pdo->inTransaction(), 'the savepoint runner ended the caller transaction');
+    $readTotals = static function (PDO $connection) use ($quotedTable): array {
+        $rows = php_persistence_example_require_statement(
+            $connection->query("SELECT total_cents FROM {$quotedTable} ORDER BY id"),
+            'failed to read invoice totals',
+        );
+        $totals = array_map(php_persistence_example_to_int(...), $rows->fetchAll(PDO::FETCH_COLUMN));
+        php_persistence_example_assert($rows->closeCursor(), 'failed to close the invoice totals query');
+
+        return $totals;
+    };
+    php_persistence_example_assert($readTotals($pdo) === [1999, 2500], 'only the failed callback write should be undone');
+
+    $observer = php_persistence_example_connect();
+    php_persistence_example_assert(
+        $observer->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED') !== false,
+        'failed to set the observer isolation level',
+    );
+    php_persistence_example_assert($readTotals($observer) === [1999], 'the earlier caller invoice is visible before commit');
+    php_persistence_example_assert($pdo->commit(), 'the caller could not commit its earlier invoice');
+    php_persistence_example_assert($readTotals($observer) === [1999, 2500], 'the caller commit must persist only the expected invoices');
+    echo "Boundary -> local rollback undid the callback write and the caller committed its earlier write\n";
 
     // Boundary: the configuration-validation failure of the constructor itself.
     $rejected = false;
