@@ -259,10 +259,11 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString('pipe operator requires a PHP version', $errors);
     }
 
-    public function testIndependentPipeArgumentsKeepTheirOwnLayout(): void
+    public function testIndependentPipeChainsKeepTheirOwnLayout(): void
     {
         [$status, $errors] = self::check(
-            "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n",
+            "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n"
+            . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
         );
 
         if (PHP_VERSION_ID >= 80500) {

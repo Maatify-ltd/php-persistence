@@ -52,6 +52,63 @@ const MAGIC_METHODS = [
 ];
 
 /**
+ * Delimiters and operators of lower precedence than a pipe in PHP 8.5.
+ * Closing delimiters also end the innermost expression.
+ */
+const PIPE_CHAIN_BOUNDARIES = [
+    ')',
+    ']',
+    '}',
+    ',',
+    ';',
+    '?',
+    ':',
+    '=',
+    '|',
+    '^',
+    '<',
+    '>',
+    T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG,
+    T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
+    T_BOOLEAN_AND,
+    T_BOOLEAN_OR,
+    T_COALESCE,
+    T_COALESCE_EQUAL,
+    T_DOUBLE_ARROW,
+    T_IS_EQUAL,
+    T_IS_NOT_EQUAL,
+    T_IS_IDENTICAL,
+    T_IS_NOT_IDENTICAL,
+    T_IS_SMALLER_OR_EQUAL,
+    T_IS_GREATER_OR_EQUAL,
+    T_SPACESHIP,
+    T_LOGICAL_AND,
+    T_LOGICAL_OR,
+    T_LOGICAL_XOR,
+    T_PLUS_EQUAL,
+    T_MINUS_EQUAL,
+    T_MUL_EQUAL,
+    T_DIV_EQUAL,
+    T_CONCAT_EQUAL,
+    T_MOD_EQUAL,
+    T_AND_EQUAL,
+    T_OR_EQUAL,
+    T_XOR_EQUAL,
+    T_SL_EQUAL,
+    T_SR_EQUAL,
+    T_POW_EQUAL,
+    T_THROW,
+    T_INCLUDE,
+    T_INCLUDE_ONCE,
+    T_REQUIRE,
+    T_REQUIRE_ONCE,
+    T_PRINT,
+    T_YIELD,
+    T_YIELD_FROM,
+    T_CLOSE_TAG,
+];
+
+/**
  * @param string $source
  * @return list<array{id: int|string, text: string, line: int}> all tokens including whitespace and comments
  */
@@ -397,7 +454,7 @@ function pipeChains(array $tokens, int $pipe): array
             $active[$depth][] = $i;
         } elseif (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
             $depth++;
-        } elseif (in_array($id, [')', ']', '}', ',', ';', '?', ':', '=', T_DOUBLE_ARROW, T_CLOSE_TAG], true)) {
+        } elseif (in_array($id, PIPE_CHAIN_BOUNDARIES, true)) {
             if (isset($active[$depth])) {
                 $chains[] = $active[$depth];
                 unset($active[$depth]);
