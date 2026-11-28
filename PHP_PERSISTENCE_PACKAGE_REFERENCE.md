@@ -1210,7 +1210,7 @@ A detailed, dated per-behavior mapping (the B-01 to B-16 rows, each with its leg
 
 - [README.md](README.md) — quick overview, installation/access status, requirements.
 - [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md) — capability map, walkthroughs, and the boundaries of each capability before its examples.
-- [examples/](examples/) — runnable, Public-API-only examples for all three capabilities.
+- [examples/](examples/) — standalone and Host-dependent examples using only the Public API across all three capabilities.
 - [llms.txt](llms.txt) — AI consumer navigation map.
 - [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md), [CONTRACT_MATRIX.md](docs/architecture/CONTRACT_MATRIX.md), [BEHAVIOR_CONTRACT.md](docs/architecture/BEHAVIOR_CONTRACT.md), [DATABASE_SUPPORT_AND_TEST_POLICY.md](docs/architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md), [CI_AND_INTEGRATION.md](docs/architecture/CI_AND_INTEGRATION.md) — design, legacy-mapping, and test-matrix detail, dated and framed as historical/evidence records rather than a second current contract.
 - [docs/decisions/DECISIONS_INDEX.md](docs/decisions/DECISIONS_INDEX.md) — durable decisions this reference applies.

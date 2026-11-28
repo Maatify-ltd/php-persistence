@@ -84,7 +84,7 @@ Each command provisions two disposable services for that engine. Look for `CONSU
 
 ### Run examples from the repository checkout
 
-With the checkout's Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the examples. To run an individual example manually, use the disposable database variables above and run the script from the repository root.
+With the checkout's Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the standalone examples. To run a standalone example manually, use the disposable database variables above and run the script from the repository root. For Host Snapshot B, follow the [application integration instructions](#run-the-examples-from-a-100-install) above.
 
 ---
 
