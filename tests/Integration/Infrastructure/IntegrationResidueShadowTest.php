@@ -214,12 +214,14 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
         self::assertMatchesRegularExpression('/^[1-9][0-9]*$/', $event);
 
         // Only the fixture controls this session and its single active event.
-        return ['transaction' => $row['id'],
+        return [
+            'transaction' => $row['id'],
             'started' => $row['started'],
             'thread' => $thread,
             'event' => $event,
             'endAcknowledged' => false,
-            'independentlyChecked' => false];
+            'independentlyChecked' => false,
+        ];
     }
 
     /**

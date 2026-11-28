@@ -24,22 +24,34 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
 
         try {
             file_put_contents($file, "<?php\n\ndeclare(strict_types=1);\n\n" . $source);
-            $process = proc_open(
-                [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file],
-                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-                $pipes,
-            );
-            self::assertIsResource($process);
-            stream_get_contents($pipes[1]);
-            $errors = (string) stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
+            [$status, , $errors] = self::runVerifier(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file);
 
-            return [proc_close($process), $errors];
+            return [$status, $errors];
         } finally {
             unlink($file);
             rmdir($directory);
         }
+    }
+
+    /**
+     * Runs the actual verifier and captures its status and both output streams.
+     *
+     * @return array{int, string, string}
+     */
+    private static function runVerifier(string $script, ?string $file = null): array
+    {
+        $command = [PHP_BINARY, $script];
+        if ($file !== null) {
+            $command[] = $file;
+        }
+        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        $output = (string) stream_get_contents($pipes[1]);
+        $errors = (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return [proc_close($process), $output, $errors];
     }
 
     /**
@@ -57,6 +69,15 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'index access on the next line is not an array' => ["\$x = \$list\n    ['key'];\n"],
             'nested call and array items are separate constructs' => [
                 "\$x = [\n    call(1, 2),\n    [3, 4],\n];\n",
+            ],
+            'nested multiline list matches the normative array example' => [
+                "\$x = [\n    'outer',\n    [\n        'nested',\n        'array',\n    ],\n];\n",
+            ],
+            'nested ternary indentation follows its own condition' => [
+                "\$x = \$outer\n    ? (\$inner\n        ? 'yes'\n        : 'no')\n    : 'fallback';\n",
+            ],
+            'multiline condition does not increase the ternary continuation indentation' => [
+                "\$x = \$left\n    || \$right\n    ? 'yes'\n    : 'no';\n",
             ],
             'ternary with a multiline operand keeps its inline operators' => [
                 "\$x = \$condition ? compute([\n    1,\n    2,\n]) : null;\n",
@@ -136,6 +157,26 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'split ternary keeps the first operator inline' => [
                 "\$x = \$condition ? 'result'\n    : 'fallback';\n",
                 'a split ternary must put each operator on its own continuation line',
+            ],
+            'multi-line array opens on the first item line' => [
+                "return ['first',\n    'second',\n];\n",
+                'the first value of a multi-line array must start on the line after its opening bracket',
+            ],
+            'multi-line array closes on the last item line' => [
+                "return [\n    'first',\n    'second',];\n",
+                'the closing bracket of a multi-line array must start on the line after its last value',
+            ],
+            'split ternary continuations are unindented' => [
+                "\$x = \$condition\n? 'yes'\n: 'no';\n",
+                'each split ternary continuation must be indented once from its condition',
+            ],
+            'split ternary continuations have different indentation' => [
+                "\$x = \$condition\n    ? 'yes'\n        : 'no';\n",
+                'each split ternary continuation must be indented once from its condition',
+            ],
+            'nested ternary continuations need their own indentation' => [
+                "\$x = \$outer\n    ? (\$inner\n    ? 'yes'\n    : 'no')\n    : 'fallback';\n",
+                'each split ternary continuation must be indented once from its condition',
             ],
             'case body in braces' => ["switch (\$a) {\n    case 1: {\n        break;\n    }\n}\n", 'must not be wrapped in braces'],
             'last case without terminator' => ["switch (\$a) {\n    case 1:\n        \$b = 1;\n}\n", 'must end with a terminating statement'],
@@ -285,23 +326,14 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
 
     public function testDefaultScopeCoversConfigurationAndScriptFiles(): void
     {
-        $process = proc_open(
-            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php'],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-        );
-        self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]);
-        $errors = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
+        [$status, $output, $errors] = self::runVerifier(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php');
 
-        self::assertSame(0, proc_close($process), $errors);
+        self::assertSame(0, $status, $errors);
         $scanned = (int) preg_replace('/^.*check: (\d+) files.*$/s', '$1', $output);
         self::assertGreaterThan(0, $scanned, $output);
         $expected = 0;
         $root = dirname(__DIR__, 2);
-        $skipped = ['vendor', '.git', 'docs', 'node_modules', '.phpunit.cache', '.phpstan'];
+        $skipped = ['vendor', '.git', 'node_modules', '.phpunit.cache', '.phpstan'];
         $filter = new \RecursiveCallbackFilterIterator(
             new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
             static fn(\SplFileInfo $entry): bool => !($entry->isDir() && in_array($entry->getFilename(), $skipped, true)),
@@ -315,4 +347,35 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertSame($expected, $scanned);
         self::assertFileExists($root . '/.php-cs-fixer.php');
     }
+
+    public function testDefaultScopeChecksHandwrittenPhpInDocs(): void
+    {
+        $root = sys_get_temp_dir() . '/percs-docs-' . bin2hex(random_bytes(8));
+        $script = $root . '/scripts/check-per-cs-3-1.php';
+        $example = $root . '/docs/examples/DocumentationProbe.php';
+
+        self::assertTrue(mkdir($root . '/scripts', 0700, true));
+        self::assertTrue(mkdir($root . '/docs/examples', 0700, true));
+        self::assertTrue(copy(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $script));
+        try {
+            $source = "<?php\n\ndeclare(strict_types=1);\n\nnamespace Fixture;\n\nfinal class DocumentationProbe\n{\n    public function checkStyle(): void {}\n}\n";
+            file_put_contents($example, $source);
+            [$status, $output, $errors] = self::runVerifier($script);
+            self::assertSame(0, $status, $errors);
+            self::assertStringContainsString('2 files, no findings', $output);
+
+            file_put_contents($example, str_replace('checkStyle', 'check_style', $source));
+            [$status, , $errors] = self::runVerifier($script);
+            self::assertSame(1, $status);
+            self::assertStringContainsString('/docs/examples/DocumentationProbe.php:9: method names must use camelCase', $errors);
+        } finally {
+            unlink($example);
+            unlink($script);
+            rmdir($root . '/docs/examples');
+            rmdir($root . '/docs');
+            rmdir($root . '/scripts');
+            rmdir($root);
+        }
+    }
+
 }

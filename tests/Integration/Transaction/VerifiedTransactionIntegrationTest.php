@@ -640,7 +640,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     {
         $observer = $this->connect();
         $table = $this->createTable($observer, 'verified');
-        return [$observer,
+        return [
+            $observer,
             $table,
             new Catalog([
                 'insert' => new Plan("INSERT INTO $table (id, v) VALUES (:id, :value)", ['id', 'value']),
@@ -648,7 +649,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
                 'visible' => new Plan("SELECT v FROM $table ORDER BY id", [], 2),
                 'limited' => new Plan("SELECT v FROM $table ORDER BY id", [], 1),
                 'update' => new Plan("UPDATE $table SET v = :value WHERE id = :id", ['id', 'value']),
-            ])];
+            ]),
+        ];
     }
 
     private function beginWithMarker(Checkout $checkout): void

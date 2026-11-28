@@ -30,7 +30,8 @@ final class PdoPaginatorExecutionTest extends TestCase
         $pdo = new ScriptedPdo([$total, $filtered, $data]);
         $q = new PdoPaginationQueryDescriptor('TOTAL', ['total_tenant' => 1], 'FILTERED', ['filtered_category' => 'books'], 'DATA', ['data_active' => true, 'none' => null]);
         $r = (new PdoPaginator())->paginate($pdo, $q, new PageRequest(2, 2, 'created_at', 'desc'), $this->config(), fn(array $row): array => $row);
-        self::assertSame(['TOTAL',
+        self::assertSame([
+            'TOTAL',
             'FILTERED',
             'DATA
 ORDER BY `created_at` DESC, `id` ASC

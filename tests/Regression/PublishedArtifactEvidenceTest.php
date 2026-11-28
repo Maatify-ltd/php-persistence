@@ -150,10 +150,12 @@ final class PublishedArtifactEvidenceTest extends TestCase
                     'expectedSha256' => hash_file('sha256', $repo . '/README.md'),
                     'observedSha256' => hash('sha256', 'altered'),
                 ], $records['CONTENT']['changedFiles']['README.md']);
-                self::assertSame([[
-                    'pathSha256' => hash('sha256', self::EXTRA_PATH),
-                    'observedSha256' => hash('sha256', 'extra'),
-                ]], $records['CONTENT']['unexpectedFiles']);
+                self::assertSame([
+                    [
+                        'pathSha256' => hash('sha256', self::EXTRA_PATH),
+                        'observedSha256' => hash('sha256', 'extra'),
+                    ],
+                ], $records['CONTENT']['unexpectedFiles']);
             } else {
                 self::assertIsArray($records['CONTENT']['matchingFiles']);
                 self::assertCount(count($files), $records['CONTENT']['matchingFiles']);

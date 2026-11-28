@@ -63,13 +63,15 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     ];
     $repositories = [$candidateRepository];
     if ($scenario === 'differential') {
-        $repositories[] = ['type' => 'path',
+        $repositories[] = [
+            'type' => 'path',
             'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF,
             'options' => [
                 'symlink' => false,
                 'reference' => 'none',
                 'versions' => [LEGACY_PACKAGE => $legacyVersion],
-            ]];
+            ],
+        ];
     }
 
     $manifest = [
@@ -123,11 +125,13 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
         if (!is_array($abandoned) || ($abandoned['audit'] ?? null) !== 'fail' || array_key_exists('ignore', $abandoned)) {
             throw new RuntimeException('DEC-016 requires the default abandoned audit policy with no existing ignores');
         }
-        $abandoned['ignore'] = [LEGACY_PACKAGE => [
-            'constraint' => LEGACY_RELEASE,
-            'on-block' => false,
-            'reason' => 'DEC-016: the exact legacy release is used only to verify migration coexistence.',
-        ]];
+        $abandoned['ignore'] = [
+            LEGACY_PACKAGE => [
+                'constraint' => LEGACY_RELEASE,
+                'on-block' => false,
+                'reason' => 'DEC-016: the exact legacy release is used only to verify migration coexistence.',
+            ],
+        ];
         $manifest['config']['policy']['abandoned'] = $abandoned;
         $auditManifest = json_encode($manifest, JSON_THROW_ON_ERROR);
         if (file_put_contents($directory . '/composer.json', $auditManifest) !== strlen($auditManifest)) {
@@ -251,14 +255,16 @@ function verifyConsumer(string $root, string $candidateRef, string $candidateTre
         /** @var array<string, mixed> $policy */
         $policy = $config['policy'];
         $legacyArchive = $workspace . '/legacy.tar.gz';
-        consumerCommand(['curl',
+        consumerCommand([
+            'curl',
             '--fail',
             '--silent',
             '--show-error',
             '--location',
             '--output',
             $legacyArchive,
-            'https://codeload.github.com/Maatify/persistence/tar.gz/' . LEGACY_SOURCE_REF], $workspace);
+            'https://codeload.github.com/Maatify/persistence/tar.gz/' . LEGACY_SOURCE_REF,
+        ], $workspace);
         consumerCommand(['tar', '-xzf', $legacyArchive], $workspace);
 
         $status = EXIT_TEST_FAILURE;

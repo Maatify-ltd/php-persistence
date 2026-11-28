@@ -35,12 +35,14 @@ final class IntegrationResidueShadowTest extends TestCase
     /** @return Binding */
     private static function binding(bool $ended): array
     {
-        return ['transaction' => '81',
+        return [
+            'transaction' => '81',
             'started' => self::row()['started'],
             'thread' => '22',
             'event' => '5',
             'endAcknowledged' => $ended,
-            'independentlyChecked' => $ended];
+            'independentlyChecked' => $ended,
+        ];
     }
 
     public function testMatchingWriterLockAndStableActiveEventProveLive(): void
