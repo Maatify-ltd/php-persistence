@@ -130,10 +130,12 @@ try {
     php_persistence_example_assert($orders === [1 => 2, 2 => 3, 3 => 1, 4 => 4], 'unexpected display_order values after the move');
     echo "Result   -> row 3 is now first; rows 1 and 2 shifted down (id => display_order: " . json_encode($orders) . ")\n";
 
-    // Boundary: moving a row that does not exist in the scope returns false, not an exception.
+    // Boundary: this call owns its transaction. For a missing row it returns
+    // false only after rollback is acknowledged and PDO reports no active
+    // transaction. A settlement failure throws an exception.
     $missing = $manager->moveWithinScope($pdo, $config, scopeValue: 7, id: 999, newOrder: 1);
-    php_persistence_example_assert($missing === false, 'moving a non-existent row must return false, not throw');
-    echo "Boundary -> moveWithinScope() for a non-existent row returned false (no exception)\n";
+    php_persistence_example_assert($missing === false, 'expected false for a missing row after confirmed rollback');
+    echo "Boundary -> moveWithinScope() returned false for a missing row after confirmed rollback\n";
 
     // Boundary: moveWithinScope() starts and owns a transaction on an idle
     // connection. When a caller transaction is active, the move participates

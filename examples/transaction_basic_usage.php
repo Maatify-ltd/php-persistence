@@ -127,6 +127,10 @@ try {
     php_persistence_example_assert($readTotals($pdo) === [1999, 2500], 'only the failed callback write should be undone');
 
     $observer = php_persistence_example_connect();
+    php_persistence_example_assert(
+        $observer->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED') !== false,
+        'failed to set the observer isolation level',
+    );
     php_persistence_example_assert($readTotals($observer) === [1999], 'the earlier caller invoice is visible before commit');
     php_persistence_example_assert($pdo->commit(), 'the caller could not commit its earlier invoice');
     php_persistence_example_assert($readTotals($observer) === [1999, 2500], 'the caller commit must persist only the expected invoices');
