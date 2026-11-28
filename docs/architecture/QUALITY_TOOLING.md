@@ -40,7 +40,8 @@ The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as t
 | Attributes on anonymous classes start on the line after `new`, indented once, class declaration on its own line with the same indentation | script |
 | Enum cases use PascalCase and non-public enum members use `private` | script: checks direct enum cases, constants and methods. An uppercase enum constant is valid; nested anonymous class methods keep their own visibility rules |
 | PSR-1 named declarations and method names | script: a named class, interface, trait or enum has a formal namespace and its own, case-matching source file. Methods use camelCase except for PHP magic methods. Anonymous classes and standalone functions retain their applicable rules. Composer autoload and entry-point tests establish discovery |
-| Opening bracket of a multi-line array not alone on its line, in all contexts | script |
+| Multiline array layout | script: an opening bracket does not stand alone, and each direct value starts on a separate line. Nested argument lists and single-line arrays keep their own rules |
+| Split ternary layout | script: both operators start continuation lines when the operators themselves split across lines. A multiline operand can retain an otherwise inline ternary |
 
 Scope: the script scans every PHP file of the repository except `vendor`, `docs`, `.git` and tool caches, so the root configuration file `.php-cs-fixer.php` and `scripts/` are included. `tests/Regression/PerCodingStyleDeltaCheckTest.php` has an accepting and a rejecting case for each rule and asserts the scan scope.
 

@@ -20,7 +20,9 @@ declare(strict_types=1);
  *  6. attributes on an anonymous class start on the line after "new", are indented once,
  *     and the class declaration starts on its own line with the same indentation;
  *  7. enum cases use PascalCase and non-public enum members use private;
- *  8. the opening bracket of a multi-line array does not stand alone on its line.
+ *  8. the opening bracket of a multi-line array does not stand alone and each
+ *     value has a separate line;
+ *  9. split ternaries put both operators on their own continuation lines.
  *
  * Usage: php scripts/check-per-cs-3-1.php [path ...]
  * Without arguments it scans every PHP file of the repository except vendor, docs and
@@ -30,8 +32,23 @@ declare(strict_types=1);
 const TERMINATORS = [T_BREAK, T_CONTINUE, T_RETURN, T_THROW, T_GOTO, T_EXIT];
 const EXPRESSION_PREVIOUS = [T_VARIABLE, ')', ']', T_STRING, T_CONSTANT_ENCAPSED_STRING, T_STATIC, T_NS_SEPARATOR];
 const MAGIC_METHODS = [
-    '__construct', '__destruct', '__call', '__callStatic', '__get', '__set', '__isset', '__unset',
-    '__sleep', '__wakeup', '__serialize', '__unserialize', '__toString', '__invoke', '__set_state', '__clone', '__debugInfo',
+    '__construct',
+    '__destruct',
+    '__call',
+    '__callStatic',
+    '__get',
+    '__set',
+    '__isset',
+    '__unset',
+    '__sleep',
+    '__wakeup',
+    '__serialize',
+    '__unserialize',
+    '__toString',
+    '__invoke',
+    '__set_state',
+    '__clone',
+    '__debugInfo',
 ];
 
 /**
@@ -690,22 +707,156 @@ function checkDeclarations(string $file, array $sig): array
 }
 
 /**
+ * Recognizes the return-type colon after a closure variable or parameter list.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function isClosureReturnTypeColon(array $sig, int $colon): bool
+{
+    if (($sig[$colon - 1]['id'] ?? null) !== ')') {
+        return false;
+    }
+    $open = matchingOpen($sig, $colon - 1);
+    if ($open === null) {
+        return false;
+    }
+    $declaration = $open - (($sig[$open - 1]['text'] ?? '') === '&' ? 2 : 1);
+
+    return in_array($sig[$declaration]['id'] ?? null, [T_FN, T_FUNCTION, T_USE], true);
+}
+
+/**
+ * Returns the ternary separator for a question mark at expression level, ignoring
+ * nested groups and nullable types in closure signatures.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function ternaryColon(array $sig, int $question): ?int
+{
+    $nested = 0;
+    $inReturnType = false;
+    for ($i = $question + 1; isset($sig[$i]); $i++) {
+        $id = $sig[$i]['id'];
+        if (in_array($id, [')', ']', '}', ',', ';', T_CLOSE_TAG], true)) {
+            return null;
+        }
+        if ($id === ':' && isClosureReturnTypeColon($sig, $i)) {
+            $inReturnType = true;
+        } elseif ($id === T_DOUBLE_ARROW || $id === '{') {
+            $inReturnType = false;
+        }
+        if (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $end = matching($sig, $i);
+            if ($end === null) {
+                return null;
+            }
+            $i = $end;
+
+            continue;
+        }
+        if ($inReturnType) {
+            continue;
+        }
+        if ($id === '?') {
+            $nested++;
+        } elseif ($id === ':') {
+            if ($nested === 0) {
+                return $i;
+            }
+            $nested--;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Checks the two operators of a split ternary. A multiline call or array within
+ * an operand does not split the ternary unless an operator itself breaks a line.
+ *
  * @param list<array{id: int|string, text: string, line: int}> $sig
  * @return list<string>
  */
-function checkArrayBrackets(string $file, array $sig): array
+function checkSplitTernaries(string $file, array $sig): array
 {
     $findings = [];
     foreach ($sig as $i => $token) {
-        if ($token['id'] !== '[' || $i === 0 || !firstOnLine($sig, $i)) {
+        if ($token['id'] !== '?' || !isset($sig[$i + 1]) || $sig[$i + 1]['id'] === ':'
+            || !in_array($sig[$i - 1]['id'] ?? null, [
+                T_VARIABLE,
+                T_STRING,
+                T_LNUMBER,
+                T_DNUMBER,
+                T_CONSTANT_ENCAPSED_STRING,
+                T_END_HEREDOC,
+                T_NAME_QUALIFIED,
+                T_NAME_FULLY_QUALIFIED,
+                T_NAME_RELATIVE,
+                T_LINE,
+                T_FILE,
+                T_DIR,
+                T_CLASS_C,
+                T_METHOD_C,
+                T_FUNC_C,
+                T_NS_C,
+                T_TRAIT_C,
+                T_INC,
+                T_DEC,
+                ')',
+                ']',
+                '}',
+                '"',
+                '`',
+            ], true)
+        ) {
             continue;
         }
-        if (in_array($sig[$i - 1]['id'], EXPRESSION_PREVIOUS, true)) {
+        $colon = ternaryColon($sig, $i);
+        if ($colon === null || !isset($sig[$colon + 1])) {
+            continue;
+        }
+        $split = firstOnLine($sig, $i) || firstOnLine($sig, $colon)
+            || endsLine($token, $sig[$i + 1]) || endsLine($sig[$colon], $sig[$colon + 1]);
+        if ($split && (!firstOnLine($sig, $i) || !firstOnLine($sig, $colon))) {
+            $findings[] = $file . ':' . $token['line'] . ': a split ternary must put each operator on its own continuation line';
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * Checks multiline short-array declarations without inspecting values inside
+ * nested expressions, and leaves multiline index access to the base formatter.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkArrays(string $file, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== '[' || $i === 0 || in_array($sig[$i - 1]['id'], EXPRESSION_PREVIOUS, true)) {
             continue;
         }
         $close = matching($sig, $i);
-        if ($close !== null && $sig[$close]['line'] > $token['line']) {
+        if ($close === null || $sig[$close]['line'] <= $token['line']) {
+            continue;
+        }
+        if (firstOnLine($sig, $i)) {
             $findings[] = $file . ':' . $token['line'] . ': the opening bracket of a multi-line array must not stand alone on its line';
+        }
+        if (($sig[$close + 1]['id'] ?? null) === '=' || $sig[$i - 1]['id'] === T_AS) {
+            // A short destructuring pattern is not an array declaration.
+            continue;
+        }
+        for ($j = $i + 1; $j < $close; $j++) {
+            $id = $sig[$j]['id'];
+            if (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+                $j = matching($sig, $j) ?? $j;
+            } elseif ($id === ',' && $j + 1 < $close && !endsLine($sig[$j - 1], $sig[$j + 1])) {
+                $findings[] = $file . ':' . $sig[$j + 1]['line'] . ': each value of a multi-line array must start on a separate line';
+            }
         }
     }
 
@@ -734,7 +885,8 @@ function checkSource(string $file, string $source): array
         ...checkEmptyClosure($file, $tokens, $sig),
         ...checkAnonymousClassAttributes($file, $sig, $lines),
         ...checkDeclarations($file, $sig),
-        ...checkArrayBrackets($file, $sig),
+        ...checkSplitTernaries($file, $sig),
+        ...checkArrays($file, $sig),
     ];
 }
 

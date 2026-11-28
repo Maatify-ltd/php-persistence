@@ -55,6 +55,15 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'multi-line array with bracket on the assignment line' => ["\$e = [\n    1,\n];\n"],
             'single-line array as argument' => ["foo([1, 2]);\n"],
             'index access on the next line is not an array' => ["\$x = \$list\n    ['key'];\n"],
+            'nested call and array items are separate constructs' => [
+                "\$x = [\n    call(1, 2),\n    [3, 4],\n];\n",
+            ],
+            'ternary with a multiline operand keeps its inline operators' => [
+                "\$x = \$condition ? compute([\n    1,\n    2,\n]) : null;\n",
+            ],
+            'split ternary places both operators at the start of continuation lines' => [
+                "\$x = \$condition\n    ? fn(): ?int => 5\n    : null;\n",
+            ],
             'switch ending every case with a terminator' => [
                 "switch (\$a) {\n    case 1:\n        return 1;\n    case 2:\n    case 3:\n        \$b = 2;\n        break;\n    default:\n        throw new Exception('x');\n}\n",
             ],
@@ -112,6 +121,22 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'closure empty body without space before brace' => ["\$a = function (): void{};\n", 'empty body must be written'],
             'standalone array bracket as argument' => ["foo(\n    [\n        1,\n    ],\n);\n", 'opening bracket of a multi-line array'],
             'standalone array bracket after assignment' => ["\$a =\n    [\n        1,\n    ];\n", 'opening bracket of a multi-line array'],
+            'multi-line array contains two values on the same line' => [
+                "return [\n    1, 2,\n    3,\n];\n",
+                'each value of a multi-line array must start on a separate line',
+            ],
+            'two values share a line across a multiline array operand' => [
+                "\$x = [\n    call(\n        1,\n    ), 2,\n];\n",
+                'each value of a multi-line array must start on a separate line',
+            ],
+            'split ternary packs both operators onto one line' => [
+                "\$x = \$condition\n    ? 'result' : 'fallback';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'split ternary keeps the first operator inline' => [
+                "\$x = \$condition ? 'result'\n    : 'fallback';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
             'case body in braces' => ["switch (\$a) {\n    case 1: {\n        break;\n    }\n}\n", 'must not be wrapped in braces'],
             'last case without terminator' => ["switch (\$a) {\n    case 1:\n        \$b = 1;\n}\n", 'must end with a terminating statement'],
             'middle case without terminator' => ["switch (\$a) {\n    case 1:\n        \$b = 1;\n    case 2:\n        break;\n}\n", 'must end with a terminating statement'],
