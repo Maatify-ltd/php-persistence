@@ -62,26 +62,26 @@ final readonly class LazySavepointSchema
         foreach ([$this->plain => '', $this->unique => ', UNIQUE KEY `u_updated` (`updated_at`)'] as $table => $extra) {
             $this->pdo->exec(
                 'CREATE TABLE `' . $table . '` ('
-                . ' `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,'
+                    . ' `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,'
                 // DEFAULT 0 only matters for the filler rows the DeadlockPartner INSERT adds
                 // (see `payload` above); every row this test suite seeds sets it explicitly.
-                . ' `display_order` INT NOT NULL DEFAULT 0,'
-                . ' `deleted_at` DATETIME NULL DEFAULT NULL,'
-                . ' `updated_at` DATETIME NULL DEFAULT NULL,'
+                    . ' `display_order` INT NOT NULL DEFAULT 0,'
+                    . ' `deleted_at` DATETIME NULL DEFAULT NULL,'
+                    . ' `updated_at` DATETIME NULL DEFAULT NULL,'
                 // `payload` carries no ordering meaning; it exists only so the generic
                 // tests/Integration/Support/DeadlockPartner.php filler INSERT (used by
                 // ScopedOrderingManagerLazySavepointTest's genuine-deadlock test) can make
                 // itself heavy against this exact table without a dedicated partner script.
-                . ' `payload` VARCHAR(32) NULL DEFAULT NULL,'
-                . ' `label` VARCHAR(191) NOT NULL DEFAULT \'\','
-                . ' PRIMARY KEY (`id`)' . $extra
-                . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+                    . ' `payload` VARCHAR(32) NULL DEFAULT NULL,'
+                    . ' `label` VARCHAR(191) NOT NULL DEFAULT \'\','
+                    . ' PRIMARY KEY (`id`)' . $extra
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
             );
 
             for ($i = 1; $i <= 5; $i++) {
                 $this->pdo->exec(
                     'INSERT INTO `' . $table . '` (`display_order`, `updated_at`, `label`)'
-                    . " VALUES ({$i}, '2026-01-0{$i} 00:00:00', 'row {$i}')",
+                        . " VALUES ({$i}, '2026-01-0{$i} 00:00:00', 'row {$i}')",
                 );
             }
         }

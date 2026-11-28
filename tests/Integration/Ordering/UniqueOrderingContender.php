@@ -41,7 +41,7 @@ $config = new UniqueOrderingConfig(
 );
 $pdo = new PDO(
     'mysql:host=' . getenv('PHP_PERSISTENCE_IT_HOST') . ';port=' . getenv('PHP_PERSISTENCE_IT_PORT')
-    . ';dbname=' . getenv('PHP_PERSISTENCE_IT_DATABASE'),
+        . ';dbname=' . getenv('PHP_PERSISTENCE_IT_DATABASE'),
     (string) getenv('PHP_PERSISTENCE_IT_USER'),
     (string) getenv('PHP_PERSISTENCE_IT_PASSWORD'),
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],

@@ -55,10 +55,10 @@ $quotedMethods = '`' . php_persistence_example_table_name('shipping_methods') . 
 php_persistence_example_assert(
     $pdo->exec(
         "CREATE TABLE {$quotedTable} ("
-        . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
-        . 'method_id INT UNSIGNED NOT NULL, '
-        . 'display_order INT UNSIGNED NOT NULL, '
-        . 'KEY method_order (method_id, display_order)) ENGINE=InnoDB',
+            . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
+            . 'method_id INT UNSIGNED NOT NULL, '
+            . 'display_order INT UNSIGNED NOT NULL, '
+            . 'KEY method_order (method_id, display_order)) ENGINE=InnoDB',
     ) !== false,
     'failed to create the ordering fixture table',
 );

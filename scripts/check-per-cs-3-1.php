@@ -22,7 +22,7 @@ declare(strict_types=1);
  *  7. enum cases use PascalCase and non-public enum members use private;
  *  8. multi-line arrays place each value and the closing bracket on separate
  *     lines, following the array declaration and nested-list rules;
- *  9. split ternaries put both operators on indented continuation lines.
+ *  9. split operators start indented continuation lines.
  *
  * Usage: php scripts/check-per-cs-3-1.php [path ...]
  * With no paths it scans repository PHP, including maintained documentation
@@ -520,8 +520,8 @@ function checkPipe(string $file, array $tokens, array $lines): array
                 || $line === $previousOperatorLine
             ) {
                 $findings[] = $file . ':' . $line . ': in a split pipe chain each line starts with the operator';
-            } elseif (indentOf($lines, $line) <= $baseIndent) {
-                $findings[] = $file . ':' . $line . ': continuation lines of a pipe chain must be indented';
+            } elseif (!isIndentation($lines, $line, $baseIndent + 4)) {
+                $findings[] = $file . ':' . $line . ': continuation lines of a pipe chain must be indented once';
             }
             $previousOperatorLine = $line;
         }
@@ -828,13 +828,123 @@ function ternaryColon(array $sig, int $question): ?int
     return null;
 }
 
+/** Identifies tokens that can finish a left operand of a source operator. */
+function endsOperatorOperand(int|string|null $id): bool
+{
+    return in_array($id, [
+        T_VARIABLE,
+        T_STRING,
+        T_LNUMBER,
+        T_DNUMBER,
+        T_CONSTANT_ENCAPSED_STRING,
+        T_END_HEREDOC,
+        T_NAME_QUALIFIED,
+        T_NAME_FULLY_QUALIFIED,
+        T_NAME_RELATIVE,
+        T_LINE,
+        T_FILE,
+        T_DIR,
+        T_CLASS_C,
+        T_CLASS,
+        T_METHOD_C,
+        T_FUNC_C,
+        T_NS_C,
+        T_TRAIT_C,
+        T_PROPERTY_C,
+        T_INC,
+        T_DEC,
+        ')',
+        ']',
+        '}',
+        '"',
+        '`',
+    ], true);
+}
+
 /**
- * Finds the first token of the ternary condition at its own expression level.
+ * A brace can close an operand (such as a match expression or a closure)
+ * or a statement which can be followed by a standalone unary expression.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function endsBraceOperand(array $sig, int $close): bool
+{
+    $open = matchingOpen($sig, $close);
+    if ($open === null) {
+        return false;
+    }
+    if (in_array($sig[$open]['id'], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)
+        || in_array($sig[$open - 1]['id'] ?? null, [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, '\$'], true)
+    ) {
+        return true;
+    }
+    for ($i = $open - 1; $i >= 0; $i--) {
+        $id = $sig[$i]['id'];
+        if ($id === T_MATCH) {
+            return true;
+        }
+        if ($id === T_CLASS) {
+            return in_array($sig[$i + 1]['id'], ['{', '(', T_EXTENDS, T_IMPLEMENTS], true);
+        }
+        if ($id === T_FUNCTION) {
+            $parameters = $sig[$i + 1]['text'] === '&' ? $i + 2 : $i + 1;
+
+            return $sig[$parameters]['id'] === '(';
+        }
+        if (in_array($id, [
+            T_IF,
+            T_ELSEIF,
+            T_ELSE,
+            T_WHILE,
+            T_FOR,
+            T_FOREACH,
+            T_SWITCH,
+            T_CATCH,
+            T_TRY,
+            T_FINALLY,
+            T_DO,
+            T_NAMESPACE,
+            T_INTERFACE,
+            T_TRAIT,
+            T_ENUM,
+            T_OPEN_TAG,
+            T_OPEN_TAG_WITH_ECHO,
+            ';',
+            '{',
+            '}',
+            '[',
+            '=',
+            '(',
+        ], true)) {
+            return false;
+        }
+        if ($id === ')') {
+            $i = matchingOpen($sig, $i) ?? $i;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Checks the required space-only indentation at a continuation line.
+ *
+ * @param list<string> $lines
+ */
+function isIndentation(array $lines, int $line, int $spaces): bool
+{
+    $text = $lines[$line - 1] ?? '';
+
+    return substr($text, 0, indentOf($lines, $line)) === str_repeat(' ', $spaces);
+}
+
+/**
+ * Finds the first token of an expression at its own nesting level.
  * Closing groups inside the condition are skipped while walking backward.
  *
  * @param list<array{id: int|string, text: string, line: int}> $sig
  */
-function ternaryConditionStart(array $sig, int $question): int
+function operatorExpressionStart(array $sig, int $operator, bool $lowPrecedence = false, bool $shortTernary = false): int
 {
     $boundaries = [
         '(',
@@ -852,9 +962,6 @@ function ternaryConditionStart(array $sig, int $question): int
         T_THROW,
         T_YIELD,
         T_YIELD_FROM,
-        T_LOGICAL_AND,
-        T_LOGICAL_OR,
-        T_LOGICAL_XOR,
         T_DOUBLE_ARROW,
         T_COALESCE_EQUAL,
         T_PLUS_EQUAL,
@@ -870,8 +977,16 @@ function ternaryConditionStart(array $sig, int $question): int
         T_SR_EQUAL,
         T_POW_EQUAL,
     ];
-    for ($i = $question - 1; $i >= 0; $i--) {
+    if (!$lowPrecedence) {
+        array_push($boundaries, T_LOGICAL_AND, T_LOGICAL_OR, T_LOGICAL_XOR);
+    }
+    for ($i = $operator - 1; $i >= 0; $i--) {
         $id = $sig[$i]['id'];
+        if ($shortTernary && $id === ':' && ($sig[$i - 1]['id'] ?? null) === '?') {
+            $i--;
+
+            continue;
+        }
         if (in_array($id, $boundaries, true)) {
             return $i + 1;
         }
@@ -881,6 +996,235 @@ function ternaryConditionStart(array $sig, int $question): int
     }
 
     return 0;
+}
+
+/**
+ * Marks operator-shaped tokens in parameter types and references, excluding
+ * attributes and default value expressions.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param array<int, true> $symbols
+ */
+function markParameterSymbols(array $sig, int $open, int $close, array &$symbols): void
+{
+    $beforeName = true;
+    for ($i = $open + 1; $i < $close; $i++) {
+        $id = $sig[$i]['id'];
+        if ($id === T_ATTRIBUTE || (!$beforeName && in_array($id, ['(', '[', '{'], true))) {
+            $i = matching($sig, $i) ?? $i;
+        } elseif ($id === ',') {
+            $beforeName = true;
+        } elseif ($id === T_VARIABLE) {
+            $beforeName = false;
+        } elseif ($beforeName && ($id === '|' || $sig[$i]['text'] === '&')) {
+            $symbols[$i] = true;
+        }
+    }
+}
+
+/**
+ * Collects positions of union/intersection tokens used by PHP declarations.
+ * PHP uses the same token IDs for bitwise expressions, type syntax and references.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return array<int, true>
+ */
+function declarationSymbols(array $sig): array
+{
+    $symbols = [];
+    $memberTypes = [
+        T_STRING,
+        T_NAME_QUALIFIED,
+        T_NAME_FULLY_QUALIFIED,
+        T_NAME_RELATIVE,
+        T_STATIC,
+        T_ARRAY,
+        T_CALLABLE,
+        T_FINAL,
+        T_READONLY,
+        T_PRIVATE,
+        T_PROTECTED,
+        T_PUBLIC,
+        T_PRIVATE_SET,
+        T_PROTECTED_SET,
+        T_PUBLIC_SET,
+        '?',
+        '|',
+        '(',
+        ')',
+        T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG,
+        T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
+    ];
+    foreach ($sig as $i => $token) {
+        $kind = $token['id'];
+        if (in_array($kind, [T_FUNCTION, T_FN, T_CATCH], true)) {
+            $parameter = $i + 1;
+            if (($sig[$parameter]['text'] ?? null) === '&') {
+                $parameter++;
+            }
+            // Named declarations have one token between the keyword and the parameter list.
+            if (($sig[$parameter]['id'] ?? null) !== '(') {
+                $parameter++;
+            }
+            $end = ($sig[$parameter]['id'] ?? null) === '(' ? matching($sig, $parameter) : null;
+            if ($end === null) {
+                continue;
+            }
+            markParameterSymbols($sig, $parameter, $end, $symbols);
+            if (($sig[$end + 1]['id'] ?? null) === T_USE && ($sig[$end + 2]['id'] ?? null) === '(') {
+                $end = matching($sig, $end + 2) ?? $end;
+            }
+            if (($sig[$end + 1]['id'] ?? null) !== ':') {
+                continue;
+            }
+            for ($type = $end + 2; isset($sig[$type]) && in_array($sig[$type]['id'], $memberTypes, true); $type++) {
+                if ($sig[$type]['text'] === '|' || $sig[$type]['text'] === '&') {
+                    $symbols[$type] = true;
+                }
+            }
+        } elseif (in_array($kind, [T_PRIVATE, T_PROTECTED, T_PUBLIC, T_PRIVATE_SET, T_PROTECTED_SET, T_PUBLIC_SET, T_READONLY, T_VAR, T_CONST], true)) {
+            $typePositions = [];
+            for ($type = $i + 1; isset($sig[$type]) && in_array($sig[$type]['id'], $memberTypes, true); $type++) {
+                if ($sig[$type]['text'] === '|' || $sig[$type]['text'] === '&') {
+                    $typePositions[$type] = true;
+                }
+            }
+            $afterType = $sig[$type]['id'] ?? null;
+            if ($afterType === T_VARIABLE || ($kind === T_CONST && $afterType === '=')) {
+                $symbols += $typePositions;
+            }
+        }
+    }
+
+    return $symbols;
+}
+
+/**
+ * Returns the opening token to which a split logical condition is aligned.
+ * Parenthesized subconditions can group their own lines. A call or an indexing
+ * expression inside a control condition instead has its own expression rules.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function logicalControlStart(array $sig, int $index): ?int
+{
+    $anchor = null;
+    for ($i = $index - 1; $i > 0; $i--) {
+        $id = $sig[$i]['id'];
+        if ($id === '(') {
+            $before = $sig[$i - 1]['id'];
+            if (in_array($before, [T_IF, T_ELSEIF, T_WHILE, T_FOR, T_FOREACH, T_SWITCH, T_MATCH, T_CASE], true)) {
+                return $anchor ?? $i - 1;
+            }
+            if (endsOperatorOperand($before)) {
+                return null;
+            }
+            $anchor ??= $i;
+        } elseif (in_array($id, ['[', '{', T_OPEN_TAG, T_OPEN_TAG_WITH_ECHO, T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            return null;
+        } elseif (in_array($id, [')', ']', '}'], true)) {
+            $i = matchingOpen($sig, $i) ?? $i;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Checks operators whose placement actually breaks a line. Indentation is
+ * relative to their expression, or the keyword for a direct control condition.
+ * Inline operators inside otherwise multiline expressions stay inline.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<string> $lines
+ * @return list<string>
+ */
+function checkSplitBinaryOperators(string $file, array $sig, array $lines): array
+{
+    $findings = [];
+    $operators = [
+        T_POW,
+        '*',
+        '/',
+        '%',
+        '+',
+        '-',
+        '<',
+        T_IS_SMALLER_OR_EQUAL,
+        '>',
+        T_IS_GREATER_OR_EQUAL,
+        T_IS_EQUAL,
+        T_IS_NOT_EQUAL,
+        T_IS_IDENTICAL,
+        T_IS_NOT_IDENTICAL,
+        T_SPACESHIP,
+        '=',
+        T_PLUS_EQUAL,
+        T_MINUS_EQUAL,
+        T_MUL_EQUAL,
+        T_POW_EQUAL,
+        T_DIV_EQUAL,
+        T_CONCAT_EQUAL,
+        T_MOD_EQUAL,
+        T_AND_EQUAL,
+        T_OR_EQUAL,
+        T_XOR_EQUAL,
+        T_SL_EQUAL,
+        T_SR_EQUAL,
+        T_COALESCE_EQUAL,
+        T_SL,
+        T_SR,
+        T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG,
+        T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
+        '^',
+        '|',
+        T_BOOLEAN_AND,
+        T_BOOLEAN_OR,
+        T_LOGICAL_AND,
+        T_LOGICAL_XOR,
+        T_LOGICAL_OR,
+        T_COALESCE,
+        '.',
+        T_INSTANCEOF,
+    ];
+    $declarations = declarationSymbols($sig);
+    foreach ($sig as $i => $token) {
+        $shortTernary = $token['id'] === '?' && ($sig[$i + 1]['id'] ?? null) === ':';
+        if ((!$shortTernary && !in_array($token['id'], $operators, true))
+            || isset($declarations[$i]) || !endsOperatorOperand($sig[$i - 1]['id'] ?? null)
+        ) {
+            continue;
+        }
+        $last = $i + (int) $shortTernary;
+        $next = $sig[$last + 1] ?? null;
+        $first = firstOnLine($sig, $i);
+        if ($next === null || (!$first && !endsLine($sig[$i], $next))) {
+            continue;
+        }
+        $line = $token['line'];
+        $name = $shortTernary ? '?:' : $token['text'];
+        $lineStart = ltrim($lines[$line - 1] ?? '', " \t");
+        if (in_array($token['id'], ['+', '-'], true) && ($sig[$i - 1]['id'] ?? null) === '}'
+            && !endsBraceOperand($sig, $i - 1)
+        ) {
+            // After a standalone block, a unary sign can begin a new statement.
+            continue;
+        }
+        if (!$first || !str_starts_with($lineStart, $token['text']) || endsLine($sig[$i], $next)) {
+            $findings[] = $file . ':' . $line . ': a split operator must start its operand line (' . $name . ')';
+
+            continue;
+        }
+        $lowPrecedence = in_array($token['id'], [T_LOGICAL_AND, T_LOGICAL_OR, T_LOGICAL_XOR], true);
+        $logical = $lowPrecedence || in_array($token['id'], [T_BOOLEAN_AND, T_BOOLEAN_OR], true);
+        $control = $logical ? logicalControlStart($sig, $i) : null;
+        $start = $control ?? operatorExpressionStart($sig, $i, $lowPrecedence, $shortTernary);
+        if (!isIndentation($lines, $line, indentOf($lines, $sig[$start]['line']) + 4)) {
+            $findings[] = $file . ':' . $line . ': each split operator continuation must be indented once (' . $name . ')';
+        }
+    }
+
+    return $findings;
 }
 
 /**
@@ -896,32 +1240,7 @@ function checkSplitTernaries(string $file, array $sig, array $lines): array
     $findings = [];
     foreach ($sig as $i => $token) {
         if ($token['id'] !== '?' || !isset($sig[$i + 1]) || $sig[$i + 1]['id'] === ':'
-            || !in_array($sig[$i - 1]['id'] ?? null, [
-                T_VARIABLE,
-                T_STRING,
-                T_LNUMBER,
-                T_DNUMBER,
-                T_CONSTANT_ENCAPSED_STRING,
-                T_END_HEREDOC,
-                T_NAME_QUALIFIED,
-                T_NAME_FULLY_QUALIFIED,
-                T_NAME_RELATIVE,
-                T_LINE,
-                T_FILE,
-                T_DIR,
-                T_CLASS_C,
-                T_METHOD_C,
-                T_FUNC_C,
-                T_NS_C,
-                T_TRAIT_C,
-                T_INC,
-                T_DEC,
-                ')',
-                ']',
-                '}',
-                '"',
-                '`',
-            ], true)
+            || !endsOperatorOperand($sig[$i - 1]['id'] ?? null)
         ) {
             continue;
         }
@@ -934,16 +1253,17 @@ function checkSplitTernaries(string $file, array $sig, array $lines): array
         if (!$split) {
             continue;
         }
-        if (!firstOnLine($sig, $i) || !firstOnLine($sig, $colon)) {
+        if (!firstOnLine($sig, $i) || !firstOnLine($sig, $colon)
+            || endsLine($token, $sig[$i + 1]) || endsLine($sig[$colon], $sig[$colon + 1])
+        ) {
             $findings[] = $file . ':' . $token['line'] . ': a split ternary must put each operator on its own continuation line';
 
             continue;
         }
-        $conditionLine = $sig[ternaryConditionStart($sig, $i)]['line'];
-        $continuation = str_repeat(' ', indentOf($lines, $conditionLine) + 4);
+        $conditionLine = $sig[operatorExpressionStart($sig, $i)]['line'];
+        $indent = indentOf($lines, $conditionLine) + 4;
         foreach ([$token['line'], $sig[$colon]['line']] as $line) {
-            $text = $lines[$line - 1] ?? '';
-            if (substr($text, 0, indentOf($lines, $line)) !== $continuation) {
+            if (!isIndentation($lines, $line, $indent)) {
                 $findings[] = $file . ':' . $line . ': each split ternary continuation must be indented once from its condition';
             }
         }
@@ -1047,6 +1367,7 @@ function checkSource(string $file, string $source): array
         ...checkAnonymousClassAttributes($file, $sig, $lines),
         ...checkDeclarations($file, $sig),
         ...checkSplitTernaries($file, $sig, $lines),
+        ...checkSplitBinaryOperators($file, $sig, $lines),
         ...checkArrays($file, $sig),
     ];
 }

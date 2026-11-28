@@ -175,10 +175,10 @@ abstract class DeadlockIntegrationTestCase extends IntegrationTestCase
         $name = 'it_' . bin2hex(random_bytes(6)) . '_deadlock';
         $pdo->exec(
             'CREATE TABLE `' . $name . '` ('
-            . '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-            . '`payload` VARCHAR(128) NOT NULL, '
-            . 'PRIMARY KEY (`id`)'
-            . ') ENGINE=InnoDB',
+                . '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+                . '`payload` VARCHAR(128) NOT NULL, '
+                . 'PRIMARY KEY (`id`)'
+                . ') ENGINE=InnoDB',
         );
 
         return $name;

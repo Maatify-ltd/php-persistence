@@ -37,7 +37,7 @@ final readonly class OrderingOperations
             __FUNCTION__,
             'SELECT COALESCE(MAX(' . $config->quotedOrderColumn() . '), 0)
                FROM ' . $config->quotedTable()
-            . $whereSql,
+                . $whereSql,
         );
 
         $this->executeStatement($stmt, $params, __FUNCTION__);
@@ -90,8 +90,8 @@ final readonly class OrderingOperations
             $operation,
             'SELECT ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
-            . $whereSql
-            . ' ORDER BY ' . $config->quotedOrderColumn() . ' DESC, ' . $config->quotedIdColumn() . ' DESC
+                . $whereSql
+                . ' ORDER BY ' . $config->quotedOrderColumn() . ' DESC, ' . $config->quotedIdColumn() . ' DESC
               LIMIT 1
               FOR UPDATE',
         );
@@ -311,8 +311,8 @@ final readonly class OrderingOperations
             __FUNCTION__,
             'SELECT ' . $config->quotedIdColumn() . ', ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
-            . $whereSql
-            . ' ORDER BY ' . $config->quotedOrderColumn() . ' ASC, ' . $config->quotedIdColumn() . ' ASC
+                . $whereSql
+                . ' ORDER BY ' . $config->quotedOrderColumn() . ' ASC, ' . $config->quotedIdColumn() . ' ASC
               FOR UPDATE',
         );
 

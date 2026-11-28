@@ -55,7 +55,7 @@ final readonly class OrderingFailureInjector
         $constraint = 'chk_fail_' . $table;
         $result = $this->pdo->exec(
             'ALTER TABLE `' . $table . '` ADD CONSTRAINT `' . $constraint . '`'
-            . ' CHECK (`label` <> \'' . $marker . '\' OR `display_order` <> ' . $forbiddenOrder . ')',
+                . ' CHECK (`label` <> \'' . $marker . '\' OR `display_order` <> ' . $forbiddenOrder . ')',
         );
 
         if ($result === false) {

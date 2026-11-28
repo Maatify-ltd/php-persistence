@@ -199,7 +199,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             $table = $this->scopedTable;
             $this->pdo->exec(
                 "CREATE TRIGGER `{$table}_snapshot` BEFORE UPDATE ON `$table` FOR EACH ROW "
-                . "SET NEW.label = (SELECT CAST(v AS CHAR) FROM `$auxiliary` WHERE id = 1 FOR UPDATE)",
+                    . "SET NEW.label = (SELECT CAST(v AS CHAR) FROM `$auxiliary` WHERE id = 1 FOR UPDATE)",
             );
             $catalog['snapshot'] = new ProtectedTransactionCommandPlan("SELECT v FROM `$auxiliary` WHERE id = 1", [], 1);
         }

@@ -85,6 +85,39 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'split ternary places both operators at the start of continuation lines' => [
                 "\$x = \$condition\n    ? fn(): ?int => 5\n    : null;\n",
             ],
+            'short ternary and coalescing chains align their own continuations' => [
+                "\$a = \$left\n    ?: \$middle\n    ?: \$right;\n\$b = \$left\n    ?? \$middle\n    ?? \$right;\n",
+            ],
+            'direct and parenthesized logical control conditions share their own indentation' => [
+                "if (\n    \$a\n    && (\n        \$b\n        || \$c\n    )\n) {\n    report();\n}\n",
+            ],
+            'nested named argument uses its own indentation' => [
+                "report(\n    value: (\$a\n        + \$b)\n        ?? \$fallback,\n);\n",
+            ],
+            'nested call argument does not take indentation from the control keyword' => [
+                "if (\n    test(\n        \$a\n            && \$b,\n    )\n    && \$c\n) {\n    report();\n}\n",
+            ],
+            'inline operator before multiline groups stays inline' => [
+                "\$value = \$left + compute(\n    1,\n    2,\n) * (\n    \$right\n);\n",
+            ],
+            'unary signs following return, assignments, and a statement block' => [
+                "if (\$a) {\n    \$a = -\$a;\n}\n+ \$a;\nreturn -(+\$a);\n",
+            ],
+            'expression closing braces and class literals can finish an operand' => [
+                "\$x = match (1) {\n    default => 1,\n}\n    + 2;\n\$klass = SomeClass::class\n    ?? 'fallback';\n",
+            ],
+            'types and references do not act as bitwise operators' => [
+                "function &sample(\n    (First&Second)|Third \$arg,\n    ?int &\$ref,\n): First|Second {\n    \$target = &\$ref;\n\n    return \$target;\n}\n",
+            ],
+            'split types retain their declaration syntax' => [
+                "function sample(\n    (First&Second)\n        |Third \$arg,\n): First\n    |Second {\n    return \$arg;\n}\n",
+            ],
+            'quoted operators and comments do not act as executable operators' => [
+                "\$text = 'first\n?? second\n+ third\n?: fourth';\n// + \$right\n/* \$left\n& \$right */\n",
+            ],
+            'low precedence logical operators can share a continuation level' => [
+                "\$result = \$first\n    and \$second\n    or \$third;\n",
+            ],
             'switch ending every case with a terminator' => [
                 "switch (\$a) {\n    case 1:\n        return 1;\n    case 2:\n    case 3:\n        \$b = 2;\n        break;\n    default:\n        throw new Exception('x');\n}\n",
             ],
@@ -165,6 +198,34 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'multi-line array closes on the last item line' => [
                 "return [\n    'first',\n    'second',];\n",
                 'the closing bracket of a multi-line array must start on the line after its last value',
+            ],
+            'split ternary starts its middle operand after the operator line' => [
+                "\$x = \$condition\n    ?\n        'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'overindented binary continuation' => [
+                "\$x = \$left\n        + \$right;\n",
+                'each split operator continuation must be indented once (+)',
+            ],
+            'nested arithmetic continuation follows its own operand' => [
+                "\$x = \$first\n    ?: (\$left\n    * \$right);\n",
+                'each split operator continuation must be indented once (*)',
+            ],
+            'binary addition remains binary after a match brace' => [
+                "\$x = match (1) {\n    default => 1,\n}\n+ 2;\n",
+                'each split operator continuation must be indented once (+)',
+            ],
+            'binary subtraction remains binary after a closure brace' => [
+                "\$x = function () {}\n- 2;\n",
+                'each split operator continuation must be indented once (-)',
+            ],
+            'operator after a comment does not start the continuation' => [
+                "\$x = \$left\n    /* comment */ + \$right;\n",
+                'a split operator must start its operand line (+)',
+            ],
+            'logical control continuation needs indentation from the keyword' => [
+                "if (\n    \$a\n&& \$b\n) {\n    report();\n}\n",
+                'each split operator continuation must be indented once (&&)',
             ],
             'split ternary continuations are unindented' => [
                 "\$x = \$condition\n? 'yes'\n: 'no';\n",
@@ -252,6 +313,74 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString($message, $errors);
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function binaryOperators(): iterable
+    {
+        foreach ([
+            '**',
+            '*',
+            '/',
+            '%',
+            '+',
+            '-',
+            '<',
+            '<=',
+            '>',
+            '>=',
+            '==',
+            '!=',
+            '===',
+            '!==',
+            '<>',
+            '<=>',
+            '=',
+            '+=',
+            '-=',
+            '*=',
+            '**=',
+            '/=',
+            '.=',
+            '%=',
+            '&=',
+            '|=',
+            '^=',
+            '<<=',
+            '>>=',
+            '??=',
+            '<<',
+            '>>',
+            '&',
+            '^',
+            '|',
+            '&&',
+            '||',
+            'and',
+            'xor',
+            'or',
+            '.',
+            'instanceof',
+            '??',
+            '?:',
+        ] as $operator) {
+            yield $operator => [$operator];
+        }
+    }
+
+    #[DataProvider('binaryOperators')]
+    public function testBinaryOperatorsEnforceContinuationPlacement(string $operator): void
+    {
+        [$valid, $validErrors] = self::check("\$result = \$left\n    $operator \$right;\n");
+        self::assertSame(0, $valid, $validErrors);
+
+        [$unindented, $indentationErrors] = self::check("\$result = \$left\n$operator \$right;\n");
+        self::assertSame(1, $unindented);
+        self::assertStringContainsString("each split operator continuation must be indented once ($operator)", $indentationErrors);
+
+        [$trailing, $placementErrors] = self::check("\$result = \$left $operator\n    \$right;\n");
+        self::assertSame(1, $trailing);
+        self::assertStringContainsString("a split operator must start its operand line ($operator)", $placementErrors);
+    }
+
     /**
      * @return array<string, array{string, string}> source and the message expected on PHP 8.5 or later
      */
@@ -304,7 +433,7 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
     {
         [$status, $errors] = self::check(
             "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n"
-            . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
+                . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
         );
 
         if (PHP_VERSION_ID >= 80500) {

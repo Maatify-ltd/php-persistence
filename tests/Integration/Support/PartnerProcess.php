@@ -228,7 +228,7 @@ final class PartnerProcess
                 if (!$this->waitForExit(self::TERMINATE_GRACE_SECONDS)) {
                     $failure = sprintf(
                         'Test partner pid %d is still running %.1f s after SIGKILL (SIGTERM delivery %s, SIGKILL delivery %s); '
-                        . 'proc_close() is not called because it would block, so the child is leaked and must be killed manually; %s',
+                            . 'proc_close() is not called because it would block, so the child is leaked and must be killed manually; %s',
                         $this->pid,
                         self::TERMINATE_GRACE_SECONDS,
                         $termSent ? 'ok' : 'failed',
