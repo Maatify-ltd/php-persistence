@@ -114,21 +114,8 @@ jobs:
         run: composer check-platform-reqs
       - name: PHP syntax on this PHP minor
         run: composer syntax
-      - name: Dependency policy is configured fail-closed
-        run: |
-          set -euo pipefail
-          for variable in COMPOSER_POLICY COMPOSER_NO_BLOCKING COMPOSER_NO_AUDIT COMPOSER_AUDIT_ABANDONED COMPOSER_POLICY_ADVISORIES_BLOCK COMPOSER_POLICY_MALWARE_BLOCK; do
-            if [ -n "${!variable:-}" ]; then
-              echo "$variable weakens the dependency policy" >&2
-              exit 1
-            fi
-          done
-          composer config policy | jq -e '
-            .advisories.block == true and .advisories.audit == "fail"
-            and .malware.block == true and .malware["block-scope"] == "all" and .malware.audit == "fail"
-            and .abandoned.audit == "fail"'
-      - name: Composer audit (advisories, malware, abandoned)
-        run: composer audit --no-interaction --abandoned=fail
+      - name: Composer dependency policy audit
+        run: php scripts/dependency-audit.php
       - name: Static analysis (PHPStan max)
         run: composer analyse
       # PHP CS Fixer 3.95.32 refuses PHP 8.6 (it supports syntax up to 8.5), so the formatter runs in its

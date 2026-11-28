@@ -29,7 +29,7 @@ composer validate --strict
 composer verify:php-constraint  # Composer solver checks for the declared PHP boundaries
 composer check-platform-reqs
 composer dump-autoload --optimize --strict-psr
-composer audit --no-interaction --abandoned=fail
+php scripts/dependency-audit.php # Composer 2.10+ and a freshly resolved composer.lock
 composer analyse               # PHPStan, level max, zero errors, no baseline
 composer format:check          # full code-style check on PHP 8.4 or 8.5, non-mutating
 composer syntax                # php -l over src, tests, scripts, examples
