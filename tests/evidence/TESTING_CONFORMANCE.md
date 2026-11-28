@@ -1,9 +1,8 @@
 # Testing conformance evidence
 
 This point-in-time audit covers the Testing batch in the standards conformance
-review. It records how a reviewer can trace public behavior to executed tests and
-recheck the identified coverage gap. The package reference owns the public
-contracts.
+review. It links the audited parent evidence and the focused F108-18 follow-up.
+The package reference owns the public contracts.
 
 ## Reviewed baseline
 
@@ -16,9 +15,11 @@ contracts.
   `c1dbb2da062a35c45638abf2bcb2ae210140eb5d`.
 - Audit verdict: **REQUEST CHANGES** for the system-level coverage in
   [F108-18](#f108-18--raw-ordering-settlement-after-a-zero-row-update).
-  The evidence below applies to the reviewed parent tree.
+  The audit table and parent CI record apply to the reviewed parent tree. The
+  [focused follow-up](#f108-18--raw-ordering-settlement-after-a-zero-row-update)
+  records the candidate results separately.
 
-## Requirements and evidence
+## Requirements and evidence on the reviewed parent
 
 | Testing section | Result | Evidence |
 | --- | --- | --- |
@@ -83,7 +84,8 @@ eligibility and final-candidate evidence, is tracked under [#88](https://github.
 - Raw Ordering settlement: [F108-05 compared the prior and corrected results](https://github.com/Maatify-ltd/php-persistence/issues/65#issuecomment-7229112789).
   The preserved [focused tests](../Unit/Ordering/Repository/ScopedOrderingManagerSavepointWiringTest.php)
   check false/throwable controls, primary error identity and transaction
-  ownership. F108-18 records the separate system-level coverage gap.
+  ownership. The [focused follow-up](#f108-18--raw-ordering-settlement-after-a-zero-row-update)
+  adds detection through the public method on a real database.
 - Exit status from the syntax command: the [F108-09 before/after record](https://github.com/Maatify-ltd/php-persistence/issues/65#issuecomment-7229920165)
   captures the same missing-input condition on both heads and documents the
   propagated failure and the successful case.
@@ -98,36 +100,41 @@ eligibility and final-candidate evidence, is tracked under [#88](https://github.
 
 ## F108-18 — Raw Ordering settlement after a zero-row update
 
-**Open system-level test coverage gap under Testing §§1, 3.3, 4.2 and 4.5.**
-[DEC-034](../../docs/decisions/DEC-034-raw-ordering-settlement-failures.md)
-defines the public result of `ScopedOrderingManager::moveWithinScope()` when the
-target write affects zero rows and settlement cannot be confirmed. The current
-[raw Integration test](../Integration/Ordering/ScopedOrderingManagerLazySavepointTest.php#L489-L491)
-explicitly assigns this S5 scenario to the
-[scripted-PDO Unit coverage](../Unit/Ordering/Repository/ScopedOrderingManagerSavepointWiringTest.php#L108-L137).
-Nearby raw Integration tests exercise an existing primary error or a failed
-release after a successful target write. The [real-PDO savepoint helper test](../Integration/Transaction/TransactionOutcomeIntegrationTest.php#L120-L168)
-invokes `SavepointScope` directly. The [protected manager case](../Integration/Ordering/ProtectedScopedOrderingManagerIntegrationTest.php#L158-L182)
-uses the separate protected checkout API. Together these sources establish the
-specific missing public-path observation on the reviewed tree.
+The reviewed parent had isolated [Unit coverage](../Unit/Ordering/Repository/ScopedOrderingManagerSavepointWiringTest.php)
+for the zero-row settlement path under [DEC-034](../../docs/decisions/DEC-034-raw-ordering-settlement-failures.md).
+The raw Integration cases produced a primary error or a successful target
+write. The savepoint helper and protected manager tests exercised different
+entry points. Testing §§1, 3.3, 4.2 and 4.5 require coverage of the observable
+outcome through the raw public manager.
 
-The focused Unit checks remain useful for the driver fault permutations. Add
-system-level proof through the public raw manager on a disposable real database:
+[ScopedOrderingManagerSettlementTest](../Integration/Ordering/ScopedOrderingManagerSettlementTest.php)
+calls raw `ScopedOrderingManager::moveWithinScope()` against InnoDB. A
+table-local trigger keeps the target position while allowing the preceding
+range shift. The fixture uses the disposable admin connection to install the
+trigger. The public call runs as the application user with native prepares
+and affected-row reporting. The statement observer records the driver counts
+`[2, 0]` for the shift and target UPDATE without changing their results.
+Only the rollback, rollback-to-savepoint or release acknowledgement is
+fault-injected in the six failure cases.
 
-1. Cause a scope shift followed by a zero-row target update without a primary
-   exception. Verify that successful settlement permits the ordinary `false`
-   result and that the stored ordering is restored.
-2. Inject the first failure at the applicable settlement boundary. In the
-   owned path, verify that a failed rollback cannot return the ordinary result.
-   In the Host path, cover failed local undo and failed release after undo.
-   Use an independent observer and a Host marker to distinguish pending work
-   from committed state and prove that the enclosing transaction is still owned
-   by the caller.
-3. Verify the original driver exception or `TransactionExecutionException`
-   according to DEC-034, and prove explicit fixture cleanup. Record the existing
-   pre-fix evidence and the candidate execution. Keep fault injection limited
-   to the settlement acknowledgement so the movement and state are observed
-   against the real database.
+| Case | Public result and database observation |
+| --- | --- |
+| Owned or Host settlement succeeds | Returns ordinary `false`. The shift is undone and the independent observer sees the original positions. |
+| Owned rollback returns false or throws | Throws `TransactionExecutionException` or the exact injected PDO exception. The real shift stays pending until the fixture rolls it back. The independent observer sees unmodified positions. |
+| Host rollback to savepoint returns false or throws | The corresponding error escapes, the shift and earlier Host marker remain pending, and release is skipped. The Host ends the surrounding transaction explicitly. |
+| Host release returns false or throws | The corresponding error escapes after local undo. The Host retains its marker and control of the surrounding transaction. The independent observer sees the marker only after the Host commits. |
 
-The finding is about coverage. The current targeted and broader executed
-evidence is recorded above for independent review.
+The same new cases on historical runtime
+[`9c15309`](https://github.com/Maatify-ltd/php-persistence/commit/9c15309fa18bfb25413fa65d934d999e3fca384d)
+gave **RED** on MySQL 8.4.13. Four of eight cases returned ordinary `false`
+after failed owned rollback or failed Host release. The controls and the
+two rollback-to-savepoint failures behaved as expected on that runtime.
+The failed run left zero test tables and open transactions.
+
+The follow-up on [Draft #110](https://github.com/Maatify-ltd/php-persistence/pull/110)
+from `4caa68a` gave **GREEN** on MySQL 8.4.13 and MariaDB 11.8.9, with
+eight cases and 286 assertions per engine. The runs used PHP 8.5.13 and the
+repository's isolated database lifecycle. Each focused run left zero test
+tables and open transactions. The supervisor verified zero owned workers and
+complete Compose teardown. Full candidate CI and batch acceptance remain
+separate from these focused runs.

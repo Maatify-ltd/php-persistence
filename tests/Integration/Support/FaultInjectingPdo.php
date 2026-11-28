@@ -22,7 +22,7 @@ final class FaultInjectingPdo extends PDO
     /** @var list<string> */
     public array $executed = [];
 
-    /** @var list<array{regex: string, mode: 'false'|'throw'}> */
+    /** @var list<array{regex: string, mode: PDOException|'false'|'throw'}> */
     private array $execFaults = [];
 
     /** @var list<string> */
@@ -30,8 +30,8 @@ final class FaultInjectingPdo extends PDO
 
     private PDOException|false|null $rollbackFault = null;
 
-    /** @param 'false'|'throw' $mode */
-    public function failExec(string $regex, string $mode): void
+    /** @param PDOException|'false'|'throw' $mode */
+    public function failExec(string $regex, PDOException|string $mode): void
     {
         $this->execFaults[] = ['regex' => $regex, 'mode' => $mode];
     }
@@ -65,6 +65,10 @@ final class FaultInjectingPdo extends PDO
             if (preg_match($fault['regex'], $statement) === 1) {
                 if ($fault['mode'] === 'false') {
                     return false;
+                }
+
+                if ($fault['mode'] instanceof PDOException) {
+                    throw $fault['mode'];
                 }
 
                 throw new PDOException('Injected control statement failure.');
