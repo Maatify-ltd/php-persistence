@@ -214,8 +214,12 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
         self::assertMatchesRegularExpression('/^[1-9][0-9]*$/', $event);
 
         // Only the fixture controls this session and its single active event.
-        return ['transaction' => $row['id'], 'started' => $row['started'], 'thread' => $thread, 'event' => $event,
-            'endAcknowledged' => false, 'independentlyChecked' => false];
+        return ['transaction' => $row['id'],
+            'started' => $row['started'],
+            'thread' => $thread,
+            'event' => $event,
+            'endAcknowledged' => false,
+            'independentlyChecked' => false];
     }
 
     /**
@@ -239,8 +243,11 @@ final class IntegrationResidueShadowTest extends IntegrationTestCase
                 self::assertContains($row['STATE'], ['COMMITTED', 'ROLLED BACK']);
                 self::assertSame('YES', $row['INSTRUMENTED']);
                 $events[(int) $row['PROCESSLIST_ID']] = [
-                    'thread' => (string) $row['THREAD_ID'], 'instrumented' => true,
-                    'event' => (string) $row['EVENT_ID'], 'state' => $row['STATE'], 'end' => (string) $row['END_EVENT_ID'],
+                    'thread' => (string) $row['THREAD_ID'],
+                    'instrumented' => true,
+                    'event' => (string) $row['EVENT_ID'],
+                    'state' => $row['STATE'],
+                    'end' => (string) $row['END_EVENT_ID'],
                 ];
             }
         } finally {

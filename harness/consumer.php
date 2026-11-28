@@ -196,9 +196,15 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         $page = catalogPage($pdo, $table, $legacy);
         verifySame([['id' => 4, 'position' => 1]], $page['data'], 'Normalized page applies deterministic tie-breaker');
         verifySame([
-            'page' => 1, 'per_page' => 1, 'total' => 5, 'filtered' => 4,
-            'total_pages' => 4, 'has_next' => true, 'has_previous' => false,
-            'sort_by' => 'position', 'sort_direction' => 'ASC',
+            'page' => 1,
+            'per_page' => 1,
+            'total' => 5,
+            'filtered' => 4,
+            'total_pages' => 4,
+            'has_next' => true,
+            'has_previous' => false,
+            'sort_by' => 'position',
+            'sort_direction' => 'ASC',
         ], $page['pagination'], 'Observable pagination envelope');
 
         $pdo->beforePrepare = static function (string $sql) use ($pdo, $writer, $table): void {

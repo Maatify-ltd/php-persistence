@@ -144,7 +144,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     {
         $this->createProfile(false, false);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'START TRANSACTION READ WRITE', 'after',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'START TRANSACTION READ WRITE',
+            'after',
         ]);
         try {
             $checkout = $this->checkout(relayPort: $this->relayPort($relay), begin: false);
@@ -166,7 +169,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->createProfile(false, false);
         $this->seedFaultProfile();
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'ROLLBACK AND NO CHAIN NO RELEASE', 'after',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'ROLLBACK AND NO CHAIN NO RELEASE',
+            'after',
         ]);
         try {
             $lostAck = $this->checkout(relayPort: $this->relayPort($relay));
@@ -411,7 +417,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->seedFaultProfile();
         $config = $this->config();
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'SAVEPOINT', 'before',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'SAVEPOINT',
+            'before',
         ]);
         try {
             $checkout = $this->checkout(relayPort: $this->relayPort($relay));
@@ -683,7 +692,11 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private function relay(string $stage, string $phase): PartnerProcess
     {
         return PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', $stage, $phase,
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            $stage,
+            $phase,
         ]);
     }
 
@@ -840,8 +853,12 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private function contender(UniqueOrderingConfig $config, string $pair, string $isolation): PartnerProcess
     {
         return PartnerProcess::start([
-            PHP_BINARY, __DIR__ . '/UniqueOrderingContender.php',
-            $this->items, $this->anchor, $isolation, $pair,
+            PHP_BINARY,
+            __DIR__ . '/UniqueOrderingContender.php',
+            $this->items,
+            $this->anchor,
+            $isolation,
+            $pair,
             json_encode($config->schemaAttestation, JSON_THROW_ON_ERROR),
         ]);
     }

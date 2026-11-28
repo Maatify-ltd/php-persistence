@@ -82,8 +82,15 @@ final class PublishedArtifactEvidenceTest extends TestCase
                 self::assertTrue(chmod($bin . '/rm', 0700));
             }
             [$status, $output, $error] = execute([
-                'env', '-i', ...$environment, PHP_BINARY, '-d', 'sys_temp_dir=' . $temporary,
-                $repo . '/scripts/published-artifact.php', '--target=1.0.0', '--sha=' . $sha,
+                'env',
+                '-i',
+                ...$environment,
+                PHP_BINARY,
+                '-d',
+                'sys_temp_dir=' . $temporary,
+                $repo . '/scripts/published-artifact.php',
+                '--target=1.0.0',
+                '--sha=' . $sha,
             ], [], $repo, 20);
 
             self::assertSame($exit, $status, $output . $error);

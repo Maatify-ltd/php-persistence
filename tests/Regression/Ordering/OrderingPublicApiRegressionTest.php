@@ -105,10 +105,18 @@ final class OrderingPublicApiRegressionTest extends TestCase
         $id = ['id', 'int', false, false, null];
         $newOrder = ['newOrder', 'int', false, false, null];
         self::assertMethod($manager, 'getNextPositionForUpdate', [
-            $host, $legacy, ['scopeValue', 'int|string', true, true, null], ['maxTailReads', 'int', false, true, 64],
+            $host,
+            $legacy,
+            ['scopeValue', 'int|string', true, true, null],
+            ['maxTailReads', 'int', false, true, 64],
         ], 'int');
         self::assertMethod($manager, 'moveWithinScope', [
-            $host, $legacy, $legacyScope, $id, $newOrder, ['updatedAtValue', 'string', true, true, null],
+            $host,
+            $legacy,
+            $legacyScope,
+            $id,
+            $newOrder,
+            ['updatedAtValue', 'string', true, true, null],
         ], 'bool');
 
         $config = new ReflectionClass(UniqueOrderingConfig::class);
@@ -129,7 +137,11 @@ final class OrderingPublicApiRegressionTest extends TestCase
         self::assertMethod($manager, 'getNextUniquePositionForAppend', [$host, $b1, $scope], 'int');
         self::assertMethod($manager, 'moveUniqueWithinScope', [$host, $b1, $scope, $id, $newOrder], 'bool');
         self::assertMethod($manager, 'deleteUniqueWithinScope', [
-            $host, $b1, $scope, $id, ['deleteCommandId', 'string', false, false, null],
+            $host,
+            $b1,
+            $scope,
+            $id,
+            ['deleteCommandId', 'string', false, false, null],
         ], 'bool');
     }
 

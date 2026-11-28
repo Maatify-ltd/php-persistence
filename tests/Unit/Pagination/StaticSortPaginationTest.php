@@ -78,8 +78,15 @@ final class StaticSortPaginationTest extends TestCase
             self::assertSame([
                 'data' => [['id' => 7]],
                 'pagination' => [
-                    'page' => 2, 'per_page' => 2, 'total' => 10, 'filtered' => 3, 'total_pages' => 2,
-                    'has_next' => false, 'has_previous' => true, 'sort_by' => 'business_order', 'sort_direction' => $direction->value,
+                    'page' => 2,
+                    'per_page' => 2,
+                    'total' => 10,
+                    'filtered' => 3,
+                    'total_pages' => 2,
+                    'has_next' => false,
+                    'has_previous' => true,
+                    'sort_by' => 'business_order',
+                    'sort_direction' => $direction->value,
                 ],
             ], $page->toArray());
             self::assertSame(json_encode($page->toArray(), JSON_THROW_ON_ERROR), json_encode($page, JSON_THROW_ON_ERROR));
@@ -154,8 +161,15 @@ final class StaticSortPaginationTest extends TestCase
 
         self::assertSame(['TOTAL :total_tenant', 'FILTERED :filtered_tenant'], $pdo->preparedSql);
         self::assertSame([[], 1, 5, 0, 0, false, false, 'business_order', Direction::Desc], [
-            $page->data, $page->page, $page->total, $page->filtered, $page->totalPages,
-            $page->hasNext, $page->hasPrevious, $page->sortBy, $page->sortDirection,
+            $page->data,
+            $page->page,
+            $page->total,
+            $page->filtered,
+            $page->totalPages,
+            $page->hasNext,
+            $page->hasPrevious,
+            $page->sortBy,
+            $page->sortDirection,
         ]);
     }
 

@@ -63,9 +63,13 @@ function runConsumerRoot(string $workspace, string $scenario, string $candidateR
     ];
     $repositories = [$candidateRepository];
     if ($scenario === 'differential') {
-        $repositories[] = ['type' => 'path', 'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF, 'options' => [
-            'symlink' => false, 'reference' => 'none', 'versions' => [LEGACY_PACKAGE => $legacyVersion],
-        ]];
+        $repositories[] = ['type' => 'path',
+            'url' => $workspace . '/persistence-' . LEGACY_SOURCE_REF,
+            'options' => [
+                'symlink' => false,
+                'reference' => 'none',
+                'versions' => [LEGACY_PACKAGE => $legacyVersion],
+            ]];
     }
 
     $manifest = [
@@ -247,7 +251,13 @@ function verifyConsumer(string $root, string $candidateRef, string $candidateTre
         /** @var array<string, mixed> $policy */
         $policy = $config['policy'];
         $legacyArchive = $workspace . '/legacy.tar.gz';
-        consumerCommand(['curl', '--fail', '--silent', '--show-error', '--location', '--output', $legacyArchive,
+        consumerCommand(['curl',
+            '--fail',
+            '--silent',
+            '--show-error',
+            '--location',
+            '--output',
+            $legacyArchive,
             'https://codeload.github.com/Maatify/persistence/tar.gz/' . LEGACY_SOURCE_REF], $workspace);
         consumerCommand(['tar', '-xzf', $legacyArchive], $workspace);
 

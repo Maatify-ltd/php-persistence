@@ -298,7 +298,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             }
             self::assertNoExecutionHandlesInTrace($failure);
             self::assertSame(self::relayEvidence($stage), $relay->readLine(12.0));
-            $reason = $stage === 'after-ack' ? Reason::HandoffUnconfirmed
+            $reason = $stage === 'after-ack'
+                ? Reason::HandoffUnconfirmed
                 : ($commit ? Reason::CommitOutcomeUnknown : Reason::RollbackUnconfirmed);
             $outcome = $stage === 'after-ack' ? ($commit ? Outcome::Committed : Outcome::RolledBack) : Outcome::Unknown;
             self::assertSame($outcome, $checkout->settlement()->transactionOutcome);
@@ -639,13 +640,15 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     {
         $observer = $this->connect();
         $table = $this->createTable($observer, 'verified');
-        return [$observer, $table, new Catalog([
-            'insert' => new Plan("INSERT INTO $table (id, v) VALUES (:id, :value)", ['id', 'value']),
-            'read' => new Plan("SELECT v FROM $table WHERE id = :id", ['id'], 1),
-            'visible' => new Plan("SELECT v FROM $table ORDER BY id", [], 2),
-            'limited' => new Plan("SELECT v FROM $table ORDER BY id", [], 1),
-            'update' => new Plan("UPDATE $table SET v = :value WHERE id = :id", ['id', 'value']),
-        ])];
+        return [$observer,
+            $table,
+            new Catalog([
+                'insert' => new Plan("INSERT INTO $table (id, v) VALUES (:id, :value)", ['id', 'value']),
+                'read' => new Plan("SELECT v FROM $table WHERE id = :id", ['id'], 1),
+                'visible' => new Plan("SELECT v FROM $table ORDER BY id", [], 2),
+                'limited' => new Plan("SELECT v FROM $table ORDER BY id", [], 1),
+                'update' => new Plan("UPDATE $table SET v = :value WHERE id = :id", ['id', 'value']),
+            ])];
     }
 
     private function beginWithMarker(Checkout $checkout): void

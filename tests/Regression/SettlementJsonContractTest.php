@@ -46,8 +46,15 @@ final class SettlementJsonContractTest extends TestCase
             ),
         );
         $expectedReasons = [
-            'SOURCE_UNAVAILABLE', 'STALE_CONTEXT', 'GRANT_CONSUMED', 'BUSY', 'PAGE_COMPLETED',
-            'READ_FAILED', 'RESOURCE_RELEASE_UNCONFIRMED', 'SCOPE_UNCONFIRMED', 'SETTLEMENT_UNCONFIRMED',
+            'SOURCE_UNAVAILABLE',
+            'STALE_CONTEXT',
+            'GRANT_CONSUMED',
+            'BUSY',
+            'PAGE_COMPLETED',
+            'READ_FAILED',
+            'RESOURCE_RELEASE_UNCONFIRMED',
+            'SCOPE_UNCONFIRMED',
+            'SETTLEMENT_UNCONFIRMED',
         ];
         self::assertSame(
             $expectedReasons,
@@ -72,9 +79,17 @@ final class SettlementJsonContractTest extends TestCase
             ),
         );
         $expectedReasons = [
-            'CANCELLED_BEFORE_QUALIFICATION', 'SERVER_QUALIFICATION_FAILED', 'START_UNCONFIRMED',
-            'TRANSACTION_LOST', 'OPERATION_UNCONFIRMED', 'COMMIT_OUTCOME_UNKNOWN',
-            'COMMIT_CONFIRMED_CONNECTION_UNSAFE', 'ROLLBACK_UNCONFIRMED', 'COMMITTED', 'ROLLED_BACK', 'HOST_DISCARDED',
+            'CANCELLED_BEFORE_QUALIFICATION',
+            'SERVER_QUALIFICATION_FAILED',
+            'START_UNCONFIRMED',
+            'TRANSACTION_LOST',
+            'OPERATION_UNCONFIRMED',
+            'COMMIT_OUTCOME_UNKNOWN',
+            'COMMIT_CONFIRMED_CONNECTION_UNSAFE',
+            'ROLLBACK_UNCONFIRMED',
+            'COMMITTED',
+            'ROLLED_BACK',
+            'HOST_DISCARDED',
         ];
         self::assertSame(
             $expectedReasons,
@@ -99,10 +114,20 @@ final class SettlementJsonContractTest extends TestCase
             ),
         );
         $expectedReasons = [
-            'QUALIFICATION_FAILED', 'START_UNCONFIRMED', 'CONTINUITY_UNCONFIRMED', 'SAVEPOINT_UNCONFIRMED',
-            'CALLBACK_FAILED', 'COMMAND_FAILED', 'CURSOR_UNCONFIRMED', 'ROLLBACK_TO_UNCONFIRMED',
-            'RELEASE_UNCONFIRMED', 'COMMIT_OUTCOME_UNKNOWN', 'ROLLBACK_UNCONFIRMED', 'HANDOFF_UNCONFIRMED',
-            'TRANSACTION_LOST', 'HOST_DISCARDED',
+            'QUALIFICATION_FAILED',
+            'START_UNCONFIRMED',
+            'CONTINUITY_UNCONFIRMED',
+            'SAVEPOINT_UNCONFIRMED',
+            'CALLBACK_FAILED',
+            'COMMAND_FAILED',
+            'CURSOR_UNCONFIRMED',
+            'ROLLBACK_TO_UNCONFIRMED',
+            'RELEASE_UNCONFIRMED',
+            'COMMIT_OUTCOME_UNKNOWN',
+            'ROLLBACK_UNCONFIRMED',
+            'HANDOFF_UNCONFIRMED',
+            'TRANSACTION_LOST',
+            'HOST_DISCARDED',
         ];
         self::assertSame(
             $expectedReasons,

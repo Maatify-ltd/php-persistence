@@ -175,8 +175,14 @@ final class IntegrationResidueShadow
             'state' => 'UNKNOWN',
             'transactions' => array_map(
                 static fn(array $row): array => [
-                    'id' => $row['id'], 'process' => $row['thread'], 'thread' => null,
-                    'event' => null, 'eventState' => null, 'endEvent' => null, 'state' => 'UNKNOWN', 'reason' => $reason,
+                    'id' => $row['id'],
+                    'process' => $row['thread'],
+                    'thread' => null,
+                    'event' => null,
+                    'eventState' => null,
+                    'endEvent' => null,
+                    'state' => 'UNKNOWN',
+                    'reason' => $reason,
                 ],
                 $transactions,
             ),

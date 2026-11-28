@@ -160,7 +160,10 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         $this->fixture->insertScoped('target', 1);
         $id = $this->fixture->insertScoped('target', 2);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'ordering-release-error',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'ordering-release-error',
         ]);
         try {
             $checkout = PdoProtectedTransactionCheckout::attachExclusive(
@@ -242,7 +245,10 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
     public function testReleaseFailureKeepsEarlierMovementFailureAndSealsCheckout(): void
     {
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'ordering-release-error',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'ordering-release-error',
         ]);
         try {
             $checkout = PdoProtectedTransactionCheckout::attachExclusive(
@@ -278,7 +284,11 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         $this->fixture->insertScoped('target', 1);
         $this->fixture->insertScoped('target', 2);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'protected-tail-churn', $table,
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'protected-tail-churn',
+            $table,
         ]);
         try {
             $pdo = $this->delegatedConnection($this->relayPort($relay), true);

@@ -59,28 +59,41 @@ final class DynamicSortPaginationTest extends TestCase
     {
         yield 'empty request' => [[], false, '`o`.`status` DESC, `o`.`id` ASC', [self::sort('status', 'DESC'), self::sort(null, 'ASC')]];
         yield 'one term, hidden appended tie even when selection enabled' => [
-            [self::sort('score', 'aSc')], true, '`o`.`score` ASC, `o`.`id` ASC', [self::sort('score', 'ASC'), self::sort(null, 'ASC')],
+            [self::sort('score', 'aSc')],
+            true,
+            '`o`.`score` ASC, `o`.`id` ASC',
+            [self::sort('score', 'ASC'), self::sort(null, 'ASC')],
         ];
         yield 'two mixed terms' => [
-            [self::sort('score', 'desc'), self::sort('status', 'ASC')], false, '`o`.`score` DESC, `o`.`status` ASC, `o`.`id` ASC',
+            [self::sort('score', 'desc'), self::sort('status', 'ASC')],
+            false,
+            '`o`.`score` DESC, `o`.`status` ASC, `o`.`id` ASC',
             [self::sort('score', 'DESC'), self::sort('status', 'ASC'), self::sort(null, 'ASC')],
         ];
         yield 'three reversed priority and mixed terms' => [
-            [self::sort('name', 'desc'), self::sort('status', 'asc'), self::sort('score', 'desc')], false,
+            [self::sort('name', 'desc'), self::sort('status', 'asc'), self::sort('score', 'desc')],
+            false,
             '`o`.`name` DESC, `o`.`status` ASC, `o`.`score` DESC, `o`.`id` ASC',
             [self::sort('name', 'DESC'), self::sort('status', 'ASC'), self::sort('score', 'DESC'), self::sort(null, 'ASC')],
         ];
         yield 'canonical tie selected alone' => [[self::sort('internal_id', 'dEsC')], true, '`o`.`id` DESC', [self::sort('internal_id', 'DESC')]];
         yield 'canonical tie selected last' => [
-            [self::sort('score', 'desc'), self::sort('internal_id', 'ASC')], true, '`o`.`score` DESC, `o`.`id` ASC',
+            [self::sort('score', 'desc'), self::sort('internal_id', 'ASC')],
+            true,
+            '`o`.`score` DESC, `o`.`id` ASC',
             [self::sort('score', 'DESC'), self::sort('internal_id', 'ASC')],
         ];
         yield 'case-folded column alias to tie allowed last under default policy' => [
-            [self::sort('status', 'asc'), self::sort('alternate_id', 'desc')], false, '`o`.`status` ASC, `o`.`ID` DESC',
+            [self::sort('status', 'asc'), self::sort('alternate_id', 'desc')],
+            false,
+            '`o`.`status` ASC, `o`.`ID` DESC',
             [self::sort('status', 'ASC'), self::sort('alternate_id', 'DESC')],
         ];
         yield 'case-folded column alias to tie selected alone with policy enabled' => [
-            [self::sort('alternate_id', 'desc')], true, '`o`.`ID` DESC', [self::sort('alternate_id', 'DESC')],
+            [self::sort('alternate_id', 'desc')],
+            true,
+            '`o`.`ID` DESC',
+            [self::sort('alternate_id', 'DESC')],
         ];
     }
 
@@ -166,9 +179,17 @@ final class DynamicSortPaginationTest extends TestCase
 
         self::assertSame(['TOTAL :total_tenant', 'FILTERED :filtered_tenant'], $pdo->preparedSql);
         self::assertSame([
-            'data' => [], 'pagination' => [
-                'page' => 1, 'per_page' => 200, 'total' => 5, 'filtered' => 0, 'total_pages' => 0,
-                'has_next' => false, 'has_previous' => false, 'sort_by' => 'score', 'sort_direction' => 'DESC',
+            'data' => [],
+            'pagination' => [
+                'page' => 1,
+                'per_page' => 200,
+                'total' => 5,
+                'filtered' => 0,
+                'total_pages' => 0,
+                'has_next' => false,
+                'has_previous' => false,
+                'sort_by' => 'score',
+                'sort_direction' => 'DESC',
                 'selected_sorts' => [self::sort('score', 'DESC'), self::sort('status', 'ASC')],
                 'effective_sorts' => [self::sort('score', 'DESC'), self::sort('status', 'ASC'), self::sort(null, 'ASC')],
             ],
@@ -398,8 +419,12 @@ final class DynamicSortPaginationTest extends TestCase
     private static function config(): PaginationConfig
     {
         return new PaginationConfig(new SortWhitelist([
-            'status' => 'o.status', 'state_alias' => 'o.STATUS', 'score' => 'o.score', 'name' => 'o.name',
-            'internal_id' => 'o.id', 'alternate_id' => 'o.ID',
+            'status' => 'o.status',
+            'state_alias' => 'o.STATUS',
+            'score' => 'o.score',
+            'name' => 'o.name',
+            'internal_id' => 'o.id',
+            'alternate_id' => 'o.ID',
         ]), 'status', Direction::Desc, 'internal_id', Direction::Asc, 2);
     }
 

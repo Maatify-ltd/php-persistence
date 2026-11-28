@@ -107,10 +107,20 @@ final class VerifiedTransactionPublicApiTest extends TestCase
             array_column(Outcome::cases(), 'name'),
         );
         self::assertSame([
-            'QualificationFailed', 'StartUnconfirmed', 'ContinuityUnconfirmed', 'SavepointUnconfirmed',
-            'CallbackFailed', 'CommandFailed', 'CursorUnconfirmed', 'RollbackToUnconfirmed',
-            'ReleaseUnconfirmed', 'CommitOutcomeUnknown', 'RollbackUnconfirmed', 'HandoffUnconfirmed',
-            'TransactionLost', 'HostDiscarded',
+            'QualificationFailed',
+            'StartUnconfirmed',
+            'ContinuityUnconfirmed',
+            'SavepointUnconfirmed',
+            'CallbackFailed',
+            'CommandFailed',
+            'CursorUnconfirmed',
+            'RollbackToUnconfirmed',
+            'ReleaseUnconfirmed',
+            'CommitOutcomeUnknown',
+            'RollbackUnconfirmed',
+            'HandoffUnconfirmed',
+            'TransactionLost',
+            'HostDiscarded',
         ], array_column(Reason::cases(), 'name'));
     }
 

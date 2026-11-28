@@ -82,14 +82,17 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $source = new SnapshotHostCheckout($reader);
         [$checkout, , $operation] = $source->checkout();
         $primary = new RuntimeException('fetch failed with unread wire rows');
-        $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SnapshotCursorStatement::class, [
-            static fn(): bool => true,
-            static function (string $sql) use ($primary): void {
-                if (str_contains($sql, 'SELECT id, tenant_id')) {
-                    throw $primary;
-                }
-            },
-        ]]);
+        $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [
+            SnapshotCursorStatement::class,
+            ([
+                static fn(): bool => true,
+                static function (string $sql) use ($primary): void {
+                    if (str_contains($sql, 'SELECT id, tenant_id')) {
+                        throw $primary;
+                    }
+                },
+            ]),
+        ]);
         try {
             self::assertSame($primary, self::failure(fn() => $operation->paginate(
                 $this->descriptor($table),
@@ -302,19 +305,22 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $reader = $this->unbufferedReader();
         $closeAttempts = 0;
         $closeFailure = new RuntimeException('cursor close failed');
-        $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SnapshotCursorStatement::class, [
-            static function (string $sql) use ($needle, $throws, $closeFailure, &$closeAttempts): bool {
-                if (! str_contains($sql, $needle)) {
-                    return true;
-                }
-                $closeAttempts++;
-                if ($throws) {
-                    throw $closeFailure;
-                }
+        $reader->setAttribute(PDO::ATTR_STATEMENT_CLASS, [
+            SnapshotCursorStatement::class,
+            ([
+                static function (string $sql) use ($needle, $throws, $closeFailure, &$closeAttempts): bool {
+                    if (! str_contains($sql, $needle)) {
+                        return true;
+                    }
+                    $closeAttempts++;
+                    if ($throws) {
+                        throw $closeFailure;
+                    }
 
-                return false;
-            },
-        ]]);
+                    return false;
+                },
+            ]),
+        ]);
         $source = new SnapshotHostCheckout($reader);
         [$checkout, $pdo, $operation] = $source->checkout();
         $primary = new RuntimeException('mapper stopped with unread rows');

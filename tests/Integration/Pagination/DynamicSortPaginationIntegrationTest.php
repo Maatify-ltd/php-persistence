@@ -51,7 +51,11 @@ final class DynamicSortPaginationIntegrationTest extends PaginationIntegrationTe
             ['tenant' => 1, 'active' => true],
         );
         $config = new PaginationConfig(new SortWhitelist([
-            'label' => 'g.nullable_code', 'name' => 'g.name', 'parent' => 'p.id', 'internal_row' => 'g.id', 'row_alias' => 'g.ID',
+            'label' => 'g.nullable_code',
+            'name' => 'g.name',
+            'parent' => 'p.id',
+            'internal_row' => 'g.id',
+            'row_alias' => 'g.ID',
         ]), 'name', Direction::Asc, 'internal_row', Direction::Desc, 2);
         $sorts = [['key' => 'label', 'direction' => 'desc'], ['key' => 'name', 'direction' => 'asc'], ['key' => 'parent', 'direction' => 'desc']];
         $paginator = new PdoPaginator();

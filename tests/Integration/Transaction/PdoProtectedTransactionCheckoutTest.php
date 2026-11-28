@@ -42,8 +42,10 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
     public function testAttachmentFailedWorkAndEarlyCancellationSendNoSql(): void
     {
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
-            'START TRANSACTION READ WRITE', 'prequalification-no-sql',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'START TRANSACTION READ WRITE',
+            'prequalification-no-sql',
         ]);
         try {
             $ready = $relay->readLine(12.0);
@@ -410,7 +412,10 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
     public function testUnacknowledgedStartCannotBecomeAnActiveCheckout(): void
     {
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'START TRANSACTION READ WRITE', 'after',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'START TRANSACTION READ WRITE',
+            'after',
         ]);
         try {
             $ready = $relay->readLine(12.0);
