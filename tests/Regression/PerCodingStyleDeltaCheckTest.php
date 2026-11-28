@@ -419,6 +419,26 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "\$a = \$b\n    |> trim(...) |> strtoupper(...);\n",
                 'each line starts with the operator',
             ],
+            'single-line comment comes before a pipe on the continuation line' => [
+                "\$a = \$b\n    /* stage */ |> trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'multiline comment ends before a pipe on the same line' => [
+                "\$a = \$b /* stage\n    ends here */ |> trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'multiline comment separates the pipe from its right operand' => [
+                "\$a = \$b\n    |> /* stage\n    ends here */ trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'pipe is overindented after a method continuation' => [
+                "\$a = \$provider\n    ->value()\n        |> trim(...);\n",
+                'must be indented once',
+            ],
+            'pipe is overindented after a concatenation continuation' => [
+                "\$a = \$b\n    . ' suffix'\n        |> trim(...);\n",
+                'must be indented once',
+            ],
             'continuation line not indented' => ["\$a = \$b\n|> trim(...);\n", 'must be indented'],
         ];
     }
@@ -438,26 +458,48 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString('pipe operator requires a PHP version', $errors);
     }
 
-    public function testConformingPipeChainPassesOnPhp85AndIsRefusedOnEarlierVersions(): void
+    /** @return array<string, array{string}> */
+    public static function conformingPipes(): array
     {
-        [$status, $errors] = self::check("\$a = \$b\n    |> trim(...)\n    |> strtoupper(...);\n\$c = \$d |> trim(...);\n");
-
-        if (PHP_VERSION_ID >= 80500) {
-            self::assertSame(0, $status, $errors);
-
-            return;
-        }
-        self::assertSame(1, $status);
-        self::assertStringContainsString('pipe operator requires a PHP version', $errors);
+        return [
+            'inline and split chains' => [
+                "\$a = \$b\n    |> trim(...)\n    |> strtoupper(...);\n\$c = \$d |> trim(...);\n",
+            ],
+            'different arguments and null-coalescing branches are independent' => [
+                "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n"
+                    . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
+            ],
+            'pipe follows a comment on its own line and can carry a comment after it' => [
+                "\$a = \$b\n    /* stage */\n    |> /* prepare */ trim(...);\n",
+            ],
+            'pipe after a method continuation is indented from the start' => [
+                "\$a = \$provider\n    ->value()\n    |> trim(...);\n",
+            ],
+            'pipe after a concatenation continuation is indented from the start' => [
+                "\$a = \$b\n    . ' suffix'\n    |> trim(...);\n",
+            ],
+            'multiline operand preserves the inline operators around it' => [
+                "\$a = \$b |> makeCallable(\n    'source',\n) |> trim(...);\n",
+            ],
+            'inline operator after a multiline left operand' => [
+                "\$a = fetch(\n    \$argument,\n) |> trim(...);\n",
+            ],
+            'nested named argument does not change the outer pipe indentation' => [
+                "\$a = pair(\n    first: \$input\n        |> trim(...),\n    second: \$other |> trim(...),\n)\n    |> strtoupper(...);\n",
+            ],
+            'comparison operator starts a higher precedence pipe expression' => [
+                "\$ok = \$first\n    === \$other\n        |> trim(...);\n",
+            ],
+            'ternary branches have separate chains' => [
+                "\$value = \$condition\n    ? \$first |> trim(...)\n    : \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
+            ],
+        ];
     }
 
-    public function testIndependentPipeChainsKeepTheirOwnLayout(): void
+    #[DataProvider('conformingPipes')]
+    public function testConformingPipeChainsPass(string $source): void
     {
-        [$status, $errors] = self::check(
-            "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n"
-                . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
-        );
-
+        [$status, $errors] = self::check($source);
         if (PHP_VERSION_ID >= 80500) {
             self::assertSame(0, $status, $errors);
 

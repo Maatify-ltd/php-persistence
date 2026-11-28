@@ -60,6 +60,9 @@ const PIPE_CHAIN_BOUNDARIES = [
     ')',
     ']',
     '}',
+    T_ATTRIBUTE,
+    T_CURLY_OPEN,
+    T_DOLLAR_OPEN_CURLY_BRACES,
     ',',
     ';',
     '?',
@@ -472,10 +475,11 @@ function pipeChains(array $tokens, int $pipe): array
 
 /**
  * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $tokens
+ * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $sig
  * @param list<string> $lines
  * @return list<string>
  */
-function checkPipe(string $file, array $tokens, array $lines): array
+function checkPipe(string $file, array $tokens, array $sig, array $lines): array
 {
     $findings = [];
     $pipe = defined('T_PIPE') ? constant('T_PIPE') : null;
@@ -489,42 +493,36 @@ function checkPipe(string $file, array $tokens, array $lines): array
         return $findings;
     }
 
-    foreach (pipeChains($tokens, $pipe) as $chain) {
-        $first = $chain[0];
-        $firstLine = $tokens[$first]['line'];
-        $last = $chain[count($chain) - 1];
-        $split = $firstLine !== $tokens[$last]['line'];
+    foreach ($tokens as $i => $token) {
+        if ($token['id'] === $pipe && (($tokens[$i - 1]['id'] ?? null) !== T_WHITESPACE
+            || ($tokens[$i + 1]['id'] ?? null) !== T_WHITESPACE)
+        ) {
+            $findings[] = $file . ':' . $token['line'] . ': the pipe operator needs a space before and after';
+        }
+    }
+
+    foreach (pipeChains($sig, $pipe) as $chain) {
+        $split = false;
         foreach ($chain as $i) {
-            $before = $tokens[$i - 1] ?? null;
-            $after = $tokens[$i + 1] ?? null;
-            $line = $tokens[$i]['line'];
-            if (($before['id'] ?? null) !== T_WHITESPACE || ($after['id'] ?? null) !== T_WHITESPACE) {
-                $findings[] = $file . ':' . $line . ': the pipe operator needs a space before and after';
+            if (firstOnLine($sig, $i) || (isset($sig[$i + 1]) && endsLine($sig[$i], $sig[$i + 1]))) {
+                $split = true;
+                break;
             }
-            $split = $split || str_contains($before['text'] ?? '', "\n") || str_contains($after['text'] ?? '', "\n");
         }
         if (!$split) {
             continue;
         }
 
-        $left = $first - 1;
-        while ($left >= 0 && in_array($tokens[$left]['id'], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-            $left--;
-        }
-        $leftLine = $left < 0 ? $firstLine : $tokens[$left]['line'] + substr_count($tokens[$left]['text'], "\n");
-        $baseIndent = indentOf($lines, $leftLine);
-        $previousOperatorLine = null;
+        $start = operatorExpressionStart($sig, $chain[0], extraBoundaries: PIPE_CHAIN_BOUNDARIES);
+        $indent = indentOf($lines, $sig[$start]['line']) + 4;
         foreach ($chain as $i) {
-            $line = $tokens[$i]['line'];
-            if (!$tokens[$i]['startsLine']
-                || str_contains($tokens[$i + 1]['text'] ?? '', "\n")
-                || $line === $previousOperatorLine
-            ) {
+            $token = $sig[$i];
+            $line = $token['line'];
+            if (!$token['startsLine'] || !isset($sig[$i + 1]) || endsLine($token, $sig[$i + 1])) {
                 $findings[] = $file . ':' . $line . ': in a split pipe chain each line starts with the operator';
-            } elseif (!isIndentation($lines, $line, $baseIndent + 4)) {
+            } elseif (!isIndentation($lines, $line, $indent)) {
                 $findings[] = $file . ':' . $line . ': continuation lines of a pipe chain must be indented once';
             }
-            $previousOperatorLine = $line;
         }
     }
 
@@ -941,12 +939,18 @@ function isIndentation(array $lines, int $line, int $spaces): bool
 
 /**
  * Finds the first token of an expression at its own nesting level.
- * Closing groups inside the condition are skipped while walking backward.
+ * Closing groups inside the expression are skipped while walking backward.
  *
  * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<int|string> $extraBoundaries
  */
-function operatorExpressionStart(array $sig, int $operator, bool $lowPrecedence = false, bool $shortTernary = false): int
-{
+function operatorExpressionStart(
+    array $sig,
+    int $operator,
+    bool $lowPrecedence = false,
+    bool $shortTernary = false,
+    array $extraBoundaries = [],
+): int {
     $boundaries = [
         '(',
         '[',
@@ -988,11 +992,13 @@ function operatorExpressionStart(array $sig, int $operator, bool $lowPrecedence 
 
             continue;
         }
-        if (in_array($id, $boundaries, true)) {
-            return $i + 1;
+        if (in_array($id, [')', ']', '}'], true) && ($open = matchingOpen($sig, $i)) !== null) {
+            $i = $open;
+
+            continue;
         }
-        if (in_array($id, [')', ']', '}'], true)) {
-            $i = matchingOpen($sig, $i) ?? $i;
+        if (in_array($id, $boundaries, true) || in_array($id, $extraBoundaries, true)) {
+            return $i + 1;
         }
     }
 
@@ -1362,7 +1368,7 @@ function checkSource(string $file, string $source): array
     return [
         ...checkClone($file, $sig),
         ...checkSwitch($file, $sig, $comments),
-        ...checkPipe($file, $tokens, $lines),
+        ...checkPipe($file, $tokens, $sig, $lines),
         ...checkEmptyClosure($file, $tokens, $sig),
         ...checkAnonymousClassAttributes($file, $sig, $lines),
         ...checkDeclarations($file, $sig),
