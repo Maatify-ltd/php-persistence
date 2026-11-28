@@ -110,30 +110,31 @@ const PIPE_CHAIN_BOUNDARIES = [
 ];
 
 /**
- * @param string $source
- * @return list<array{id: int|string, text: string, line: int}> all tokens including whitespace and comments
+ * @return list<array{id: int|string, text: string, line: int, startsLine: bool}> all tokens including whitespace and comments
  */
 function tokenize(string $source): array
 {
     $tokens = [];
     $line = 1;
+    $startsLine = true;
     foreach (token_get_all($source) as $token) {
-        if (is_array($token)) {
-            $tokens[] = ['id' => $token[0], 'text' => $token[1], 'line' => $token[2]];
-            $line = $token[2] + substr_count($token[1], "\n");
-
-            continue;
+        [$id, $text, $line] = is_array($token) ? $token : [$token, $token, $line];
+        $tokens[] = ['id' => $id, 'text' => $text, 'line' => $line, 'startsLine' => $startsLine];
+        $lastBreak = strrpos($text, "\n");
+        if ($lastBreak === false) {
+            $startsLine = $startsLine && trim($text, " \t") === '';
+        } else {
+            $line += substr_count($text, "\n");
+            $startsLine = trim(substr($text, $lastBreak + 1), " \t") === '';
         }
-        $tokens[] = ['id' => $token, 'text' => $token, 'line' => $line];
-        $line += substr_count($token, "\n");
     }
 
     return $tokens;
 }
 
 /**
- * @param list<array{id: int|string, text: string, line: int}> $tokens
- * @return list<array{id: int|string, text: string, line: int}> significant tokens only
+ * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $tokens
+ * @return list<array{id: int|string, text: string, line: int, startsLine: bool}> significant tokens only
  */
 function significant(array $tokens): array
 {
@@ -470,7 +471,7 @@ function pipeChains(array $tokens, int $pipe): array
 }
 
 /**
- * @param list<array{id: int|string, text: string, line: int}> $tokens
+ * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $tokens
  * @param list<string> $lines
  * @return list<string>
  */
@@ -515,7 +516,7 @@ function checkPipe(string $file, array $tokens, array $lines): array
         $previousOperatorLine = null;
         foreach ($chain as $i) {
             $line = $tokens[$i]['line'];
-            if (!str_starts_with(ltrim($lines[$line - 1] ?? '', " \t"), '|>')
+            if (!$tokens[$i]['startsLine']
                 || str_contains($tokens[$i + 1]['text'] ?? '', "\n")
                 || $line === $previousOperatorLine
             ) {
@@ -1135,7 +1136,7 @@ function logicalControlStart(array $sig, int $index): ?int
  * relative to their expression, or the keyword for a direct control condition.
  * Inline operators inside otherwise multiline expressions stay inline.
  *
- * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $sig
  * @param list<string> $lines
  * @return list<string>
  */
@@ -1203,14 +1204,13 @@ function checkSplitBinaryOperators(string $file, array $sig, array $lines): arra
         }
         $line = $token['line'];
         $name = $shortTernary ? '?:' : $token['text'];
-        $lineStart = ltrim($lines[$line - 1] ?? '', " \t");
         if (in_array($token['id'], ['+', '-'], true) && ($sig[$i - 1]['id'] ?? null) === '}'
             && !endsBraceOperand($sig, $i - 1)
         ) {
             // After a standalone block, a unary sign can begin a new statement.
             continue;
         }
-        if (!$first || !str_starts_with($lineStart, $token['text']) || endsLine($sig[$i], $next)) {
+        if (!$first || !$token['startsLine'] || endsLine($sig[$i], $next)) {
             $findings[] = $file . ':' . $line . ': a split operator must start its operand line (' . $name . ')';
 
             continue;
@@ -1231,7 +1231,7 @@ function checkSplitBinaryOperators(string $file, array $sig, array $lines): arra
  * Checks the two operators of a split ternary. A multiline call or array within
  * an operand does not split the ternary unless an operator itself breaks a line.
  *
- * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<array{id: int|string, text: string, line: int, startsLine: bool}> $sig
  * @param list<string> $lines
  * @return list<string>
  */
@@ -1253,7 +1253,7 @@ function checkSplitTernaries(string $file, array $sig, array $lines): array
         if (!$split) {
             continue;
         }
-        if (!firstOnLine($sig, $i) || !firstOnLine($sig, $colon)
+        if (!$token['startsLine'] || !$sig[$colon]['startsLine']
             || endsLine($token, $sig[$i + 1]) || endsLine($sig[$colon], $sig[$colon + 1])
         ) {
             $findings[] = $file . ':' . $token['line'] . ': a split ternary must put each operator on its own continuation line';

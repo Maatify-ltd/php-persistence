@@ -85,6 +85,9 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'split ternary places both operators at the start of continuation lines' => [
                 "\$x = \$condition\n    ? fn(): ?int => 5\n    : null;\n",
             ],
+            'split ternary allows comments on separate lines' => [
+                "\$x = \$condition\n    /* when available */\n    ? 'yes'\n    // fallback\n    : 'no';\n",
+            ],
             'short ternary and coalescing chains align their own continuations' => [
                 "\$a = \$left\n    ?: \$middle\n    ?: \$right;\n\$b = \$left\n    ?? \$middle\n    ?? \$right;\n",
             ],
@@ -204,6 +207,18 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             ],
             'split ternary starts its middle operand after the operator line' => [
                 "\$x = \$condition\n    ?\n        'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'inline comment before the question mark' => [
+                "\$x = \$condition\n    /* when available */ ? 'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'inline comment before the colon' => [
+                "\$x = \$condition\n    ? 'yes'\n    /* fallback */ : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'multiline comment can start a line with an operator lookalike' => [
+                "\$x = \$condition\n    /* The example contains\n    ? inside the comment. */ ? 'yes'\n    : 'no';\n",
                 'a split ternary must put each operator on its own continuation line',
             ],
             'overindented binary continuation' => [
