@@ -35,13 +35,13 @@ final class B1CheckoutLifecycle
     public function commit(PdoProtectedTransactionCheckout $checkout): void
     {
         $checkout->commit();
-        $this->handoff($checkout, Reason::COMMITTED);
+        $this->handoff($checkout, Reason::Committed);
     }
 
     public function rollBack(PdoProtectedTransactionCheckout $checkout): void
     {
         $checkout->rollBack();
-        $this->handoff($checkout, Reason::ROLLED_BACK);
+        $this->handoff($checkout, Reason::RolledBack);
     }
 
     public function cancel(PdoProtectedTransactionCheckout $checkout): void
@@ -52,8 +52,8 @@ final class B1CheckoutLifecycle
         unset($this->pending[$id]);
         $settlement = $checkout->settlement();
         Assert::assertNotNull($settlement);
-        Assert::assertSame(Disposition::UNCHANGED, $settlement->disposition);
-        Assert::assertSame(Reason::CANCELLED_BEFORE_QUALIFICATION, $settlement->reason);
+        Assert::assertSame(Disposition::Unchanged, $settlement->disposition);
+        Assert::assertSame(Reason::CancelledBeforeQualification, $settlement->reason);
     }
 
     public function discard(PdoProtectedTransactionCheckout $checkout): void
@@ -61,7 +61,7 @@ final class B1CheckoutLifecycle
         $id = $this->tracked($checkout);
         $settlement = $checkout->settlement();
         Assert::assertNotNull($settlement);
-        Assert::assertSame(Disposition::DISCARD_REQUIRED, $settlement->disposition);
+        Assert::assertSame(Disposition::DiscardRequired, $settlement->disposition);
         $checkout->discardForHost();
         unset($this->pending[$id]);
         Assert::assertSame($settlement, $checkout->settlement());
@@ -80,9 +80,9 @@ final class B1CheckoutLifecycle
         foreach ($this->pending as $id => [$checkout, $begun]) {
             $disposition = $checkout->settlement()?->disposition;
             $state = match ($disposition) {
-                Disposition::REUSABLE => 'reusable without handoff',
-                Disposition::DISCARD_REQUIRED => 'discard required without discard',
-                Disposition::UNCHANGED => 'cancelled without handoff',
+                Disposition::Reusable => 'reusable without handoff',
+                Disposition::DiscardRequired => 'discard required without discard',
+                Disposition::Unchanged => 'cancelled without handoff',
                 null => $begun ? 'active without verified end' : 'unstarted without cancellation',
             };
             $incomplete[] = 'checkout ' . $id . ' ' . $state;
@@ -107,7 +107,7 @@ final class B1CheckoutLifecycle
 
     private function emergencyRelease(PdoProtectedTransactionCheckout $checkout, bool $begun, ?Disposition $disposition): void
     {
-        if ($disposition === Disposition::DISCARD_REQUIRED) {
+        if ($disposition === Disposition::DiscardRequired) {
             $checkout->discardForHost();
 
             return;
@@ -133,7 +133,7 @@ final class B1CheckoutLifecycle
         $id = $this->tracked($checkout);
         $settlement = $checkout->settlement();
         Assert::assertNotNull($settlement);
-        Assert::assertSame(Disposition::REUSABLE, $settlement->disposition);
+        Assert::assertSame(Disposition::Reusable, $settlement->disposition);
         Assert::assertSame($reason, $settlement->reason);
         $checkout->returnForHost();
         unset($this->pending[$id]);

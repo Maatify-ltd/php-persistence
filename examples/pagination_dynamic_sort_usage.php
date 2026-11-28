@@ -21,9 +21,9 @@ try {
     $config = new PaginationConfig(
         sortWhitelist: new SortWhitelist(['status' => 'o.status', 'priority' => 'o.priority', 'internal_row' => 'o.id']),
         defaultSortBy: 'status',
-        defaultSortDirection: SortDirectionEnum::ASC,
+        defaultSortDirection: SortDirectionEnum::Asc,
         tieBreakerSortBy: 'internal_row',
-        tieBreakerDirection: SortDirectionEnum::ASC,
+        tieBreakerDirection: SortDirectionEnum::Asc,
     );
 
     // The application adapter maps a grid request to public keys and directions.

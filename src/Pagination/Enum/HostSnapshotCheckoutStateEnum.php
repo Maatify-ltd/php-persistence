@@ -6,20 +6,20 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
 
 /**
  * Authority and availability of a Host snapshot checkout. Only the qualified
- * active state can authorize pages. RELEASED ends one handle's authority, while
- * RETIRED denotes permanent retirement of its source.
+ * active state can authorize pages. Released ends one handle's authority, while
+ * Retired denotes permanent retirement of its source.
  */
 enum HostSnapshotCheckoutStateEnum
 {
     /** The checkout is ready to begin. Release also requires resolved transaction settings. */
-    case IDLE;
-    case TRANSACTION_ACTIVE;
+    case Idle;
+    case TransactionActive;
     /** An active transaction outlived invalidation and cannot authorize new pages. */
-    case TRANSACTION_UNQUALIFIED;
+    case TransactionUnqualified;
     /** A reserved operation is still in progress. */
-    case BUSY;
+    case Busy;
     /** The source fences further SQL pending the Host's retirement or discard decision. */
-    case QUARANTINED;
-    case RELEASED;
-    case RETIRED;
+    case Quarantined;
+    case Released;
+    case Retired;
 }

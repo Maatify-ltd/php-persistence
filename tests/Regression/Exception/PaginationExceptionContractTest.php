@@ -92,6 +92,6 @@ final class PaginationExceptionContractTest extends TestCase
     {
         $this->expectException(PaginationExecutionException::class);
 
-        new PageResultDTO([], 0, 20, 0, 0, 0, false, false, 'id', SortDirectionEnum::ASC);
+        new PageResultDTO([], 0, 20, 0, 0, 0, false, false, 'id', SortDirectionEnum::Asc);
     }
 }

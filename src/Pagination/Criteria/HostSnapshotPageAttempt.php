@@ -62,14 +62,14 @@ final readonly class HostSnapshotPageAttempt
      */
     public function read(): PageResultDTO
     {
-        if ($this->state() !== State::NEW) {
+        if ($this->state() !== State::New) {
             throw new HostSnapshotPaginationException('The Host snapshot attempt was already invoked.');
         }
         $source = $this->source->get();
         if ($source === null) {
             $this->record->finish(new HostSnapshotPageSettlementDTO(
-                HostSnapshotPageDispositionEnum::NOT_ACCEPTED,
-                HostSnapshotPageSettlementReasonEnum::SOURCE_UNAVAILABLE,
+                HostSnapshotPageDispositionEnum::NotAccepted,
+                HostSnapshotPageSettlementReasonEnum::SourceUnavailable,
             ));
             throw new HostSnapshotPaginationException('The Host snapshot source is unavailable.');
         }

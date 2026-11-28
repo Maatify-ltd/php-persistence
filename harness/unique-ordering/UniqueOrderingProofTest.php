@@ -206,7 +206,7 @@ final class UniqueOrderingProofTest extends IntegrationTestCase
             $manager = new ProtectedScopedOrderingManager();
             $this->duplicate(self::failureOf(fn() => $manager->moveWithinScope($checkout, self::config($table, 'global'), null, 4, 1)));
             $settlement = $checkout->settlement();
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
             $refused = 0;
             foreach ([$checkout->commit(...), $checkout->returnForHost(...), static fn() => $checkout->runRegisteredCommand('mark')] as $call) {
                 try {

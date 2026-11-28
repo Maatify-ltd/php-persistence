@@ -51,10 +51,10 @@ final class VerifiedTransactionDeadlockIntegrationTest extends DeadlockIntegrati
             self::assertSame(1213, self::driverCode($caught));
             self::assertSame(1, $attempts);
             $settlement = $checkout->settlement();
-            self::assertSame(VerifiedTransactionOutcomeEnum::UNKNOWN, $settlement->operationOutcome);
-            self::assertSame(VerifiedTransactionOutcomeEnum::UNKNOWN, $settlement->transactionOutcome);
-            self::assertSame(VerifiedTransactionReasonEnum::TRANSACTION_LOST, $settlement->checkoutReason);
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement->disposition);
+            self::assertSame(VerifiedTransactionOutcomeEnum::Unknown, $settlement->operationOutcome);
+            self::assertSame(VerifiedTransactionOutcomeEnum::Unknown, $settlement->transactionOutcome);
+            self::assertSame(VerifiedTransactionReasonEnum::TransactionLost, $settlement->checkoutReason);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement->disposition);
             $this->expectException(ProtectedTransactionException::class);
             $checkout->returnForHost();
         } finally {

@@ -132,8 +132,8 @@ final class StaticSortPaginationIntegrationTest extends PaginationIntegrationTes
         );
         $sorts = ['key_part' => 'k.name', 'language_code' => 'lc.language_code'];
         $plan = new StaticSortPlan(self::paginationConfig($sorts, 'key_part', 'language_code'), [
-            'key_part' => [['identifier' => 'lc.language_code', 'direction' => Direction::ASC]],
-            'language_code' => [['identifier' => 'k.name', 'direction' => Direction::ASC]],
+            'key_part' => [['identifier' => 'lc.language_code', 'direction' => Direction::Asc]],
+            'language_code' => [['identifier' => 'k.name', 'direction' => Direction::Asc]],
         ]);
         $paginator = new PdoPaginator();
         foreach ([
@@ -169,7 +169,7 @@ final class StaticSortPaginationIntegrationTest extends PaginationIntegrationTes
                 $expected = $paginator->paginate($pdo, $query, $request, $legacy, $mapper);
                 $actual = $paginator->paginateWithStaticSort($pdo, $query, $request, $plan, $mapper);
                 self::assertSame($expected->toArray(), $actual->toArray());
-                self::assertSame([8, 8, $primary, $descending ? Direction::DESC : Direction::ASC], [$actual->total, $actual->filtered, $actual->sortBy, $actual->sortDirection]);
+                self::assertSame([8, 8, $primary, $descending ? Direction::Desc : Direction::Asc], [$actual->total, $actual->filtered, $actual->sortBy, $actual->sortDirection]);
                 self::assertSame(array_slice($sql, -6, 3), array_slice($sql, -3));
                 self::assertStringNotContainsString('SET_VAR', $sql[count($sql) - 2]);
                 self::assertSame($hinted ? 1 : 0, substr_count($sql[count($sql) - 1], 'SET_VAR(max_sort_length=2048)'));
@@ -213,6 +213,6 @@ final class StaticSortPaginationIntegrationTest extends PaginationIntegrationTes
     /** @param non-empty-array<non-empty-string, non-empty-string> $sorts */
     private static function paginationConfig(array $sorts, string $primary, string $tie): PaginationConfig
     {
-        return new PaginationConfig(new SortWhitelist($sorts), $primary, Direction::ASC, $tie, Direction::ASC, 2);
+        return new PaginationConfig(new SortWhitelist($sorts), $primary, Direction::Asc, $tie, Direction::Asc, 2);
     }
 }

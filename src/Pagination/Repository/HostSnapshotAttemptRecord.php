@@ -11,7 +11,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum;
 /** @internal Private to the source and the attempt it issued. Contains no driver resources. */
 final class HostSnapshotAttemptRecord
 {
-    public HostSnapshotPageAttemptStateEnum $state = HostSnapshotPageAttemptStateEnum::NEW;
+    public HostSnapshotPageAttemptStateEnum $state = HostSnapshotPageAttemptStateEnum::New;
     /** Null until this invocation publishes its terminal, connection-free outcome. */
     public ?HostSnapshotPageSettlementDTO $settlement = null;
 
@@ -25,6 +25,6 @@ final class HostSnapshotAttemptRecord
     {
         $this->settlement = $settlement;
         $this->grant = null;
-        $this->state = HostSnapshotPageAttemptStateEnum::TERMINAL;
+        $this->state = HostSnapshotPageAttemptStateEnum::Terminal;
     }
 }

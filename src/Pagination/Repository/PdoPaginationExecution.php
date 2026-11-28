@@ -213,8 +213,8 @@ final readonly class PdoPaginationExecution
         }
 
         return match (strtoupper(trim($sortDirection))) {
-            'ASC' => SortDirectionEnum::ASC,
-            'DESC' => SortDirectionEnum::DESC,
+            'ASC' => SortDirectionEnum::Asc,
+            'DESC' => SortDirectionEnum::Desc,
             default => $config->defaultSortDirection,
         };
     }

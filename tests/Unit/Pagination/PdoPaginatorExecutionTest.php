@@ -19,7 +19,7 @@ final class PdoPaginatorExecutionTest extends TestCase
 {
     private function config(bool $dup = false): PaginationConfig
     {
-        return new PaginationConfig(new SortWhitelist(['id' => 'id', 'created_at' => $dup ? 'id' : 'created_at']), 'created_at', SortDirectionEnum::DESC, 'id', SortDirectionEnum::ASC);
+        return new PaginationConfig(new SortWhitelist(['id' => 'id', 'created_at' => $dup ? 'id' : 'created_at']), 'created_at', SortDirectionEnum::Desc, 'id', SortDirectionEnum::Asc);
     }
 
     public function testOrderSeparateMapsTypedBindingsAndFinalSql(): void

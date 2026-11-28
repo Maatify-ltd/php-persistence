@@ -12,44 +12,65 @@ namespace Maatify\PhpPersistence\Transaction\Enum;
 enum VerifiedTransactionReasonEnum
 {
     /** The initial idle-session qualification failed before START was attempted. */
-    case QUALIFICATION_FAILED;
+    case QualificationFailed;
 
     /** START or the active session check immediately after it could not be confirmed. */
-    case START_UNCONFIRMED;
+    case StartUnconfirmed;
 
     /** The checkout could not confirm continued use of the qualified transaction. */
-    case CONTINUITY_UNCONFIRMED;
+    case ContinuityUnconfirmed;
 
     /** Creating the Host operation savepoint could not be confirmed. */
-    case SAVEPOINT_UNCONFIRMED;
+    case SavepointUnconfirmed;
 
     /** The callback threw or returned an invalid decision, and its cleanup was confirmed. */
-    case CALLBACK_FAILED;
+    case CallbackFailed;
 
     /** A registered command latched a driver failure. */
-    case COMMAND_FAILED;
+    case CommandFailed;
 
     /** Command cursor release could not be confirmed. */
-    case CURSOR_UNCONFIRMED;
+    case CursorUnconfirmed;
 
     /** Rollback to the Host operation savepoint could not be confirmed. */
-    case ROLLBACK_TO_UNCONFIRMED;
+    case RollbackToUnconfirmed;
 
     /** Savepoint release could not be confirmed. An earlier acknowledged local undo still stands. */
-    case RELEASE_UNCONFIRMED;
+    case ReleaseUnconfirmed;
 
     /** COMMIT was attempted without a confirmed result. */
-    case COMMIT_OUTCOME_UNKNOWN;
+    case CommitOutcomeUnknown;
 
     /** Whole-transaction ROLLBACK was attempted without a confirmed result. */
-    case ROLLBACK_UNCONFIRMED;
+    case RollbackUnconfirmed;
 
     /** The end was acknowledged, but the idle-session check for handoff failed. */
-    case HANDOFF_UNCONFIRMED;
+    case HandoffUnconfirmed;
 
     /** The engine signalled a recognized transaction-loss condition. */
-    case TRANSACTION_LOST;
+    case TransactionLost;
 
     /** The Host retired a checkout before it reached a terminal disposition. */
-    case HOST_DISCARDED;
+    case HostDiscarded;
+
+    /** @internal Stable code for settlement JSON. */
+    public function settlementCode(): string
+    {
+        return match ($this) {
+            self::QualificationFailed => 'QUALIFICATION_FAILED',
+            self::StartUnconfirmed => 'START_UNCONFIRMED',
+            self::ContinuityUnconfirmed => 'CONTINUITY_UNCONFIRMED',
+            self::SavepointUnconfirmed => 'SAVEPOINT_UNCONFIRMED',
+            self::CallbackFailed => 'CALLBACK_FAILED',
+            self::CommandFailed => 'COMMAND_FAILED',
+            self::CursorUnconfirmed => 'CURSOR_UNCONFIRMED',
+            self::RollbackToUnconfirmed => 'ROLLBACK_TO_UNCONFIRMED',
+            self::ReleaseUnconfirmed => 'RELEASE_UNCONFIRMED',
+            self::CommitOutcomeUnknown => 'COMMIT_OUTCOME_UNKNOWN',
+            self::RollbackUnconfirmed => 'ROLLBACK_UNCONFIRMED',
+            self::HandoffUnconfirmed => 'HANDOFF_UNCONFIRMED',
+            self::TransactionLost => 'TRANSACTION_LOST',
+            self::HostDiscarded => 'HOST_DISCARDED',
+        };
+    }
 }

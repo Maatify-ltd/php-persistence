@@ -107,7 +107,7 @@ try {
             throw new RuntimeException('The writer crossed a locked anchor.');
         } catch (PDOException $failure) {
             if (!in_array($failure->errorInfo[1] ?? null, [$expected, (string) $expected], true)
-                || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED
+                || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DiscardRequired
             ) {
                 throw $failure;
             }

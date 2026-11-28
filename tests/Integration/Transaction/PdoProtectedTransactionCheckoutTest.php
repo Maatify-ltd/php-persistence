@@ -32,7 +32,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $this->reject(static fn() => PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog));
         $this->reject(static fn() => $checkout->commit());
         self::assertSame($pdo, $checkout->returnForHost());
-        self::assertSame(ProtectedTransactionDispositionEnum::UNCHANGED, $checkout->settlement()?->disposition);
+        self::assertSame(ProtectedTransactionDispositionEnum::Unchanged, $checkout->settlement()?->disposition);
         $this->reject(static fn() => $checkout->begin());
         $this->reject(static fn() => $checkout->returnForHost());
         $new = PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog);
@@ -64,7 +64,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
             $this->reject(static fn() => $checkout->rollBack());
             $returned = $checkout->returnForHost();
-            self::assertSame(ProtectedTransactionReasonEnum::CANCELLED_BEFORE_QUALIFICATION, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::CancelledBeforeQualification, $checkout->settlement()?->reason);
             unset($returned);
             self::assertSame('NO SQL BEFORE HANDOFF', $relay->readLine(12.0));
         } finally {
@@ -83,7 +83,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         $checkout->rollBack();
         self::assertFalse($pdo->inTransaction());
         $settlement = $checkout->settlement();
-        self::assertSame(ProtectedTransactionDispositionEnum::REUSABLE, $settlement?->disposition);
+        self::assertSame(ProtectedTransactionDispositionEnum::Reusable, $settlement?->disposition);
         self::assertSame([
             'disposition' => 'REUSABLE',
             'reason' => 'ROLLED_BACK',
@@ -100,8 +100,8 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         self::assertUnsettled($checkout);
         $this->reject(static fn() => $checkout->begin());
         $settlement = $checkout->settlement();
-        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
-        self::assertSame(ProtectedTransactionReasonEnum::SERVER_QUALIFICATION_FAILED, $settlement->reason);
+        self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::ServerQualificationFailed, $settlement->reason);
         $this->reject(static fn() => $checkout->returnForHost());
         $this->reject(static fn() => $checkout->rollBack());
         $checkout->discardForHost();
@@ -152,7 +152,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         self::assertSame([], $this->values($observer, $table));
         $checkout->commit();
         self::assertSame([10], $this->values($observer, $table));
-        self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+        self::assertSame(ProtectedTransactionReasonEnum::Committed, $checkout->settlement()?->reason);
         $checkout->returnForHost();
     }
 
@@ -191,7 +191,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
         self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('read'));
         self::assertSame([], $this->values($observer, $table));
         $checkout->commit();
-        self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+        self::assertSame(ProtectedTransactionReasonEnum::Committed, $checkout->settlement()?->reason);
         self::assertSame([10], $this->values($observer, $table));
         $checkout->returnForHost();
     }
@@ -199,9 +199,9 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
     /** @return iterable<string, array{bool, string, string, ProtectedTransactionReasonEnum}> */
     public static function completionLossModes(): iterable
     {
-        yield 'commit acknowledgement lost' => [true, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::COMMIT_OUTCOME_UNKNOWN];
-        yield 'lost after commit acknowledgement' => [true, 'after-ack', 'SERVER OK FORWARDED', ProtectedTransactionReasonEnum::COMMIT_CONFIRMED_CONNECTION_UNSAFE];
-        yield 'rollback acknowledgement lost' => [false, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::ROLLBACK_UNCONFIRMED];
+        yield 'commit acknowledgement lost' => [true, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::CommitOutcomeUnknown];
+        yield 'lost after commit acknowledgement' => [true, 'after-ack', 'SERVER OK FORWARDED', ProtectedTransactionReasonEnum::CommitConfirmedConnectionUnsafe];
+        yield 'rollback acknowledgement lost' => [false, 'after', 'SERVER OK WITHHELD', ProtectedTransactionReasonEnum::RollbackUnconfirmed];
     }
 
     #[DataProvider('completionLossModes')]
@@ -284,7 +284,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
                 ini_set('zend.exception_ignore_args', $previousIni);
             }
         }
-        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+        self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
         $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
         $this->reject(static fn() => $checkout->commit());
         $checkout->discardForHost();
@@ -328,10 +328,10 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
     /** @return iterable<string, array{int, bool, ProtectedTransactionReasonEnum}> */
     public static function completionSettings(): iterable
     {
-        yield 'CHAIN with commit' => [1, true, ProtectedTransactionReasonEnum::COMMITTED];
-        yield 'CHAIN with rollback' => [1, false, ProtectedTransactionReasonEnum::ROLLED_BACK];
-        yield 'RELEASE with commit' => [2, true, ProtectedTransactionReasonEnum::COMMITTED];
-        yield 'RELEASE with rollback' => [2, false, ProtectedTransactionReasonEnum::ROLLED_BACK];
+        yield 'CHAIN with commit' => [1, true, ProtectedTransactionReasonEnum::Committed];
+        yield 'CHAIN with rollback' => [1, false, ProtectedTransactionReasonEnum::RolledBack];
+        yield 'RELEASE with commit' => [2, true, ProtectedTransactionReasonEnum::Committed];
+        yield 'RELEASE with rollback' => [2, false, ProtectedTransactionReasonEnum::RolledBack];
     }
 
     #[DataProvider('completionSettings')]
@@ -371,7 +371,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             unset($pdo);
             $checkout->begin();
             self::assertSame(1205, self::driverCode(self::failureOf(static fn() => $checkout->runRegisteredCommand('write'))));
-            self::assertSame(ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::OperationUnconfirmed, $checkout->settlement()?->reason);
             $this->reject(static fn() => $checkout->runRegisteredCommand('write'));
             $checkout->discardForHost();
         } finally {
@@ -427,7 +427,7 @@ final class PdoProtectedTransactionCheckoutTest extends IntegrationTestCase
             unset($pdo);
             self::failureOf(static fn() => $checkout->begin());
             self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionReasonEnum::START_UNCONFIRMED, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::StartUnconfirmed, $checkout->settlement()?->reason);
             $this->reject(static fn() => $checkout->commit());
             $this->reject(static fn() => $checkout->returnForHost());
             $checkout->discardForHost();

@@ -22,15 +22,15 @@ final readonly class ProtectedTransactionSettlementDTO implements JsonSerializab
     ) {}
 
     /**
-     * Projects the recorded enum case names as strings.
+     * Projects the stable settlement codes as strings.
      *
      * @return array{disposition: string, reason: string}
      */
     public function jsonSerialize(): array
     {
         return [
-            'disposition' => $this->disposition->name,
-            'reason' => $this->reason->name,
+            'disposition' => $this->disposition->settlementCode(),
+            'reason' => $this->reason->settlementCode(),
         ];
     }
 }

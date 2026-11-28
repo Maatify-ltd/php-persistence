@@ -42,7 +42,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
                 $this->config(),
                 static fn(array $row): array => $row,
             )));
-            self::assertSame(SnapshotConnectionDispositionEnum::UNCHANGED, $operation->connectionOutcome()?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Unchanged, $operation->connectionOutcome()?->disposition);
             $source->settle($checkout, $operation->connectionOutcome());
             self::assertFalse($source->canCheckout());
             self::assertSame($reader, $source->takeReturnedConnection());
@@ -65,7 +65,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         $escaped = self::failure(function () use ($operation, $table, $fault, $source, $checkout): PageResultDTO {
             $page = $operation->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
             self::assertSame(3, $page->filtered);
-            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $operation->connectionOutcome()?->disposition);
             $source->settle($checkout, $operation->connectionOutcome(), $fault);
 
             return $page;
@@ -97,7 +97,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
                 $this->config(),
                 static fn(array $row): array => $row,
             )));
-            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $operation->connectionOutcome()?->disposition);
             $source->settle($checkout, $operation->connectionOutcome());
             [$next, $available] = $source->checkout();
             self::assertSame($reader, $available);
@@ -182,7 +182,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         self::assertSame([], $reader->controls);
         $outcome = $operation->connectionOutcome();
         $source->settle($checkout, $outcome);
-        self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $outcome?->disposition);
+        self::assertSame(SnapshotConnectionDispositionEnum::Discard, $outcome?->disposition);
         self::assertNull($source->takeReturnedConnection());
         self::assertFalse($source->canCheckout());
     }
@@ -236,7 +236,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
                 },
             )));
             self::assertSame(['START TRANSACTION READ ONLY'], $reader->controls);
-            self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $operation->connectionOutcome()?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Discard, $operation->connectionOutcome()?->disposition);
             $source->settle($checkout, $operation->connectionOutcome());
             self::assertFalse($source->canCheckout());
         } finally {
@@ -266,7 +266,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             $outcome = $operation->connectionOutcome();
             $source->settle($checkout, $outcome);
 
-            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $outcome?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $outcome?->disposition);
             self::assertTrue($source->canCheckout());
             [$next, $available] = $source->checkout();
             self::assertSame($pdo, $available);
@@ -335,7 +335,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
                 self::assertInstanceOf(SnapshotPaginationException::class, $failure);
             }
             self::assertSame(1, $closeAttempts);
-            self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $outcome?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Discard, $outcome?->disposition);
             self::assertSame('cursor-release', $outcome->diagnostic);
             self::assertFalse($source->canCheckout());
         } finally {
@@ -371,7 +371,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             $failure = self::failure(fn() => $operation->paginate($invalid, new PageRequest(), $this->config(), static fn(array $row): array => $row));
             self::assertInstanceOf(PDOException::class, $failure);
             self::assertSame(1146, $failure->errorInfo[1] ?? null);
-            self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $operation->connectionOutcome()?->disposition);
             self::assertFalse($reader->inTransaction());
         } finally {
             self::endFixtureTransaction($reader);
@@ -390,7 +390,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
         try {
             $escaped = self::failure(function () use ($operation, $table, $primary, $handoff, $source, $checkout): void {
                 $read = self::failure(fn() => $operation->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(): never => throw $primary));
-                self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $operation->connectionOutcome()?->disposition);
+                self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $operation->connectionOutcome()?->disposition);
                 $failure = self::failure(static fn() => $source->settle($checkout, $operation->connectionOutcome(), $handoff));
                 self::assertSame($handoff, $failure);
 
@@ -440,7 +440,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             $outcome = $operation->connectionOutcome();
             $source->settle($checkout, $outcome);
             self::assertSame(1, $reader->rollbackAttempts);
-            self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $outcome?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Discard, $outcome?->disposition);
             self::assertSame('rollback', $outcome->diagnostic);
             self::assertFalse($source->canCheckout());
         } finally {
@@ -542,7 +542,7 @@ final class PdoSnapshotPaginatorFailureTest extends PaginationIntegrationTestCas
             }
             self::assertSame($forward ? "SERVER OK WITHHELD\n" : "COMMAND NOT FORWARDED\n", fgets($pipes[1]));
             $outcome = $operation->connectionOutcome();
-            self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $outcome?->disposition);
+            self::assertSame(SnapshotConnectionDispositionEnum::Discard, $outcome?->disposition);
             self::assertSame($phase, $outcome->diagnostic);
             $source->settle($checkout, $outcome);
             self::assertFalse($source->canCheckout());

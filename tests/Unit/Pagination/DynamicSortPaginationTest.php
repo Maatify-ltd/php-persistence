@@ -137,7 +137,7 @@ final class DynamicSortPaginationTest extends TestCase
             [new SortWhitelist(['id' => 'id']), 'id', []],
             [new SortWhitelist(['recent' => 'o.ID', 'id' => 'o.id']), 'recent', []],
         ] as [$whitelist, $key, $terms]) {
-            $config = new PaginationConfig($whitelist, $key, Direction::DESC, 'id', Direction::ASC);
+            $config = new PaginationConfig($whitelist, $key, Direction::Desc, 'id', Direction::Asc);
             $pdo = new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), ScriptedPdoStatement::data([['id' => 7]])]);
             $result = (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(), $config, $terms, self::row(...));
             $identifier = $key === 'recent' ? '`o`.`ID`' : '`id`';
@@ -150,7 +150,7 @@ final class DynamicSortPaginationTest extends TestCase
 
     public function testLexicallyDifferentQualifierPathsStayDistinct(): void
     {
-        $config = new PaginationConfig(new SortWhitelist(['plain' => 'id', 'tie' => 'a.id', 'joined' => 'b.id']), 'plain', Direction::DESC, 'tie', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['plain' => 'id', 'tie' => 'a.id', 'joined' => 'b.id']), 'plain', Direction::Desc, 'tie', Direction::Asc);
         $pdo = new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), ScriptedPdoStatement::data([['id' => 7]])]);
         (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(), $config, [self::sort('plain', 'DESC'), self::sort('joined', 'ASC')], self::row(...));
         self::assertSame(self::dataSql('`id` DESC, `b`.`id` ASC, `a`.`id` ASC'), $pdo->preparedSql[2]);
@@ -198,7 +198,7 @@ final class DynamicSortPaginationTest extends TestCase
         yield 'missing key' => [[['direction' => 'ASC']], $request, false];
         yield 'extra field' => [[$valid + ['extra' => 'drop']], $request, false];
         yield 'numeric key' => [[['key' => 3, 'direction' => 'ASC']], $request, false];
-        yield 'enum direction' => [[['key' => 'status', 'direction' => Direction::ASC]], $request, false];
+        yield 'enum direction' => [[['key' => 'status', 'direction' => Direction::Asc]], $request, false];
         yield 'invalid direction' => [[self::sort('status', 'ascending')], $request, false];
         yield 'leading direction whitespace' => [[self::sort('status', ' ASC')], $request, false];
         yield 'direction trailing LF' => [[self::sort('status', "DESC\n")], $request, false];
@@ -234,7 +234,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testQualifierCaseConflictAndConfigurationPrecedenceBeforeSql(): void
     {
         $pdo = new ScriptedPdo([]);
-        $config = new PaginationConfig(new SortWhitelist(['first' => 'O.iD', 'tie' => 'o.id']), 'first', Direction::DESC, 'tie', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['first' => 'O.iD', 'tie' => 'o.id']), 'first', Direction::Desc, 'tie', Direction::Asc);
         $this->expectException(InvalidPaginationConfigurationException::class);
         try {
             (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(sortBy: 'conflict'), $config, [null], self::row(...));
@@ -247,7 +247,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testRequestedQualifierConflictFailsBeforeSql(bool $tieConflict): void
     {
         $pdo = new ScriptedPdo([]);
-        $config = new PaginationConfig(new SortWhitelist(['a' => 'db.O.Score', 'b' => 'db.o.score', 't' => $tieConflict ? 'db.o.score' : 'db.o.id', 'default' => 'db.o.date']), 'default', Direction::DESC, 't', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['a' => 'db.O.Score', 'b' => 'db.o.score', 't' => $tieConflict ? 'db.o.score' : 'db.o.id', 'default' => 'db.o.date']), 'default', Direction::Desc, 't', Direction::Asc);
         $sorts = [self::sort('a', 'ASC')];
         if (! $tieConflict) {
             $sorts[] = self::sort('b', 'ASC');
@@ -275,9 +275,9 @@ final class DynamicSortPaginationTest extends TestCase
         $config = new PaginationConfig(
             new SortWhitelist(['name' => 'o.name', 'tie' => 'o.id', 'alias' => 'O.id']),
             'name',
-            Direction::ASC,
+            Direction::Asc,
             'tie',
-            Direction::ASC,
+            Direction::Asc,
         );
         $sorts = array_map(static fn(string $key): array => self::sort($key, 'ASC'), $keys);
 
@@ -299,7 +299,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testDtoFactoryRejectsUnrelatedPageBeforePublishingMetadata(): void
     {
         $sort = ResolvedDynamicSort::resolve(self::config(), new PageRequest(), [self::sort('score', 'ASC')], false);
-        foreach ([['status', Direction::ASC], ['score', Direction::DESC]] as [$key, $direction]) {
+        foreach ([['status', Direction::Asc], ['score', Direction::Desc]] as [$key, $direction]) {
             try {
                 MultiSortPageResultDTO::fromResolved(new PageResultDTO([], 1, 2, 0, 0, 0, false, false, $key, $direction), $sort);
                 self::fail('Expected an inconsistent result to be rejected.');
@@ -400,7 +400,7 @@ final class DynamicSortPaginationTest extends TestCase
         return new PaginationConfig(new SortWhitelist([
             'status' => 'o.status', 'state_alias' => 'o.STATUS', 'score' => 'o.score', 'name' => 'o.name',
             'internal_id' => 'o.id', 'alternate_id' => 'o.ID',
-        ]), 'status', Direction::DESC, 'internal_id', Direction::ASC, 2);
+        ]), 'status', Direction::Desc, 'internal_id', Direction::Asc, 2);
     }
 
     private static function query(): PdoPaginationQueryDescriptor

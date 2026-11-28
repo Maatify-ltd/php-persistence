@@ -103,8 +103,8 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             }
         }
         $settlement = $checkout->settlement();
-        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
-        self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $settlement->reason);
+        self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::TransactionLost, $settlement->reason);
         $this->reject(static fn() => $checkout->runRegisteredCommand('write', ['id' => $hostId]));
         $this->reject(static fn() => $checkout->rollBack());
         $this->reject(static fn() => $checkout->returnForHost());
@@ -173,7 +173,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             self::assertSame(1305, self::driverCode($error));
             self::assertSame('TARGET UPDATE MADE EMPTY', $relay->readLine(12.0));
             self::assertSame('RELEASE REPLACED AFTER UNDO', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             $this->reject(static fn() => $checkout->commit());
             $checkout->discardForHost();
         } finally {
@@ -223,9 +223,9 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             $failure = self::failureOf(fn() => $manager->moveWithinScope($checkout, $this->scopedConfig(), 'target', $second, 1));
             self::assertSame(1020, self::driverCode($failure));
             $settlement = $checkout->settlement();
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
             self::assertSame(
-                $mariaDb ? ProtectedTransactionReasonEnum::TRANSACTION_LOST : ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED,
+                $mariaDb ? ProtectedTransactionReasonEnum::TransactionLost : ProtectedTransactionReasonEnum::OperationUnconfirmed,
                 $settlement->reason,
             );
             $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
@@ -264,7 +264,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             ), null, PdoProtectedTransactionCheckout::class);
             self::assertSame($primary, $this->caughtFailure($exercise));
             self::assertSame('RELEASE REPLACED AFTER UNDO', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             $this->reject(static fn() => $checkout->returnForHost());
             $checkout->discardForHost();
         } finally {
@@ -304,7 +304,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             self::assertNull($checkout->settlement());
             self::assertSame('0', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
             $checkout->commit();
-            self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::Committed, $checkout->settlement()?->reason);
             self::assertSame('1', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
             $checkout->returnForHost();
         } finally {

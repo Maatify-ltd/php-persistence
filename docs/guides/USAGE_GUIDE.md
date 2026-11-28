@@ -150,7 +150,7 @@ Use a protected checkout when the Host needs to keep transaction control while r
 
 1. Build a `ProtectedTransactionCommandCatalog` from trusted `ProtectedTransactionCommandPlan` entries. Delegate an eligible idle PDO through `PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog)` and keep raw aliases out of use.
 2. Call `$checkout->begin()`. Execute the registered operation through `$checkout->runRegisteredCommand('invoice.updateStatus', ['id' => $invoiceId, 'status' => $status])`. Check the affected-row result against the Host's business rule. For guarded Ordering within the same transaction, use the [protected Ordering path](#protected-ordering-and-domain-constraints).
-3. Inspect `settlement()` after an error. A `null` settlement means the checkout has yet to record a terminal outcome. The Host ends a confirmed active transaction with `commit()` or `rollBack()` before any handoff. Read the terminal settlement after attempting to end it. On `REUSABLE`, retrieve the same connection once with `returnForHost()`. On `DISCARD_REQUIRED`, stop issuing SQL, call `discardForHost()`, and reconcile any uncertain database effect before deciding whether to repeat the work.
+3. Inspect `settlement()` after an error. A `null` settlement means the checkout has yet to record a terminal outcome. The Host ends a confirmed active transaction with `commit()` or `rollBack()` before any handoff. Read the terminal settlement after attempting to end it. On `Reusable`, retrieve the same connection once with `returnForHost()`. On `DiscardRequired`, stop issuing SQL, call `discardForHost()`, and reconcile any uncertain database effect before deciding whether to repeat the work.
 
 See the [protected Host write contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction) for PDO eligibility, failure reasons and handoff.
 
@@ -164,8 +164,8 @@ The Host supplies an idle, non-persistent `PDO` or `Pdo\Mysql` connection from `
 
 1. **Input** — Register each transaction-preserving command in a `ProtectedTransactionCommandCatalog` and pass the catalog and PDO to `PdoVerifiedTransactionCheckout::attachExclusive()`. The callback receives a `VerifiedTransactionCommandsInterface` grant. Use its `runRegisteredCommand()` with an ID and matching named bindings, then return `VerifiedTransactionDecisionCommand::apply($payload)` or `VerifiedTransactionDecisionCommand::discard($payload)`. Both decisions accept `false` or `null` as payload.
 2. **Public call** — In **Owned** mode, call `runOwned($operation)`. The checkout starts and ends the transaction. In **Host** mode, call `beginHost()`, optionally run registered Host commands, and call `runInHost($operation)` for one savepoint-scoped operation. The Host can continue with registered commands after a confirmed operation and chooses the outer `commit()` or `rollBack()`.
-3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PENDING_HOST` after savepoint release and confirmed continuity. Discard records `LOCAL_UNDONE` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome. The settlement's JSON projection uses case names and preserves null fields.
-4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `UNKNOWN` and the connection `DISCARD_REQUIRED`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `REUSABLE` or an untouched `UNCHANGED` cancellation. For `DISCARD_REQUIRED`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
+3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PendingHost` after savepoint release and confirmed continuity. Discard records `LocalUndone` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome. The settlement's JSON projection preserves null fields and uses [stable uppercase codes](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#36-settlement-enum-json-codes).
+4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `Unknown` and the connection `DiscardRequired`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `Reusable` or an untouched `Unchanged` cancellation. For `DiscardRequired`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
 
 Run `php examples/verified_transaction_usage.php` from the project root with the disposable database settings above. The example covers Owned Apply and Discard, Host Discard followed by an outer commit, and settlement after a callback throws. See the [runnable example](../../examples/verified_transaction_usage.php) and the [complete Verified Checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard).
 
@@ -207,9 +207,9 @@ $request = new PageRequest(
 $config = new PaginationConfig(
     sortWhitelist: new SortWhitelist(['created_at' => 'orders.created_at', 'id' => 'orders.id']),
     defaultSortBy: 'created_at',
-    defaultSortDirection: SortDirectionEnum::DESC,
+    defaultSortDirection: SortDirectionEnum::Desc,
     tieBreakerSortBy: 'id',
-    tieBreakerDirection: SortDirectionEnum::ASC,
+    tieBreakerDirection: SortDirectionEnum::Asc,
 );
 
 $query = new PdoPaginationQueryDescriptor(
@@ -272,7 +272,7 @@ Use C1 when all reads for one page can run through the same eligible InnoDB conn
 
 1. Build the same descriptor, request and configuration used for standard pagination.
 2. Create the one-shot operation with `PdoSnapshotPaginator::forExclusiveRead($pdo)` and call `paginate()`.
-3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `REUSABLE` after confirmed cleanup, retains its policy for `UNCHANGED`, and retires a `DISCARD` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
+3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `Reusable` after confirmed cleanup, retains its policy for `Unchanged`, and retires a `Discard` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
 
 The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the installed package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
 
@@ -439,7 +439,7 @@ try {
     }
     throw $failure;
 } finally {
-    if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
+    if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DiscardRequired) {
         $checkout->discardForHost();
     } else {
         $hostPdo = $checkout->returnForHost();

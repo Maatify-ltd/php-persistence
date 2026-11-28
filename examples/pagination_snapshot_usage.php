@@ -35,9 +35,9 @@ try {
     $config = new PaginationConfig(
         new SortWhitelist(['id' => 'id']),
         'id',
-        SortDirectionEnum::ASC,
+        SortDirectionEnum::Asc,
         'id',
-        SortDirectionEnum::ASC,
+        SortDirectionEnum::Asc,
     );
 
     $mapperFailure = new RuntimeException('Example mapper failure.');
@@ -67,7 +67,7 @@ try {
 
         // This example's Host keeps an eligible reader only on confirmed reuse.
         // For any other outcome it retires its reference to the fresh reader.
-        if ($operation->connectionOutcome()?->disposition !== SnapshotConnectionDispositionEnum::REUSABLE) {
+        if ($operation->connectionOutcome()?->disposition !== SnapshotConnectionDispositionEnum::Reusable) {
             $reader = null;
         }
         if ($failure !== null && $failure !== $expectedFailure) {

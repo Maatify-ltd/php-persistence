@@ -21,13 +21,13 @@ final class PaginationConfigTest extends TestCase
             'alias' => 'id',
         ]);
 
-        $default = new PaginationConfig($whitelist, 'created_at', SortDirectionEnum::DESC, 'id', SortDirectionEnum::ASC);
+        $default = new PaginationConfig($whitelist, 'created_at', SortDirectionEnum::Desc, 'id', SortDirectionEnum::Asc);
 
         self::assertSame(20, $default->defaultPerPage);
         self::assertSame(1, $default->minPerPage);
         self::assertSame(200, $default->maxPerPage);
 
-        $custom = new PaginationConfig($whitelist, 'alias', SortDirectionEnum::ASC, 'id', SortDirectionEnum::DESC, 10, 2, 50);
+        $custom = new PaginationConfig($whitelist, 'alias', SortDirectionEnum::Asc, 'id', SortDirectionEnum::Desc, 10, 2, 50);
 
         self::assertSame(10, $custom->defaultPerPage);
         self::assertSame(2, $custom->minPerPage);
@@ -42,9 +42,9 @@ final class PaginationConfigTest extends TestCase
         new PaginationConfig(
             new SortWhitelist(['id' => 'id', 'created_at' => 'created_at']),
             $default,
-            SortDirectionEnum::ASC,
+            SortDirectionEnum::Asc,
             $tie,
-            SortDirectionEnum::ASC,
+            SortDirectionEnum::Asc,
             $defaultPerPage,
             $minPerPage,
             $maxPerPage,

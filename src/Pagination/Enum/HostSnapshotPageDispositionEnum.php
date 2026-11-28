@@ -11,7 +11,17 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
  */
 enum HostSnapshotPageDispositionEnum
 {
-    case NOT_ACCEPTED;
-    case RETURNED_TO_HOST;
-    case HOST_ACTION_REQUIRED;
+    case NotAccepted;
+    case ReturnedToHost;
+    case HostActionRequired;
+
+    /** @internal Stable code for settlement JSON. */
+    public function settlementCode(): string
+    {
+        return match ($this) {
+            self::NotAccepted => 'NOT_ACCEPTED',
+            self::ReturnedToHost => 'RETURNED_TO_HOST',
+            self::HostActionRequired => 'HOST_ACTION_REQUIRED',
+        };
+    }
 }

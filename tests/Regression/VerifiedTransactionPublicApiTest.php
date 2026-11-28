@@ -103,22 +103,22 @@ final class VerifiedTransactionPublicApiTest extends TestCase
             array_map(static fn(\ReflectionParameter $p): string => (string) $p->getType(), $parameters),
         ));
         self::assertSame(
-            ['NOT_STARTED', 'PENDING_HOST', 'LOCAL_UNDONE', 'COMMITTED', 'ROLLED_BACK', 'UNKNOWN'],
+            ['NotStarted', 'PendingHost', 'LocalUndone', 'Committed', 'RolledBack', 'Unknown'],
             array_column(Outcome::cases(), 'name'),
         );
         self::assertSame([
-            'QUALIFICATION_FAILED', 'START_UNCONFIRMED', 'CONTINUITY_UNCONFIRMED', 'SAVEPOINT_UNCONFIRMED',
-            'CALLBACK_FAILED', 'COMMAND_FAILED', 'CURSOR_UNCONFIRMED', 'ROLLBACK_TO_UNCONFIRMED',
-            'RELEASE_UNCONFIRMED', 'COMMIT_OUTCOME_UNKNOWN', 'ROLLBACK_UNCONFIRMED', 'HANDOFF_UNCONFIRMED',
-            'TRANSACTION_LOST', 'HOST_DISCARDED',
+            'QualificationFailed', 'StartUnconfirmed', 'ContinuityUnconfirmed', 'SavepointUnconfirmed',
+            'CallbackFailed', 'CommandFailed', 'CursorUnconfirmed', 'RollbackToUnconfirmed',
+            'ReleaseUnconfirmed', 'CommitOutcomeUnknown', 'RollbackUnconfirmed', 'HandoffUnconfirmed',
+            'TransactionLost', 'HostDiscarded',
         ], array_column(Reason::cases(), 'name'));
     }
 
-    public function testSettlementJsonPreservesPropertiesAsCaseNamesOrNull(): void
+    public function testSettlementJsonPreservesPropertiesAsStableCodesOrNull(): void
     {
-        $settlement = new Settlement(Outcome::LOCAL_UNDONE, Reason::CALLBACK_FAILED, Outcome::UNKNOWN, null, Disposition::DISCARD_REQUIRED);
+        $settlement = new Settlement(Outcome::LocalUndone, Reason::CallbackFailed, Outcome::Unknown, null, Disposition::DiscardRequired);
 
-        self::assertSame(Outcome::LOCAL_UNDONE, $settlement->operationOutcome);
+        self::assertSame(Outcome::LocalUndone, $settlement->operationOutcome);
         self::assertSame([
             'operationOutcome' => 'LOCAL_UNDONE',
             'operationReason' => 'CALLBACK_FAILED',

@@ -10,6 +10,6 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
  */
 enum HostSnapshotCommandResultModeEnum
 {
-    case AFFECTED_ROWS;
-    case BOUNDED_ROWS;
+    case AffectedRows;
+    case BoundedRows;
 }

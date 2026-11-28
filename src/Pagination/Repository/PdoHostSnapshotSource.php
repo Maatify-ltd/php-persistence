@@ -60,7 +60,7 @@ final class PdoHostSnapshotSource
     private WeakMap $grants;
     /** @var WeakMap<HostSnapshotPageAttempt, HostSnapshotAttemptRecord> */
     private WeakMap $attempts;
-    private State $state = State::IDLE;
+    private State $state = State::Idle;
     private bool $busy = false;
     private ?string $sessionId = null;
     /** Identifies the qualified transaction against which the source checks page grants. */
@@ -110,7 +110,7 @@ final class PdoHostSnapshotSource
      */
     public function checkout(): PdoHostSnapshotCheckout
     {
-        if ($this->busy || $this->checkout !== null || $this->state !== State::IDLE) {
+        if ($this->busy || $this->checkout !== null || $this->state !== State::Idle) {
             throw new HostSnapshotPaginationException('The Host snapshot source is unavailable.');
         }
         $this->busy = true;
@@ -122,7 +122,7 @@ final class PdoHostSnapshotSource
 
             return $checkout;
         } catch (Throwable $error) {
-            $this->state = State::QUARANTINED;
+            $this->state = State::Quarantined;
             throw $error;
         } finally {
             $this->busy = false;
@@ -143,9 +143,9 @@ final class PdoHostSnapshotSource
                 $this->quarantine();
                 throw new HostSnapshotPaginationException('Host snapshot resources still prevent a handoff.');
             }
-            $disposition = $this->state === State::IDLE && $this->sessionId !== null && ! $this->nextTransactionUnconfirmed
-                ? HostSnapshotRetirementDispositionEnum::RETURNED_IDLE
-                : HostSnapshotRetirementDispositionEnum::RETURNED_FOR_RECONCILIATION;
+            $disposition = $this->state === State::Idle && $this->sessionId !== null && ! $this->nextTransactionUnconfirmed
+                ? HostSnapshotRetirementDispositionEnum::ReturnedIdle
+                : HostSnapshotRetirementDispositionEnum::ReturnedForReconciliation;
             $handoff = $this->connection->handoff($disposition);
             $this->markRetired();
             $this->connection->detach();
@@ -176,7 +176,7 @@ final class PdoHostSnapshotSource
     /** Takes exclusive use for retirement, including when the source is quarantined. */
     private function reserveRetirement(): void
     {
-        if ($this->busy || $this->state === State::RETIRED) {
+        if ($this->busy || $this->state === State::Retired) {
             throw new HostSnapshotPaginationException('The Host snapshot source cannot be retired.');
         }
         $this->busy = true;
@@ -192,20 +192,20 @@ final class PdoHostSnapshotSource
         $this->checkout = null;
         $this->checkoutIdentity = null;
         $this->generation = null;
-        $this->state = State::RETIRED;
+        $this->state = State::Retired;
     }
 
-    /** @internal Reports BUSY under reservation and distinguishes release from retirement. */
+    /** @internal Reports Busy under reservation and distinguishes release from retirement. */
     public function checkoutState(PdoHostSnapshotCheckout $checkout): State
     {
         if ($this->retiredCheckout?->get() === $checkout) {
-            return State::RETIRED;
+            return State::Retired;
         }
         if ($this->checkout?->get() !== $checkout) {
-            return State::RELEASED;
+            return State::Released;
         }
 
-        return $this->busy ? State::BUSY : $this->state;
+        return $this->busy ? State::Busy : $this->state;
     }
 
     /**
@@ -215,7 +215,7 @@ final class PdoHostSnapshotSource
      */
     public function releaseCheckout(PdoHostSnapshotCheckout $checkout): void
     {
-        $this->reserve($checkout, State::IDLE);
+        $this->reserve($checkout, State::Idle);
         try {
             if ($this->nextTransactionUnconfirmed) {
                 throw new HostSnapshotPaginationException('The next Host snapshot transaction setting is unresolved.');
@@ -224,7 +224,7 @@ final class PdoHostSnapshotSource
             $this->checkout = null;
             $this->checkoutIdentity = null;
         } catch (Throwable $error) {
-            $this->state = State::QUARANTINED;
+            $this->state = State::Quarantined;
             throw $error;
         } finally {
             $this->busy = false;
@@ -238,7 +238,7 @@ final class PdoHostSnapshotSource
      */
     public function beginCheckout(PdoHostSnapshotCheckout $checkout, HostSnapshotAccessModeEnum $mode): void
     {
-        $this->reserve($checkout, State::IDLE);
+        $this->reserve($checkout, State::Idle);
         try {
             $this->confirmSession(false);
             $this->connection->control('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -246,7 +246,7 @@ final class PdoHostSnapshotSource
             $this->confirmSession(true);
             $this->nextTransactionUnconfirmed = false;
             $this->generation = new stdClass();
-            $this->state = State::TRANSACTION_ACTIVE;
+            $this->state = State::TransactionActive;
         } catch (Throwable $error) {
             $this->quarantine();
             throw $error;
@@ -267,19 +267,19 @@ final class PdoHostSnapshotSource
      */
     public function executeCheckoutCommand(PdoHostSnapshotCheckout $checkout, string $id, array $bindings): int|array
     {
-        $this->reserve($checkout, State::IDLE, State::TRANSACTION_ACTIVE, State::TRANSACTION_UNQUALIFIED);
+        $this->reserve($checkout, State::Idle, State::TransactionActive, State::TransactionUnqualified);
         try {
             $command = $this->catalog->command($id);
             $params = HostSnapshotBindings::exact($command->parameterNames, $bindings);
-            $preserves = $command->effect === HostSnapshotCommandEffectEnum::PRESERVES_TRANSACTION;
-            $active = $this->state !== State::IDLE;
+            $preserves = $command->effect === HostSnapshotCommandEffectEnum::PreservesTransaction;
+            $active = $this->state !== State::Idle;
             if (! $preserves) {
                 $this->generation = null;
                 // A trusted, invalidating single statement may also set a next-transaction override.
                 $this->nextTransactionUnconfirmed = true;
             }
             try {
-                $maxRows = $command->resultMode === HostSnapshotCommandResultModeEnum::BOUNDED_ROWS ? $command->maxRows : null;
+                $maxRows = $command->resultMode === HostSnapshotCommandResultModeEnum::BoundedRows ? $command->maxRows : null;
                 try {
                     $result = $this->connection->execute($command->sql, $params, $maxRows);
                 } catch (HostSnapshotRowLimitExceededException) {
@@ -287,7 +287,7 @@ final class PdoHostSnapshotSource
                 }
                 $this->confirmSession($preserves ? $active : null);
                 if (! $preserves) {
-                    $this->state = $this->connection->transactionActive() ? State::TRANSACTION_UNQUALIFIED : State::QUARANTINED;
+                    $this->state = $this->connection->transactionActive() ? State::TransactionUnqualified : State::Quarantined;
                 }
 
             } catch (Throwable $error) {
@@ -311,13 +311,13 @@ final class PdoHostSnapshotSource
      */
     public function finishCheckout(PdoHostSnapshotCheckout $checkout, bool $commit): void
     {
-        $this->reserve($checkout, State::TRANSACTION_ACTIVE, State::TRANSACTION_UNQUALIFIED);
+        $this->reserve($checkout, State::TransactionActive, State::TransactionUnqualified);
         $this->generation = null;
         try {
             $this->confirmSession(true);
             $this->connection->control($commit ? 'COMMIT AND NO CHAIN NO RELEASE' : 'ROLLBACK AND NO CHAIN NO RELEASE');
             $this->confirmSession(false);
-            $this->state = $this->nextTransactionUnconfirmed ? State::QUARANTINED : State::IDLE;
+            $this->state = $this->nextTransactionUnconfirmed ? State::Quarantined : State::Idle;
         } catch (Throwable $error) {
             $this->quarantine();
             throw $error;
@@ -341,7 +341,7 @@ final class PdoHostSnapshotSource
         PageRequest $request,
     ): HostSnapshotPageGrant {
         if ($this->busy || $this->checkout?->get() !== $checkout || $this->checkoutIdentity === null
-            || $this->state !== State::TRANSACTION_ACTIVE || $this->generation === null
+            || $this->state !== State::TransactionActive || $this->generation === null
         ) {
             throw new HostSnapshotPaginationException('The Host snapshot transaction cannot authorize a page.');
         }
@@ -403,31 +403,31 @@ final class PdoHostSnapshotSource
     {
         // First-use autoloading may run Host code. Materialize the outcomes before
         // checking the generation, then admit without anything that invokes a callback.
-        $fallback = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SETTLEMENT_UNCONFIRMED);
-        $scopeUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::SCOPE_UNCONFIRMED);
-        $resourcesUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HOST_ACTION_REQUIRED, Reason::RESOURCE_RELEASE_UNCONFIRMED);
+        $fallback = new HostSnapshotPageSettlementDTO(Disposition::HostActionRequired, Reason::SettlementUnconfirmed);
+        $scopeUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HostActionRequired, Reason::ScopeUnconfirmed);
+        $resourcesUnconfirmed = new HostSnapshotPageSettlementDTO(Disposition::HostActionRequired, Reason::ResourceReleaseUnconfirmed);
 
         $record = $this->attempts[$attempt] ?? null;
-        if ($record === null || $record->state !== Stage::NEW || $record->grant === null) {
+        if ($record === null || $record->state !== Stage::New || $record->grant === null) {
             throw new HostSnapshotPaginationException('The Host snapshot attempt is unavailable.');
         }
         $grant = $this->grants[$record->grant];
         $rejected = match (true) {
             $this->checkout?->get() === null || $grant->checkoutIdentity !== $this->checkoutIdentity
-                || $this->state === State::QUARANTINED || $this->state === State::RETIRED => Reason::SOURCE_UNAVAILABLE,
-            $this->generation !== $grant->generation => Reason::STALE_CONTEXT,
-            $grant->consumed => Reason::GRANT_CONSUMED,
-            $this->busy => Reason::BUSY,
+                || $this->state === State::Quarantined || $this->state === State::Retired => Reason::SourceUnavailable,
+            $this->generation !== $grant->generation => Reason::StaleContext,
+            $grant->consumed => Reason::GrantConsumed,
+            $this->busy => Reason::Busy,
             default => null,
         };
         if ($rejected !== null) {
-            $record->finish(new HostSnapshotPageSettlementDTO(Disposition::NOT_ACCEPTED, $rejected));
+            $record->finish(new HostSnapshotPageSettlementDTO(Disposition::NotAccepted, $rejected));
             throw new HostSnapshotPaginationException('The Host snapshot attempt was not accepted.');
         }
 
         $this->busy = true;
         $grant->consumed = true;
-        $record->state = Stage::RUNNING;
+        $record->state = Stage::Running;
         $settlement = $scopeUnconfirmed;
         $primary = null;
         $mapping = false;
@@ -451,8 +451,8 @@ final class PdoHostSnapshotSource
             $this->confirmSession(true);
             $settlement = $fallback;
             $settlement = new HostSnapshotPageSettlementDTO(
-                Disposition::RETURNED_TO_HOST,
-                $primary === null ? Reason::PAGE_COMPLETED : Reason::READ_FAILED,
+                Disposition::ReturnedToHost,
+                $primary === null ? Reason::PageCompleted : Reason::ReadFailed,
             );
             if ($primary !== null) {
                 throw $primary;
@@ -465,7 +465,7 @@ final class PdoHostSnapshotSource
             if (! $this->connection->resourcesReleased()) {
                 $settlement = $resourcesUnconfirmed;
             }
-            if ($settlement->disposition === Disposition::HOST_ACTION_REQUIRED) {
+            if ($settlement->disposition === Disposition::HostActionRequired) {
                 $this->quarantine();
             }
             $record->finish($settlement);
@@ -477,7 +477,7 @@ final class PdoHostSnapshotSource
     private function quarantine(): void
     {
         $this->generation = null;
-        $this->state = State::QUARANTINED;
+        $this->state = State::Quarantined;
     }
 
     /** Takes the shared reservation only for the registered checkout in an allowed state. */

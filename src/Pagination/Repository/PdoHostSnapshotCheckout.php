@@ -34,12 +34,12 @@ final readonly class PdoHostSnapshotCheckout
 
     /**
      * Starts and confirms a new REPEATABLE READ generation on an idle checkout.
-     * The access mode defaults to READ WRITE. Isolation applies to this
+     * The access mode defaults to ReadWrite. Isolation applies to this
      * transaction, leaving session defaults under Host control. An unavailable
      * checkout is rejected before reservation. A session check or start failure
      * after reservation quarantines the source and propagates the failure.
      */
-    public function beginRepeatableRead(HostSnapshotAccessModeEnum $mode = HostSnapshotAccessModeEnum::READ_WRITE): void
+    public function beginRepeatableRead(HostSnapshotAccessModeEnum $mode = HostSnapshotAccessModeEnum::ReadWrite): void
     {
         $this->source->beginCheckout($this, $mode);
     }
@@ -50,12 +50,12 @@ final readonly class PdoHostSnapshotCheckout
      * driver keys. The default effect invalidates existing page grants before
      * execution and leaves next-transaction characteristics unconfirmed.
      * After session confirmation, an invalidating command leaves the checkout
-     * TRANSACTION_UNQUALIFIED if PDO reports an active transaction, or
-     * QUARANTINED if PDO reports idle. An uncertain session or transaction
+     * TransactionUnqualified if PDO reports an active transaction, or
+     * Quarantined if PDO reports idle. An uncertain session or transaction
      * effect can also quarantine the source. The Host can explicitly end the
      * unqualified transaction. A quarantined checkout rejects release().
      * The Host can discard the source or call PdoHostSnapshotSource::retireForHost(),
-     * which returns the PDO as RETURNED_FOR_RECONCILIATION after confirming
+     * which returns the PDO as ReturnedForReconciliation after confirming
      * resource release. The Host must reconcile the returned PDO's state before reuse.
      *
      * @param array<array-key, mixed> $bindings
@@ -70,14 +70,14 @@ final readonly class PdoHostSnapshotCheckout
      * Ends a qualified or unqualified active transaction by committing without
      * chaining or releasing the session. Invalidates its grants before the command.
      * After confirming the same idle session, this call returns normally.
-     * The checkout becomes IDLE if the next-transaction characteristics are
-     * resolved, or QUARANTINED if they remain unconfirmed. Failed confirmation
+     * The checkout becomes Idle if the next-transaction characteristics are
+     * resolved, or Quarantined if they remain unconfirmed. Failed confirmation
      * also quarantines the source and throws. release() permits a later
-     * checkout only from IDLE, after confirming the same idle session and
+     * checkout only from Idle, after confirming the same idle session and
      * resolved settings.
      * In quarantine the Host can discard the source or call
      * PdoHostSnapshotSource::retireForHost(), which returns the PDO as
-     * RETURNED_FOR_RECONCILIATION after confirming resource release.
+     * ReturnedForReconciliation after confirming resource release.
      * The Host must reconcile the returned PDO's state before reuse.
      */
     public function commit(): void
@@ -89,14 +89,14 @@ final readonly class PdoHostSnapshotCheckout
      * Ends a qualified or unqualified active transaction by rolling back without
      * chaining or releasing the session. Invalidates its grants before the
      * command. After confirming the same idle session, this call returns
-     * normally. The checkout becomes IDLE if the next-transaction characteristics
-     * are resolved, or QUARANTINED if they remain unconfirmed. Failed
+     * normally. The checkout becomes Idle if the next-transaction characteristics
+     * are resolved, or Quarantined if they remain unconfirmed. Failed
      * confirmation also quarantines the source and throws. release() permits a
-     * later checkout only from IDLE, after confirming the same idle session
+     * later checkout only from Idle, after confirming the same idle session
      * and resolved settings.
      * In quarantine the Host can discard the source or call
      * PdoHostSnapshotSource::retireForHost(), which returns the PDO as
-     * RETURNED_FOR_RECONCILIATION after confirming resource release.
+     * ReturnedForReconciliation after confirming resource release.
      * The Host must reconcile the returned PDO's state before reuse.
      */
     public function rollBack(): void

@@ -14,6 +14,7 @@ use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionEnum;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
 use ReflectionParameter;
@@ -21,8 +22,8 @@ use ReflectionType;
 use ReflectionUnionType;
 
 /**
- * Reflects over the approved public Pagination contract of CONTRACT_MATRIX.md §3.3/§6.4/§6.9.
- * Golden fixtures for this inventory were captured from legacy `main` (1f6a7aa) before this
+ * Reflects over the approved public Pagination contract, including DEC-036's
+ * sort direction cases. Golden fixtures for this inventory were captured from legacy `main` (1f6a7aa) before this
  * capability's first implementation, per the DEC-007 provenance gate.
  */
 final class PaginationPublicApiRegressionTest extends TestCase
@@ -46,8 +47,24 @@ final class PaginationPublicApiRegressionTest extends TestCase
         }
 
         self::assertSame('Maatify\PhpPersistence\Pagination\Enum', (new ReflectionClass(SortDirectionEnum::class))->getNamespaceName());
-        self::assertSame(['ASC' => 'ASC', 'DESC' => 'DESC'], array_column(SortDirectionEnum::cases(), 'value', 'name'));
+        self::assertSame(['Asc' => 'ASC', 'Desc' => 'DESC'], array_column(SortDirectionEnum::cases(), 'value', 'name'));
         self::assertSame(['cases', 'from', 'tryFrom'], array_map(static fn(\ReflectionMethod $method): string => $method->getName(), (new ReflectionClass(SortDirectionEnum::class))->getMethods()));
+    }
+
+    /** Captures the DEC-036 limits of the published sort direction aliases. */
+    public function testPublishedSortExpressionsRemainCompatible(): void
+    {
+        $reflection = new ReflectionEnum(SortDirectionEnum::class);
+
+        self::assertSame(SortDirectionEnum::Asc, SortDirectionEnum::ASC);
+        self::assertSame(SortDirectionEnum::Desc, SortDirectionEnum::DESC);
+        self::assertSame(SortDirectionEnum::Asc, SortDirectionEnum::from('ASC'));
+        self::assertSame(SortDirectionEnum::Desc, SortDirectionEnum::tryFrom('DESC'));
+        self::assertFalse($reflection->hasCase('ASC'));
+        self::assertFalse($reflection->hasCase('DESC'));
+        self::assertStringContainsString(':Asc"', serialize(SortDirectionEnum::ASC));
+        self::assertStringContainsString(':Desc"', serialize(SortDirectionEnum::DESC));
+        self::assertSame(SortDirectionEnum::Asc, unserialize(serialize(SortDirectionEnum::ASC)));
     }
 
     public function testConstructorContractsAndPromotedProperties(): void
@@ -101,7 +118,7 @@ final class PaginationPublicApiRegressionTest extends TestCase
         self::assertMethod(PageResultDTO::class, 'jsonSerialize', [], 'array');
         self::assertContains(JsonSerializable::class, class_implements(PageResultDTO::class));
 
-        $result = new PageResultDTO([], 1, 20, 0, 0, 0, false, false, 'id', SortDirectionEnum::ASC);
+        $result = new PageResultDTO([], 1, 20, 0, 0, 0, false, false, 'id', SortDirectionEnum::Asc);
         self::assertSame(['data', 'pagination'], array_keys($result->toArray()));
         self::assertSame(['page', 'per_page', 'total', 'filtered', 'total_pages', 'has_next', 'has_previous', 'sort_by', 'sort_direction'], array_keys($result->toArray()['pagination']));
         self::assertArrayNotHasKey('offset', $result->toArray()['pagination']);

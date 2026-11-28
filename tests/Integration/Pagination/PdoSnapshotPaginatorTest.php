@@ -65,7 +65,7 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         $result = $snapshot->paginate($query, $request, $config, $mapper);
         $outcome = $snapshot->connectionOutcome();
         self::assertNotNull($outcome);
-        self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $outcome->disposition);
+        self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $outcome->disposition);
         self::assertSame([
             'disposition' => 'REUSABLE',
             'diagnostic' => null,
@@ -122,7 +122,7 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
                 );
                 self::fail('An ineligible connection must be rejected.');
             } catch (SnapshotPaginationException) {
-                self::assertSame(SnapshotConnectionDispositionEnum::UNCHANGED, $snapshot->connectionOutcome()?->disposition);
+                self::assertSame(SnapshotConnectionDispositionEnum::Unchanged, $snapshot->connectionOutcome()?->disposition);
             }
             self::assertSame($case === 'active', $reader->inTransaction());
             if ($case === 'active') {
@@ -167,7 +167,7 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         self::assertSame(1, $page->page);
         self::assertCount(1, $page->data);
         $outcome = $snapshot->connectionOutcome();
-        self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $outcome?->disposition);
+        self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $outcome?->disposition);
         try {
             $snapshot->paginate($query, $request, $config, static fn(array $row): array => $row);
             self::fail('The lease must not be consumed twice.');
@@ -219,7 +219,7 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         } catch (SnapshotPaginationException) {
             // The reader never ran. The Host must discard the uncertain checkout.
         }
-        self::assertSame(SnapshotConnectionDispositionEnum::DISCARD, $snapshot->connectionOutcome()?->disposition);
+        self::assertSame(SnapshotConnectionDispositionEnum::Discard, $snapshot->connectionOutcome()?->disposition);
     }
 
     public function testServerAutocommitWinsOverTheCachedPdoAttributeInBothDirections(): void
@@ -237,10 +237,10 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
                 $page = $snapshot->paginate($this->descriptor($table), new PageRequest(), $this->config(), static fn(array $row): array => $row);
                 self::assertTrue($serverAutocommit);
                 self::assertSame(3, $page->filtered);
-                self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $snapshot->connectionOutcome()?->disposition);
+                self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $snapshot->connectionOutcome()?->disposition);
             } catch (SnapshotPaginationException $failure) {
                 self::assertFalse($serverAutocommit, $failure->getMessage());
-                self::assertSame(SnapshotConnectionDispositionEnum::UNCHANGED, $snapshot->connectionOutcome()?->disposition);
+                self::assertSame(SnapshotConnectionDispositionEnum::Unchanged, $snapshot->connectionOutcome()?->disposition);
             } finally {
                 self::assertFalse($reader->inTransaction());
                 self::assertSame(! $serverAutocommit, (bool) $reader->getAttribute(PDO::ATTR_AUTOCOMMIT));
@@ -267,6 +267,6 @@ final class PdoSnapshotPaginatorTest extends PaginationIntegrationTestCase
         self::assertSame(1, $page->page);
         self::assertSame(0, $page->filtered);
         self::assertSame([], $page->data);
-        self::assertSame(SnapshotConnectionDispositionEnum::REUSABLE, $snapshot->connectionOutcome()?->disposition);
+        self::assertSame(SnapshotConnectionDispositionEnum::Reusable, $snapshot->connectionOutcome()?->disposition);
     }
 }

@@ -104,12 +104,12 @@ final class PdoVerifiedTransactionCheckout
     {
         $this->requireIdle();
         $this->reserve();
-        $reason = Reason::QUALIFICATION_FAILED;
-        $transaction = Outcome::NOT_STARTED;
+        $reason = Reason::QualificationFailed;
+        $transaction = Outcome::NotStarted;
         try {
             $this->start($reason, $transaction);
         } catch (Throwable $failure) {
-            $this->settleEnd($transaction, $reason, Disposition::DISCARD_REQUIRED);
+            $this->settleEnd($transaction, $reason, Disposition::DiscardRequired);
             throw $failure;
         } finally {
             $this->busy = false;
@@ -155,7 +155,7 @@ final class PdoVerifiedTransactionCheckout
             return $result;
         } catch (Throwable $failure) {
             if ($receiver->failure() !== null) {
-                $this->settleEnd(Outcome::UNKNOWN, $this->receiverReason($receiver), Disposition::DISCARD_REQUIRED);
+                $this->settleEnd(Outcome::Unknown, $this->receiverReason($receiver), Disposition::DiscardRequired);
             }
             throw $failure;
         } finally {
@@ -225,9 +225,9 @@ final class PdoVerifiedTransactionCheckout
         $this->reserve();
         try {
             if ($this->snapshot->disposition === null && $this->session === null) {
-                $this->settleEnd(Outcome::NOT_STARTED, null, Disposition::UNCHANGED);
+                $this->settleEnd(Outcome::NotStarted, null, Disposition::Unchanged);
             }
-            if ($this->snapshot->disposition === null || $this->snapshot->disposition === Disposition::DISCARD_REQUIRED) {
+            if ($this->snapshot->disposition === null || $this->snapshot->disposition === Disposition::DiscardRequired) {
                 throw new ProtectedTransactionException('The verified connection cannot be returned.');
             }
             $pdo = $this->connection();
@@ -252,9 +252,9 @@ final class PdoVerifiedTransactionCheckout
         try {
             if ($this->snapshot->disposition === null) {
                 $this->settleEnd(
-                    $this->session === null ? Outcome::NOT_STARTED : Outcome::UNKNOWN,
-                    Reason::HOST_DISCARDED,
-                    Disposition::DISCARD_REQUIRED,
+                    $this->session === null ? Outcome::NotStarted : Outcome::Unknown,
+                    Reason::HostDiscarded,
+                    Disposition::DiscardRequired,
                 );
             }
             $this->pdo = null;
@@ -275,9 +275,9 @@ final class PdoVerifiedTransactionCheckout
         $this->reserve();
         $this->attempted = true;
         $receiver = new ProtectedTransactionConnection($this->connection());
-        $reason = Reason::CONTINUITY_UNCONFIRMED;
-        $transaction = $owned ? Outcome::NOT_STARTED : Outcome::UNKNOWN;
-        $effect = Outcome::NOT_STARTED;
+        $reason = Reason::ContinuityUnconfirmed;
+        $transaction = $owned ? Outcome::NotStarted : Outcome::Unknown;
+        $effect = Outcome::NotStarted;
         $primary = null;
         $payload = null;
         $published = false;
@@ -287,13 +287,13 @@ final class PdoVerifiedTransactionCheckout
                 $this->start($reason, $transaction);
             } else {
                 $this->inspect(true);
-                $reason = Reason::SAVEPOINT_UNCONFIRMED;
+                $reason = Reason::SavepointUnconfirmed;
                 $savepoint = SavepointScope::open($receiver);
-                $reason = Reason::CONTINUITY_UNCONFIRMED;
+                $reason = Reason::ContinuityUnconfirmed;
                 $this->inspect(true);
             }
 
-            $effect = Outcome::UNKNOWN;
+            $effect = Outcome::Unknown;
             // Keep execution handles out of arguments exposed by exceptions inside the callback.
             $executor = new ProtectedTransactionCommandExecutor($receiver);
             $scope = new VerifiedTransactionCommandScope(
@@ -346,21 +346,21 @@ final class PdoVerifiedTransactionCheckout
 
             $this->snapshot = new VerifiedTransactionSettlementDTO(
                 $effect,
-                $primary === null ? null : Reason::CALLBACK_FAILED,
+                $primary === null ? null : Reason::CallbackFailed,
                 $owned ? $transaction : null,
                 null,
-                $owned ? Disposition::REUSABLE : null,
+                $owned ? Disposition::Reusable : null,
             );
             $published = true;
             if ($owned) {
                 $this->session = null;
             }
         } catch (Throwable $failure) {
-            if ($owned && ($transaction === Outcome::COMMITTED || $transaction === Outcome::ROLLED_BACK)) {
+            if ($owned && ($transaction === Outcome::Committed || $transaction === Outcome::RolledBack)) {
                 $effect = $transaction;
             }
             $reason = $this->continuityReason($reason, $failure);
-            $this->snapshot = new VerifiedTransactionSettlementDTO($effect, $reason, $transaction, $reason, Disposition::DISCARD_REQUIRED);
+            $this->snapshot = new VerifiedTransactionSettlementDTO($effect, $reason, $transaction, $reason, Disposition::DiscardRequired);
             $published = true;
             $this->session = null;
             throw $primary ?? $failure;
@@ -370,10 +370,10 @@ final class PdoVerifiedTransactionCheckout
                 // A suspended Fiber can unwind without returning or throwing to the call site.
                 $this->snapshot = new VerifiedTransactionSettlementDTO(
                     $effect,
-                    Reason::CONTINUITY_UNCONFIRMED,
+                    Reason::ContinuityUnconfirmed,
                     $transaction,
-                    Reason::CONTINUITY_UNCONFIRMED,
-                    Disposition::DISCARD_REQUIRED,
+                    Reason::ContinuityUnconfirmed,
+                    Disposition::DiscardRequired,
                 );
                 $this->session = null;
             }
@@ -393,11 +393,11 @@ final class PdoVerifiedTransactionCheckout
      */
     private function start(Reason &$reason, Outcome &$transaction): void
     {
-        $reason = Reason::QUALIFICATION_FAILED;
+        $reason = Reason::QualificationFailed;
         $driver = new ProtectedTransactionDriver($this->connection());
         $session = $driver->inspect(false, null, closeOnFetchFailure: true);
-        $reason = Reason::START_UNCONFIRMED;
-        $transaction = Outcome::UNKNOWN;
+        $reason = Reason::StartUnconfirmed;
+        $transaction = Outcome::Unknown;
         $driver->start();
         $driver->inspect(true, $session['id'], closeOnFetchFailure: true);
         $this->session = $session['id'];
@@ -410,19 +410,19 @@ final class PdoVerifiedTransactionCheckout
      */
     private function finishWindow(SavepointScope $savepoint, bool $apply, Reason &$reason, Outcome &$effect): void
     {
-        $reason = Reason::CONTINUITY_UNCONFIRMED;
+        $reason = Reason::ContinuityUnconfirmed;
         $this->inspect(true);
         if (!$apply) {
-            $reason = Reason::ROLLBACK_TO_UNCONFIRMED;
+            $reason = Reason::RollbackToUnconfirmed;
             $savepoint->rollbackStrict();
-            $effect = Outcome::LOCAL_UNDONE;
+            $effect = Outcome::LocalUndone;
         }
-        $reason = Reason::RELEASE_UNCONFIRMED;
+        $reason = Reason::ReleaseUnconfirmed;
         $savepoint->releaseStrict();
-        $reason = Reason::CONTINUITY_UNCONFIRMED;
+        $reason = Reason::ContinuityUnconfirmed;
         $this->inspect(true);
         if ($apply) {
-            $effect = Outcome::PENDING_HOST;
+            $effect = Outcome::PendingHost;
         }
     }
 
@@ -435,13 +435,13 @@ final class PdoVerifiedTransactionCheckout
     {
         $this->requireActive();
         $this->reserve();
-        $reason = Reason::CONTINUITY_UNCONFIRMED;
-        $transaction = Outcome::UNKNOWN;
+        $reason = Reason::ContinuityUnconfirmed;
+        $transaction = Outcome::Unknown;
         try {
             $this->end($commit, $reason, $transaction);
-            $this->settleEnd($transaction, null, Disposition::REUSABLE);
+            $this->settleEnd($transaction, null, Disposition::Reusable);
         } catch (Throwable $failure) {
-            $this->settleEnd($transaction, $this->continuityReason($reason, $failure), Disposition::DISCARD_REQUIRED);
+            $this->settleEnd($transaction, $this->continuityReason($reason, $failure), Disposition::DiscardRequired);
             throw $failure;
         } finally {
             $this->busy = false;
@@ -454,12 +454,12 @@ final class PdoVerifiedTransactionCheckout
      */
     private function end(bool $commit, Reason &$reason, Outcome &$transaction): void
     {
-        $reason = Reason::CONTINUITY_UNCONFIRMED;
+        $reason = Reason::ContinuityUnconfirmed;
         $this->inspect(true);
-        $reason = $commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED;
+        $reason = $commit ? Reason::CommitOutcomeUnknown : Reason::RollbackUnconfirmed;
         (new ProtectedTransactionDriver($this->connection()))->end($commit);
-        $transaction = $commit ? Outcome::COMMITTED : Outcome::ROLLED_BACK;
-        $reason = Reason::HANDOFF_UNCONFIRMED;
+        $transaction = $commit ? Outcome::Committed : Outcome::RolledBack;
+        $reason = Reason::HandoffUnconfirmed;
         $this->inspect(false);
     }
 
@@ -476,19 +476,19 @@ final class PdoVerifiedTransactionCheckout
     private function receiverReason(ProtectedTransactionConnection $receiver): Reason
     {
         if ($this->isTransactionLoss($receiver->failure())) {
-            return Reason::TRANSACTION_LOST;
+            return Reason::TransactionLost;
         }
         if ($receiver->cursorFailure()) {
-            return Reason::CURSOR_UNCONFIRMED;
+            return Reason::CursorUnconfirmed;
         }
 
-        return $receiver->continuityFailure() ? Reason::CONTINUITY_UNCONFIRMED : Reason::COMMAND_FAILED;
+        return $receiver->continuityFailure() ? Reason::ContinuityUnconfirmed : Reason::CommandFailed;
     }
 
     private function continuityReason(Reason $reason, Throwable $failure): Reason
     {
-        return $reason === Reason::CONTINUITY_UNCONFIRMED && $this->isTransactionLoss($failure)
-            ? Reason::TRANSACTION_LOST
+        return $reason === Reason::ContinuityUnconfirmed && $this->isTransactionLoss($failure)
+            ? Reason::TransactionLost
             : $reason;
     }
 

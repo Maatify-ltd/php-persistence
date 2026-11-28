@@ -55,7 +55,7 @@ $work = static fn(int $id, int $limit): Closure
     };
 
 $dispose = static function (Checkout $checkout): void {
-    if ($checkout->settlement()->disposition === Disposition::REUSABLE) {
+    if ($checkout->settlement()->disposition === Disposition::Reusable) {
         $pdo = $checkout->returnForHost();
         php_persistence_example_assert(!$pdo->inTransaction(), 'Expected a finished connection.');
     } else {
@@ -70,7 +70,7 @@ try {
         try {
             $payload = $checkout->runOwned($work($id, $apply ? 20 : 19));
             php_persistence_example_assert($payload === ($apply ? false : null), 'Unexpected Owned payload.');
-            $expected = $apply ? Outcome::COMMITTED : Outcome::ROLLED_BACK;
+            $expected = $apply ? Outcome::Committed : Outcome::RolledBack;
             php_persistence_example_assert($checkout->settlement()->transactionOutcome === $expected, 'Unexpected Owned end.');
         } finally {
             $dispose($checkout);
@@ -84,9 +84,9 @@ try {
         $result = $checkout->runInHost($work(4, 19));
         php_persistence_example_assert($result === null, 'Unexpected Host payload.');
         $local = $checkout->settlement();
-        php_persistence_example_assert($local->operationOutcome === Outcome::LOCAL_UNDONE && $local->transactionOutcome === null, 'Expected only local undo.');
+        php_persistence_example_assert($local->operationOutcome === Outcome::LocalUndone && $local->transactionOutcome === null, 'Expected only local undo.');
         $checkout->commit();
-        php_persistence_example_assert($checkout->settlement()->operationOutcome === Outcome::LOCAL_UNDONE, 'Local evidence changed.');
+        php_persistence_example_assert($checkout->settlement()->operationOutcome === Outcome::LocalUndone, 'Local evidence changed.');
     } finally {
         $dispose($checkout);
     }
@@ -102,8 +102,8 @@ try {
         } catch (DomainException $caught) {
             php_persistence_example_assert($caught === $domain, 'The original error must escape.');
             $snapshot = $checkout->settlement();
-            php_persistence_example_assert($snapshot->operationReason === Reason::CALLBACK_FAILED
-                && $snapshot->transactionOutcome === Outcome::ROLLED_BACK, 'Expected verified cleanup.');
+            php_persistence_example_assert($snapshot->operationReason === Reason::CallbackFailed
+                && $snapshot->transactionOutcome === Outcome::RolledBack, 'Expected verified cleanup.');
         }
     } finally {
         $dispose($checkout);

@@ -1,12 +1,12 @@
 # DEC-032 — Settlement JSON and execution contracts
 
 - **Decision ID:** `DEC-032`
-- **Status:** `ACTIVE`
+- **Status:** `SUPERSEDED`
 - **Date:** `2026-11-27`
 - **Decision Authority:** Project Owner. [Approval recorded in Issue #65](https://github.com/Maatify-ltd/php-persistence/issues/65#issuecomment-7227930099).
 - **Scope / Concern:** Intent, live PDO handoff, and immutable outcome contracts for the first Stable candidate.
 - **Supersedes:** [DEC-020](./DEC-020-optional-host-transaction-snapshot-pagination.md) and [DEC-022](./DEC-022-verified-apply-discard.md).
-- **Superseded By:** —
+- **Superseded By:** [DEC-036](./DEC-036-pascalcase-enums-and-stable-settlement-json.md)
 - **Canonical Contract / Current Owner:** [Package Reference §3.2](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#32-transaction-capability--maatifyphppersistencetransaction) for Transaction and [§3.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#33-pagination-capability--maatifyphppersistencepagination) for Pagination.
 
 ## Context

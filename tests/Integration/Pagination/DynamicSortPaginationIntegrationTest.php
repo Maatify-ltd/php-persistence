@@ -52,7 +52,7 @@ final class DynamicSortPaginationIntegrationTest extends PaginationIntegrationTe
         );
         $config = new PaginationConfig(new SortWhitelist([
             'label' => 'g.nullable_code', 'name' => 'g.name', 'parent' => 'p.id', 'internal_row' => 'g.id', 'row_alias' => 'g.ID',
-        ]), 'name', Direction::ASC, 'internal_row', Direction::DESC, 2);
+        ]), 'name', Direction::Asc, 'internal_row', Direction::Desc, 2);
         $sorts = [['key' => 'label', 'direction' => 'desc'], ['key' => 'name', 'direction' => 'asc'], ['key' => 'parent', 'direction' => 'desc']];
         $paginator = new PdoPaginator();
         $reader = $this->connect();
@@ -93,7 +93,7 @@ final class DynamicSortPaginationIntegrationTest extends PaginationIntegrationTe
             }
         }
 
-        $tieDefault = new PaginationConfig($config->sortWhitelist, 'row_alias', Direction::DESC, 'internal_row', Direction::ASC, 2);
+        $tieDefault = new PaginationConfig($config->sortWhitelist, 'row_alias', Direction::Desc, 'internal_row', Direction::Asc, 2);
         foreach ([[], [['key' => 'row_alias', 'direction' => 'desc']]] as $requestSorts) {
             $result = $paginator->paginateWithDynamicSort($reader, $query, new PageRequest(), $tieDefault, $requestSorts, self::idRow(...));
             self::assertSame([$nullLabel, $charlie], array_column($result->page->data, 'id'));

@@ -5,7 +5,7 @@
 - **Date:** 2026-11-22
 - **Decision Authority:** Project Owner, [contract approval](https://github.com/Maatify-ltd/php-persistence/issues/73#issuecomment-7078581978), following [focused technical acceptance](https://github.com/Maatify-ltd/php-persistence/issues/73#issuecomment-7078479638). [WU-B3](https://github.com/Maatify-ltd/php-persistence/issues/74) authorizes implementation.
 - **Scope:** Optional Verified Apply/Discard within Transaction.
-- **Canonical Contract / Current Owner:** Historical record. [DEC-032](./DEC-032-settlement-json-and-execution-contracts.md) governs the current contract.
+- **Canonical Contract / Current Owner:** Historical record. [DEC-036](./DEC-036-pascalcase-enums-and-stable-settlement-json.md) governs the current contract.
 - **Superseded By:** [DEC-032](./DEC-032-settlement-json-and-execution-contracts.md)
 
 ## Context

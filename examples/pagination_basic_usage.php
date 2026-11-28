@@ -53,9 +53,9 @@ try {
     $config = new PaginationConfig(
         sortWhitelist: new SortWhitelist(['id' => 'id', 'status' => 'status']),
         defaultSortBy: 'id',
-        defaultSortDirection: SortDirectionEnum::ASC,
+        defaultSortDirection: SortDirectionEnum::Asc,
         tieBreakerSortBy: 'id',
-        tieBreakerDirection: SortDirectionEnum::ASC,
+        tieBreakerDirection: SortDirectionEnum::Asc,
     );
 
     $query = new PdoPaginationQueryDescriptor(
