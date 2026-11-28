@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Integration\Infrastructure;
 
-use IntegrationResidueShadow;
+use Maatify\PhpPersistence\Tooling\IntegrationResidueShadow;
 use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use PDO;
 use PDOException;

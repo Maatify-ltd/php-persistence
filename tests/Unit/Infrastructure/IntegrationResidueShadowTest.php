@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Unit\Infrastructure;
 
-use IntegrationResidueShadow;
+use Maatify\PhpPersistence\Tooling\IntegrationResidueShadow;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;

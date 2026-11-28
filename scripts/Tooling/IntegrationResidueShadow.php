@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+namespace Maatify\PhpPersistence\Tooling;
+
+use PDO;
+use PDOException;
+use UnexpectedValueException;
+
 /**
  * Diagnostics for the disposable Integration harness. The original residue
  * snapshot owns the gate decision. A later observation can only explain it.

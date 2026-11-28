@@ -5,6 +5,10 @@ declare(strict_types=1);
 /**
  * Runs Composer consumer and coexistence verification on two fresh services for the selected cell.
  */
+
+use Maatify\PhpPersistence\Tooling\IntegrationInterrupted;
+use Maatify\PhpPersistence\Tooling\OrchestrationBudget;
+
 require __DIR__ . '/integration-support.php';
 
 const CONSUMER_PACKAGE = 'maatify/php-persistence';

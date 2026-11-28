@@ -53,7 +53,10 @@ final class PublishedArtifactEvidenceTest extends TestCase
                 'scripts/published-artifact.php',
                 'scripts/release-artifact.php',
                 'scripts/integration-support.php',
-                'scripts/integration-residue-shadow.php',
+                'scripts/Tooling/autoload.php',
+                'scripts/Tooling/IntegrationInterrupted.php',
+                'scripts/Tooling/IntegrationResidueShadow.php',
+                'scripts/Tooling/OrchestrationBudget.php',
             ];
             foreach ($tracked as $file) {
                 $destination = $repo . '/' . $file;
