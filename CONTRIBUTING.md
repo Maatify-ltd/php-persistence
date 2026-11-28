@@ -32,7 +32,7 @@ composer dump-autoload --optimize --strict-psr
 php scripts/dependency-audit.php # Composer 2.10+ and a freshly resolved composer.lock
 composer analyse               # PHPStan, level max, zero errors, no baseline
 composer format:check          # full code-style check on PHP 8.4 or 8.5, non-mutating
-composer syntax                # php -l over src, tests, scripts, examples
+composer syntax                # lints PHP in src/, tests/, scripts/, examples/, harness/, docs/, and root .php-cs-fixer.php
 composer whitespace             # git diff --check
 composer test:unit             # no Docker needed
 composer test:regression       # no Docker needed
