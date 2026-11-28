@@ -65,7 +65,7 @@ try {
         throw new RuntimeException('The protected operations did not share the Host transaction.');
     }
     $checkout->commit();
-    if ($outside() !== [2, 1, 3] || $checkout->settlement()?->reason !== ProtectedTransactionReasonEnum::COMMITTED) {
+    if ($outside() !== [2, 1, 3] || $checkout->settlement()?->reason !== ProtectedTransactionReasonEnum::Committed) {
         throw new RuntimeException('The Host commit was not confirmed.');
     }
     $pdo = $checkout->returnForHost();
@@ -80,7 +80,7 @@ try {
         $checkout->runRegisteredCommand('fail');
         throw new RuntimeException('Expected a real PDO exception.');
     } catch (PDOException $error) {
-        if (($error->errorInfo[1] ?? null) !== 1054 || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
+        if (($error->errorInfo[1] ?? null) !== 1054 || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DiscardRequired) {
             throw $error;
         }
     }

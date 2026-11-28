@@ -8,7 +8,7 @@
 - **Scope / Concern:** Which legacy state is the behavioral and source starting point, which legacy types are retired, how the runner names are reused, and what must be checked before any legacy code is copied.
 - **Supersedes:** `—`
 - **Superseded By:** `—`
-- **Canonical Contract / Current Owner:** This record for the strategy. The per-type disposition is [CONTRACT_MATRIX.md](../architecture/CONTRACT_MATRIX.md); the per-behavior baseline is [BEHAVIOR_CONTRACT.md](../architecture/BEHAVIOR_CONTRACT.md).
+- **Canonical Contract / Current Owner:** This record governs the legacy-source baseline, type disposition and provenance checks. The [Contract Matrix](../architecture/CONTRACT_MATRIX.md) and [Behavior Contract](../architecture/BEHAVIOR_CONTRACT.md) record the historical type and behavior comparisons. The [Package Reference](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md) governs the current package contract.
 
 ## Context
 

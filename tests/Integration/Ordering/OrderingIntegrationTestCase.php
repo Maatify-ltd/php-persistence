@@ -57,13 +57,13 @@ abstract class OrderingIntegrationTestCase extends IntegrationTestCase
         $table = 'it_ordering_global_' . bin2hex(random_bytes(6));
         $pdo->exec(
             'CREATE TABLE `' . $table . '` ('
-            . '`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, '
-            . '`display_order` INT NOT NULL, '
-            . '`deleted_at` DATETIME NULL DEFAULT NULL, '
-            . '`label` VARCHAR(191) NOT NULL, '
-            . 'PRIMARY KEY (`id`), '
-            . 'KEY `idx_deleted_at` (`deleted_at`)'
-            . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
+                . '`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, '
+                . '`display_order` INT NOT NULL, '
+                . '`deleted_at` DATETIME NULL DEFAULT NULL, '
+                . '`label` VARCHAR(191) NOT NULL, '
+                . 'PRIMARY KEY (`id`), '
+                . 'KEY `idx_deleted_at` (`deleted_at`)'
+                . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
         );
         $this->orderingTables[] = $table;
 
@@ -76,16 +76,16 @@ abstract class OrderingIntegrationTestCase extends IntegrationTestCase
         $table = 'it_ordering_scoped_' . bin2hex(random_bytes(6));
         $pdo->exec(
             'CREATE TABLE `' . $table . '` ('
-            . '`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, '
-            . '`scope_key` VARCHAR(191) NULL DEFAULT NULL, '
-            . '`display_order` INT NOT NULL, '
-            . '`deleted_at` DATETIME NULL DEFAULT NULL, '
-            . '`updated_at` DATETIME NULL DEFAULT NULL, '
-            . '`label` VARCHAR(191) NOT NULL, '
-            . 'PRIMARY KEY (`id`), '
-            . 'KEY `idx_scope_order` (`scope_key`, `display_order`), '
-            . 'KEY `idx_deleted_at` (`deleted_at`)'
-            . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
+                . '`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, '
+                . '`scope_key` VARCHAR(191) NULL DEFAULT NULL, '
+                . '`display_order` INT NOT NULL, '
+                . '`deleted_at` DATETIME NULL DEFAULT NULL, '
+                . '`updated_at` DATETIME NULL DEFAULT NULL, '
+                . '`label` VARCHAR(191) NOT NULL, '
+                . 'PRIMARY KEY (`id`), '
+                . 'KEY `idx_scope_order` (`scope_key`, `display_order`), '
+                . 'KEY `idx_deleted_at` (`deleted_at`)'
+                . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
         );
         $this->orderingTables[] = $table;
 

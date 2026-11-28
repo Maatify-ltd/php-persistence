@@ -61,12 +61,12 @@ final class PdoSnapshotPaginator
         // Consume the operation before any driver call or mapper reentry.
         $this->pdo = null;
         $resources = new SnapshotReadResources();
-        $disposition = SnapshotConnectionDispositionEnum::DISCARD;
+        $disposition = SnapshotConnectionDispositionEnum::Discard;
         $stage = 'eligibility';
 
         try {
             if (! $this->hasEligibleDriver($pdo) || $pdo->inTransaction()) {
-                $disposition = SnapshotConnectionDispositionEnum::UNCHANGED;
+                $disposition = SnapshotConnectionDispositionEnum::Unchanged;
                 throw new SnapshotPaginationException('The Host connection does not qualify for snapshot pagination.');
             }
 
@@ -74,7 +74,7 @@ final class PdoSnapshotPaginator
             $eligibleSettings = $autocommit && $this->hasRepeatableRead($pdo, $resources);
             $this->assertSession($pdo, $resources, $session, false);
             if (! $eligibleSettings) {
-                $disposition = SnapshotConnectionDispositionEnum::UNCHANGED;
+                $disposition = SnapshotConnectionDispositionEnum::Unchanged;
                 throw new SnapshotPaginationException('Snapshot pagination requires an idle REPEATABLE READ session with autocommit enabled.');
             }
 
@@ -90,9 +90,9 @@ final class PdoSnapshotPaginator
                     $resources->release();
                     $stage = 'rollback';
                     $this->finishTransaction($pdo, $resources, $session, 'ROLLBACK AND NO CHAIN NO RELEASE');
-                    $disposition = SnapshotConnectionDispositionEnum::REUSABLE;
+                    $disposition = SnapshotConnectionDispositionEnum::Reusable;
                 } catch (Throwable) {
-                    // The checkout remains DISCARD. Preserve the original read failure.
+                    // The disposition remains Discard. Preserve the original read failure.
                 }
 
                 throw $failure;
@@ -101,13 +101,13 @@ final class PdoSnapshotPaginator
             $stage = 'commit';
             $this->finishTransaction($pdo, $resources, $session, 'COMMIT AND NO CHAIN NO RELEASE');
 
-            $disposition = SnapshotConnectionDispositionEnum::REUSABLE;
+            $disposition = SnapshotConnectionDispositionEnum::Reusable;
 
             return $page;
         } finally {
             $this->outcome = new SnapshotConnectionOutcomeDTO(
                 $disposition,
-                $disposition === SnapshotConnectionDispositionEnum::DISCARD ? $stage : null,
+                $disposition === SnapshotConnectionDispositionEnum::Discard ? $stage : null,
             );
         }
     }
@@ -123,13 +123,21 @@ final class PdoSnapshotPaginator
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws SnapshotPaginationException Always. The instance represents a one-shot, Host-delegated read operation.
+     */
     public function __serialize(): array
     {
         throw new SnapshotPaginationException('A snapshot operation cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws SnapshotPaginationException Always. The Host must supply the connection for a new read operation.
+     */
     public function __unserialize(array $data): void
     {
         throw new SnapshotPaginationException('A snapshot operation cannot be restored from serialized data.');
@@ -217,6 +225,7 @@ final class PdoSnapshotPaginator
         }
 
         $resources->track($statement);
+        /** @var list<mixed> $raw Expected list<list<mixed>> from FETCH_NUM. Fetch failures throw in exception mode. */
         $raw = $statement->fetchAll(PDO::FETCH_NUM);
         $resources->release();
         $rows = [];

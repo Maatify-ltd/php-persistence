@@ -16,20 +16,22 @@ This guide covers the Stable `1.0.0` target. Follow the [installation instructio
 | Capability | Primary call | Walkthrough | Example |
 |---|---|---|---|
 | Transaction | `PdoTransactionRunner::run()` / `PdoSavepointTransactionRunner::run()` | [§1](#1-transaction) | [examples/transaction_basic_usage.php](../../examples/transaction_basic_usage.php) |
-| Transaction · Optional protected Host write checkout | `PdoProtectedTransactionCheckout::attachExclusive()` then `begin()` and `runRegisteredCommand()` | [Protected Host write checkout](#optional-protected-host-write-checkout) | Walkthrough only |
+| Transaction · Optional protected Host write checkout | `PdoProtectedTransactionCheckout::attachExclusive()` then `begin()` and `runRegisteredCommand()` | [Protected Host write checkout](#optional-protected-host-write-checkout) | [Protected checkout in the B1 example](../../examples/ordering_unique_usage.php) |
 | Transaction · Optional verified checkout | `PdoVerifiedTransactionCheckout::attachExclusive()` then `runOwned()` or `beginHost()` and `runInHost()` | [Verified checkout](#optional-verified-checkout-c2) | [examples/verified_transaction_usage.php](../../examples/verified_transaction_usage.php) |
 | Pagination | `PdoPaginator::paginate()` | [§2](#2-pagination) | [examples/pagination_basic_usage.php](../../examples/pagination_basic_usage.php) |
 | Pagination · Optional static composite sort | `PdoPaginator::paginateWithStaticSort()` | [Static composite sorting](#optional-static-composite-sorting) | [examples/pagination_static_sort_usage.php](../../examples/pagination_static_sort_usage.php) |
 | Pagination · Optional dynamic sort | `PdoPaginator::paginateWithDynamicSort()` | [Dynamic sorting](#optional-dynamic-sorting) | [examples/pagination_dynamic_sort_usage.php](../../examples/pagination_dynamic_sort_usage.php) |
 | Pagination · Optional delegated snapshot (C1) | `PdoSnapshotPaginator::forExclusiveRead()` then `paginate()` | [C1 snapshot pagination](#optional-c1-snapshot-pagination) | [examples/pagination_snapshot_usage.php](../../examples/pagination_snapshot_usage.php) |
-| Pagination · Optional Host transaction snapshot (B) | `PdoHostSnapshotSource::attachExclusive()` then `PdoHostSnapshotPaginator::paginate()` with an authorized page attempt | [B pagination in a Host transaction](#optional-b-pagination-in-a-host-transaction) | Walkthrough only |
+| Pagination · Optional Host transaction snapshot (B) | `PdoHostSnapshotSource::attachExclusive()` then `PdoHostSnapshotPaginator::paginate()` with an authorized page attempt | [B pagination in a Host transaction](#optional-b-pagination-in-a-host-transaction) | [Host integration example](../../examples/pagination_host_snapshot_usage.php) |
 | Pagination · Optional forward-only Keyset | `PdoKeysetPaginator::paginate()` | [Forward-only Keyset pagination](#optional-forward-only-keyset-pagination) | [examples/pagination_keyset_usage.php](../../examples/pagination_keyset_usage.php) |
 | Ordering | `ScopedOrderingManager::moveWithinScope()` (and the next-position reads) | [§3](#3-ordering) | [examples/ordering_basic_usage.php](../../examples/ordering_basic_usage.php) |
 | Ordering · Optional protected UNIQUE-safe lists (B1) | `ProtectedScopedOrderingManager::getNextUniquePositionForAppend()`, `moveUniqueWithinScope()`, or `deleteUniqueWithinScope()` | [Protected UNIQUE-safe Ordering B1](#protected-unique-safe-ordering-b1) | [examples/ordering_unique_usage.php](../../examples/ordering_unique_usage.php) |
 
 ## Run the examples from a 1.0.0 install
 
-After [installing the exact version](../../README.md#installation), choose a row with a linked PHP file in the capability map. Create an `examples/` directory in your Composer project and copy that file and `_bootstrap.php` from `vendor/maatify/php-persistence/examples/`. Run the copied file with PHP from your project root so it loads your Composer autoloader. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`. For rows marked “Walkthrough only,” follow the linked steps in your Host integration.
+After [installing the exact version](../../README.md#installation), choose a standalone example from the capability map. Create an `examples/` directory in your Composer project and copy that file and `_bootstrap.php` from `vendor/maatify/php-persistence/examples/`. Run the copied file with PHP from your project root so it loads your Composer autoloader. Use a disposable InnoDB database with the connection variables and privileges in the example setup below. The B1 example also requires `DELETE`.
+
+Load the [Host Snapshot B example](../../examples/pagination_host_snapshot_usage.php) within an application that has loaded its production Composer autoloader. Use the [Host B walkthrough](#optional-b-pagination-in-a-host-transaction) to attach an eligible idle `pdo_mysql` connection exclusively to a source with a registered InnoDB page plan. Call `Maatify\PhpPersistence\Examples\readHostSnapshotPage()` with that source, the registered plan ID, its bindings, and a page request. The example depends on those application objects and is outside standalone smoke execution. The Host accesses the delegated connection only through its source and checkout. The example discards the source when a normal commit leaves reuse unconfirmed. On failure it attempts to discard the source and rethrows the original failure. After discard or a thrown failure, drop all retained references to the original PDO and keep it out of circulation even if discard could not complete. A returned page does not authorize direct reuse of that PDO.
 
 ## Run the published RC.2 examples from a clean install
 
@@ -82,7 +84,7 @@ Each command provisions two disposable services for that engine. Look for `CONSU
 
 ### Run examples from the repository checkout
 
-With the checkout's Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the examples. To run an individual example manually, use the disposable database variables above and run the script from the repository root.
+With the checkout's Composer dependencies installed and Docker running, `composer examples:smoke` provisions a disposable database and runs the standalone examples. To run a standalone example manually, use the disposable database variables above and run the script from the repository root. For Host Snapshot B, follow the [application integration instructions](#run-the-examples-from-a-100-install) above.
 
 ---
 
@@ -148,7 +150,7 @@ Use a protected checkout when the Host needs to keep transaction control while r
 
 1. Build a `ProtectedTransactionCommandCatalog` from trusted `ProtectedTransactionCommandPlan` entries. Delegate an eligible idle PDO through `PdoProtectedTransactionCheckout::attachExclusive($pdo, $catalog)` and keep raw aliases out of use.
 2. Call `$checkout->begin()`. Execute the registered operation through `$checkout->runRegisteredCommand('invoice.updateStatus', ['id' => $invoiceId, 'status' => $status])`. Check the affected-row result against the Host's business rule. For guarded Ordering within the same transaction, use the [protected Ordering path](#protected-ordering-and-domain-constraints).
-3. Inspect `settlement()` after an error. A `null` settlement means the checkout has yet to record a terminal outcome. The Host ends a confirmed active transaction with `commit()` or `rollBack()` before any handoff. Read the terminal settlement after attempting to end it. On `REUSABLE`, retrieve the same connection once with `returnForHost()`. On `DISCARD_REQUIRED`, stop issuing SQL, call `discardForHost()`, and reconcile any uncertain database effect before deciding whether to repeat the work.
+3. Inspect `settlement()` after an error. A `null` settlement means the checkout has yet to record a terminal outcome. The Host ends a confirmed active transaction with `commit()` or `rollBack()` before any handoff. Read the terminal settlement after attempting to end it. On `Reusable`, retrieve the same connection once with `returnForHost()`. On `DiscardRequired`, stop issuing SQL, call `discardForHost()`, and reconcile any uncertain database effect before deciding whether to repeat the work.
 
 See the [protected Host write contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#521-optional-protected-host-write-transaction) for PDO eligibility, failure reasons and handoff.
 
@@ -160,10 +162,10 @@ The Host supplies an idle, non-persistent `PDO` or `Pdo\Mysql` connection from `
 
 #### Walkthrough — Input → Public Call → Result → Boundary
 
-1. **Input** — Register each transaction-preserving command in a `ProtectedTransactionCommandCatalog` and pass the catalog and PDO to `PdoVerifiedTransactionCheckout::attachExclusive()`. The callback receives a `VerifiedTransactionCommandsInterface` grant. Use its `runRegisteredCommand()` with an ID and matching named bindings, then return `VerifiedTransactionDecisionDTO::apply($payload)` or `VerifiedTransactionDecisionDTO::discard($payload)`. Both decisions accept `false` or `null` as payload.
+1. **Input** — Register each transaction-preserving command in a `ProtectedTransactionCommandCatalog` and pass the catalog and PDO to `PdoVerifiedTransactionCheckout::attachExclusive()`. The callback receives a `VerifiedTransactionCommandsInterface` grant. Use its `runRegisteredCommand()` with an ID and matching named bindings, then return `VerifiedTransactionDecisionCommand::apply($payload)` or `VerifiedTransactionDecisionCommand::discard($payload)`. Both decisions accept `false` or `null` as payload.
 2. **Public call** — In **Owned** mode, call `runOwned($operation)`. The checkout starts and ends the transaction. In **Host** mode, call `beginHost()`, optionally run registered Host commands, and call `runInHost($operation)` for one savepoint-scoped operation. The Host can continue with registered commands after a confirmed operation and chooses the outer `commit()` or `rollBack()`.
-3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PENDING_HOST` after savepoint release and confirmed continuity. Discard records `LOCAL_UNDONE` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome.
-4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `UNKNOWN` and the connection `DISCARD_REQUIRED`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `REUSABLE` or an untouched `UNCHANGED` cancellation. For `DISCARD_REQUIRED`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
+3. **Result** — In Owned mode, the payload follows a confirmed commit or rollback and an idle-session check. In Host mode, Apply records `PendingHost` after savepoint release and confirmed continuity. Discard records `LocalUndone` once rollback to the savepoint is acknowledged. Returning the Discard payload also requires acknowledged release and confirmed continuity. Read `settlement()` after return or exception for the operation outcome, transaction outcome and PDO disposition. A later Host end preserves the operation outcome. The settlement's JSON projection preserves null fields and uses [stable uppercase codes](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#36-settlement-enum-json-codes).
+4. **Boundary** — An exception escaping the callback keeps its identity. An uncertain control result suppresses the payload. A lost end reply leaves the transaction outcome `Unknown` and the connection `DiscardRequired`. A failed final connection check can require discard even when the database outcome is known. Return the original PDO once with `returnForHost()` after `Reusable` or an untouched `Unchanged` cancellation. For `DiscardRequired`, retire it with `discardForHost()` and reconcile any uncertain database effect before deciding whether to repeat work. The checkout performs no replay. Its guarantees cover eligible transactional effects under exclusive delegation.
 
 Run `php examples/verified_transaction_usage.php` from the project root with the disposable database settings above. The example covers Owned Apply and Discard, Host Discard followed by an outer commit, and settlement after a callback throws. See the [runnable example](../../examples/verified_transaction_usage.php) and the [complete Verified Checkout contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#522-optional-verified-apply-and-discard).
 
@@ -205,9 +207,9 @@ $request = new PageRequest(
 $config = new PaginationConfig(
     sortWhitelist: new SortWhitelist(['created_at' => 'orders.created_at', 'id' => 'orders.id']),
     defaultSortBy: 'created_at',
-    defaultSortDirection: SortDirectionEnum::DESC,
+    defaultSortDirection: SortDirectionEnum::Desc,
     tieBreakerSortBy: 'id',
-    tieBreakerDirection: SortDirectionEnum::ASC,
+    tieBreakerDirection: SortDirectionEnum::Asc,
 );
 
 $query = new PdoPaginationQueryDescriptor(
@@ -270,7 +272,7 @@ Use C1 when all reads for one page can run through the same eligible InnoDB conn
 
 1. Build the same descriptor, request and configuration used for standard pagination.
 2. Create the one-shot operation with `PdoSnapshotPaginator::forExclusiveRead($pdo)` and call `paginate()`.
-3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `REUSABLE` after confirmed cleanup, retains its policy for `UNCHANGED`, and retires a `DISCARD` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
+3. On return or exception, inspect `connectionOutcome()` on that operation. The Host can use `Reusable` after confirmed cleanup, retains its policy for `Unchanged`, and retires a `Discard` checkout. Hold the connection out of circulation if an attempted call finishes without an outcome. Preserve the page failure if Host settlement also fails.
 
 The [snapshot example](../../examples/pagination_snapshot_usage.php) runs successful and failing reads against a disposable database. To run it from an independent Composer project using the installed package, copy the example and `examples/_bootstrap.php` into that project's `examples/` directory. It loads that project's production autoloader. The package's [C1 contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#531-optional-c1-snapshot-pagination) defines the eligibility, read scope and settlement rules.
 
@@ -281,9 +283,9 @@ Use B when the Host needs eligible page reads, including its earlier writes, wit
 1. **Input** — Start with an idle, exclusively delegated, non-persistent `pdo_mysql` PDO with exception mode, the default statement class and autocommit enabled. Register non-locking, side-effect-free InnoDB page plans and trusted commands in a `HostSnapshotCatalog`. Route all use of the connection through the checkout during delegation.
 2. **Start** — Create the source with `PdoHostSnapshotSource::attachExclusive($pdo, $catalog)`, obtain a lease with `$source->checkout()`, then call `$checkout->beginRepeatableRead()`. Checkout rejects an already active transaction. At the Host's request, B issues `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` for the next transaction, starts it, and confirms the same session and active transaction. The Host's session and server defaults stay in effect for later transactions. For writes before a page, use `runRegisteredCommand()` on that checkout in read-write mode with commands registered to preserve the transaction.
 3. **Read** — Call `$checkout->authorizePage($queryId, $bindings, $request)`, pass the grant to `$checkout->newAttempt()`, and use `(new PdoHostSnapshotPaginator())->paginate($attempt)` to receive a `PageResultDTO`.
-4. **Boundary** — Eligible page reads share the InnoDB read view within the confirmed transaction and can see the Host's own writes in that transaction. A later transaction has its own read view. Inspect `$attempt->settlement()` after return or exception. The Host directs `commit()` or `rollBack()` on the checkout and handles handoff or discard. If B cannot confirm that startup consumed the isolation setting, the Host must reconcile the connection before reuse.
+4. **Boundary** — Eligible page reads share the InnoDB read view within the confirmed transaction and can see the Host's own writes in that transaction. A later transaction has its own read view. Inspect `$attempt->settlement()` after return or exception. The Host directs `commit()` or `rollBack()` on the checkout and handles handoff or discard. The page settlement has a JSON projection of disposition and reason. If the Host calls `retireForHost()` on the source, the returned `HostSnapshotRetirement` transfers the original PDO as a PHP object. If B cannot confirm that startup consumed the isolation setting, the Host must reconcile the connection before reuse.
 
-See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) for a page-attempt example, confirmation and handoff rules. The [installed consumer verification](CONSUMER_VERIFICATION.md) exercises a registered write followed by a page in the same transaction.
+See the [B contract](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction) for confirmation and handoff rules. The [Host integration example](../../examples/pagination_host_snapshot_usage.php) shows a read-only page transaction and a conservative discard policy. The [installed consumer verification](CONSUMER_VERIFICATION.md) exercises a registered write followed by a page in the same transaction.
 
 ### Optional forward-only Keyset pagination
 
@@ -305,6 +307,10 @@ Use an InnoDB table for the locking and rollback behavior shown here. A failed m
 
 **Inputs:** a `PDO` connection, a `ScopedOrderingConfig`, a scope value (or `null` for global/nullable-scope ordering), and — for a move — a row id and target order.
 **Outputs:** `int` (next position) or `bool` (whether the move succeeded, including a no-op).
+When you configure `updatedAtColumn`, supply `updatedAtValue` as a valid `YYYY-MM-DD HH:MM:SS` timestamp with optional 1–6 fractional digits. For example, format a date-time object with `Y-m-d H:i:s` in the intended Host timezone. Omit the value when the column is absent. Both raw and protected moves apply this check before Ordering SQL and bind the accepted string unchanged. [Migration from RC.2](../decisions/DEC-033-validate-ordering-mutation-timestamps.md)
+
+For a raw move, `false` means the target was missing or the zero-row update was undone, with any required settlement confirmed. If PDO fails to confirm that settlement, handle `TransactionExecutionException` or the original driver throwable, then resolve the transaction and connection state before reuse. The Host retains final control of a transaction it supplied. [Migration from RC.2](../decisions/DEC-034-raw-ordering-settlement-failures.md)
+
 **Boundary:** `moveWithinScope()` always locks the whole scope and re-reads the current order from the database before deciding anything; it never trusts a caller-supplied "current order".
 
 ### Append the first item in an empty scope
@@ -433,7 +439,7 @@ try {
     }
     throw $failure;
 } finally {
-    if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
+    if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DiscardRequired) {
         $checkout->discardForHost();
     } else {
         $hostPdo = $checkout->returnForHost();

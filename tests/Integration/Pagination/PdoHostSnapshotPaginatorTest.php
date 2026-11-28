@@ -56,7 +56,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $broken = $lease->newAttempt($lease->authorizePage('broken', ['min' => 10], new PageRequest()));
         $mapper = $lease->newAttempt($lease->authorizePage('mapper', ['min' => 10], new PageRequest()));
         $success = $lease->newAttempt($lease->authorizePage('page', ['min' => 10], new PageRequest(2)));
-        self::assertSame(Stage::NEW, $broken->state());
+        self::assertSame(Stage::New, $broken->state());
         self::assertNull(call_user_func($broken->settlement(...)));
 
         $ignoreArgs = ini_get('zend.exception_ignore_args');
@@ -85,11 +85,15 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
             }
         }
 
-        self::assertSame(Stage::TERMINAL, $broken->state());
-        self::assertSame(Disposition::RETURNED_TO_HOST, $broken->settlement()?->disposition);
-        self::assertSame(Reason::READ_FAILED, $broken->settlement()->reason);
-        self::assertSame(Reason::READ_FAILED, $mapper->settlement()?->reason);
-        self::assertSame(Reason::PAGE_COMPLETED, $success->settlement()?->reason);
+        self::assertSame(Stage::Terminal, $broken->state());
+        self::assertSame(Disposition::ReturnedToHost, $broken->settlement()?->disposition);
+        self::assertSame(Reason::ReadFailed, $broken->settlement()->reason);
+        self::assertSame(Reason::ReadFailed, $mapper->settlement()?->reason);
+        self::assertSame(Reason::PageCompleted, $success->settlement()?->reason);
+        self::assertSame([
+            'disposition' => 'RETURNED_TO_HOST',
+            'reason' => 'PAGE_COMPLETED',
+        ], json_decode(json_encode($success->settlement(), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function testMapperReentryCannotOverwriteTheOriginalAttemptOrFinishTheTransaction(): void
@@ -117,14 +121,14 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $competingSameGrant = $lease->newAttempt($outer);
         $competingOtherGrant = $lease->newAttempt($inner);
         $checkReentry = static function () use ($paginator, $lease, $first, $competingSameGrant, $competingOtherGrant): void {
-            self::assertSame(Stage::RUNNING, $first->state());
+            self::assertSame(Stage::Running, $first->state());
             self::reject(fn() => $paginator->paginate($first));
             self::assertNull($first->settlement());
             self::reject($lease->rollBack(...));
             self::reject(fn() => $paginator->paginate($competingSameGrant));
-            self::assertSame(Reason::GRANT_CONSUMED, $competingSameGrant->settlement()?->reason);
+            self::assertSame(Reason::GrantConsumed, $competingSameGrant->settlement()?->reason);
             self::reject(fn() => $paginator->paginate($competingOtherGrant));
-            self::assertSame(Reason::BUSY, $competingOtherGrant->settlement()?->reason);
+            self::assertSame(Reason::Busy, $competingOtherGrant->settlement()?->reason);
         };
         try {
             $paginator->paginate($first);
@@ -132,7 +136,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
             $checkReentry = null;
         }
         $result = $first->settlement();
-        self::assertSame(Reason::PAGE_COMPLETED, $result?->reason);
+        self::assertSame(Reason::PageCompleted, $result?->reason);
         self::reject(fn() => $paginator->paginate($first));
         self::assertSame($result, $first->settlement());
         $paginator->paginate($lease->newAttempt($inner));
@@ -140,7 +144,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $lease->rollBack();
         $lease->beginRepeatableRead();
         self::reject(fn() => $paginator->paginate($stale));
-        self::assertSame(Reason::STALE_CONTEXT, $stale->settlement()?->reason);
+        self::assertSame(Reason::StaleContext, $stale->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
     }
@@ -197,7 +201,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         try {
             self::reject(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
             self::assertTrue($changed);
-            self::assertSame(Reason::STALE_CONTEXT, $attempt->settlement()?->reason);
+            self::assertSame(Reason::StaleContext, $attempt->settlement()?->reason);
         } finally {
             spl_autoload_unregister($loader);
             $lease->rollBack();
@@ -227,7 +231,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         } catch (PaginationExecutionException $error) {
             self::assertSame($message, $error->getMessage());
         }
-        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        self::assertSame(Reason::ReadFailed, $attempt->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
     }
@@ -252,7 +256,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $attempt = $lease->newAttempt($lease->authorizePage('invalid', [], new PageRequest()));
         $failure = self::failureOf(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
         self::assertSame(1242, self::driverCode($failure));
-        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        self::assertSame(Reason::ReadFailed, $attempt->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
     }
@@ -277,7 +281,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         $attempt = $lease->newAttempt($lease->authorizePage('invalid', ['bound' => PHP_INT_MAX], new PageRequest()));
         $failure = self::failureOf(fn() => new PdoHostSnapshotPaginator()->paginate($attempt));
         self::assertSame(1690, self::driverCode($failure));
-        self::assertSame(Reason::READ_FAILED, $attempt->settlement()?->reason);
+        self::assertSame(Reason::ReadFailed, $attempt->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
     }
@@ -312,11 +316,11 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
         self::reject($source->discardForHost(...));
         $observer->exec('KILL CONNECTION ' . $id);
         self::failureOf($reader->resume(...));
-        self::assertSame(Stage::TERMINAL, $attempt->state());
+        self::assertSame(Stage::Terminal, $attempt->state());
         $settlement = $attempt->settlement();
         self::assertNotNull($settlement);
-        self::assertSame(Disposition::HOST_ACTION_REQUIRED, $settlement->disposition);
-        self::assertSame(Reason::SCOPE_UNCONFIRMED, $settlement->reason);
+        self::assertSame(Disposition::HostActionRequired, $settlement->disposition);
+        self::assertSame(Reason::ScopeUnconfirmed, $settlement->reason);
         $source->discardForHost();
         self::assertSame($settlement, $attempt->settlement());
     }
@@ -331,7 +335,7 @@ final class PdoHostSnapshotPaginatorTest extends HostSnapshotIntegrationTestCase
             [],
             ['min'],
             ['min'],
-            new PaginationConfig(new SortWhitelist(['id' => 'id']), 'id', SortDirectionEnum::ASC, 'id', SortDirectionEnum::ASC, 2, 1, 50),
+            new PaginationConfig(new SortWhitelist(['id' => 'id']), 'id', SortDirectionEnum::Asc, 'id', SortDirectionEnum::Asc, 2, 1, 50),
             $mapper ?? static fn(array $row): array => $row,
         );
     }

@@ -9,7 +9,7 @@ This map is for package consumers. Use the Package Reference for the public runt
 - [PHP_PERSISTENCE_PACKAGE_REFERENCE.md](PHP_PERSISTENCE_PACKAGE_REFERENCE.md): the canonical, complete Public Runtime API inventory, behavior contracts, exception semantics, concurrency/transaction limits, and database-support claim.
 - [README.md](README.md): package overview, installation/access state, requirements, and a Public Runtime API overview.
 - [docs/guides/USAGE_GUIDE.md](docs/guides/USAGE_GUIDE.md): a capability map and an `Input → Public Call → Result → Boundary` walkthrough for each capability.
-- [examples/](examples/): maintained, runnable examples that use only the Public API and the production autoload.
+- [examples/](examples/): maintained standalone and Host-dependent examples that use only the Public API and the production autoload.
 
 ## Release and support
 

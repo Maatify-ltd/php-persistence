@@ -33,14 +33,28 @@ final class UniqueOrderingConfigTest extends TestCase
         yield 'row bound exceeds position limit' => [$global, 'app.anchor', 'id', 1, 20, 21];
         yield 'soft delete' => [new ScopedOrderingConfig('app.items'), 'app.anchor', 'id', 1, 20, 10];
         yield 'updated timestamp' => [
-            new ScopedOrderingConfig('app.items', deletedAtColumn: null, updatedAtColumn: 'updated_at'), 'app.anchor', 'id', 1, 20, 10,
+            new ScopedOrderingConfig('app.items', deletedAtColumn: null, updatedAtColumn: 'updated_at'),
+            'app.anchor',
+            'id',
+            1,
+            20,
+            10,
         ];
         yield 'nullable scope' => [
             new ScopedOrderingConfig('app.items', scopeColumn: 'scope_id', deletedAtColumn: null, nullableScope: true),
-            'app.anchor', 'id', null, 20, 10,
+            'app.anchor',
+            'id',
+            null,
+            20,
+            10,
         ];
         yield 'column roles overlap' => [
-            new ScopedOrderingConfig('app.items', scopeColumn: 'ID', deletedAtColumn: null), 'app.anchor', 'id', null, 20, 10,
+            new ScopedOrderingConfig('app.items', scopeColumn: 'ID', deletedAtColumn: null),
+            'app.anchor',
+            'id',
+            null,
+            20,
+            10,
         ];
     }
 

@@ -21,9 +21,9 @@ use Throwable;
  *   is acknowledged. The initiating Throwable keeps precedence over
  *   state-check and cleanup failures.
  * - {@see self::undoOrFail()} is for a caller that reports failure without
- *   throwing: ROLLBACK TO must succeed, and its failure is not swallowed;
- *   Ordering uses this path for a move with a zero-row target update. A
- *   protected receiver records cleanup failure for the checkout to settle.
+ *   throwing. Raw Ordering requires acknowledged ROLLBACK TO and RELEASE
+ *   before returning its zero-row result. A protected receiver records
+ *   cleanup failure for the checkout to settle.
  * - {@see self::begin()} fails before any mutation when the driver reports no
  *   active transaction right after the SAVEPOINT reply: a server-aborted
  *   caller transaction that the caller swallowed shows up here on the
@@ -117,15 +117,23 @@ final readonly class SavepointScope
     }
 
     /**
-     * For a non-throwing failed window, ROLLBACK TO must succeed. Raw PDO treats
-     * RELEASE as best effort. A protected receiver records a RELEASE failure
-     * so the checkout fences further work and suppresses a normal result.
+     * For a non-throwing failed window, ROLLBACK TO must succeed before
+     * RELEASE is attempted. Raw PDO requires RELEASE to succeed too. A
+     * protected receiver records a RELEASE failure so the checkout fences
+     * further work and suppresses a normal result.
      *
-     * @throws Throwable when ROLLBACK TO fails
+     * @throws Throwable when ROLLBACK TO or a raw RELEASE fails
      */
     public function undoOrFail(): void
     {
         $this->rollbackStrict();
+
+        if ($this->pdo instanceof PDO) {
+            $this->releaseStrict();
+
+            return;
+        }
+
         $this->tryControlStatement('RELEASE SAVEPOINT ' . $this->name);
     }
 
@@ -143,6 +151,10 @@ final readonly class SavepointScope
         }
     }
 
+    /**
+     * Turns a failed best-effort control command into false. A protected receiver
+     * keeps its recorded failure so the enclosing operation can settle it.
+     */
     private function tryControlStatement(string $sql): bool
     {
         try {

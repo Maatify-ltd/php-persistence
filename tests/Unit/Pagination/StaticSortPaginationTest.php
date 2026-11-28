@@ -50,7 +50,7 @@ final class StaticSortPaginationTest extends TestCase
     {
         $plan = self::plan();
         $paginator = new PdoPaginator();
-        foreach ([Direction::ASC, Direction::DESC] as $direction) {
+        foreach ([Direction::Asc, Direction::Desc] as $direction) {
             $total = ScriptedPdoStatement::count(10);
             $filtered = ScriptedPdoStatement::count(3);
             $data = ScriptedPdoStatement::data([['id' => 7]]);
@@ -78,8 +78,15 @@ final class StaticSortPaginationTest extends TestCase
             self::assertSame([
                 'data' => [['id' => 7]],
                 'pagination' => [
-                    'page' => 2, 'per_page' => 2, 'total' => 10, 'filtered' => 3, 'total_pages' => 2,
-                    'has_next' => false, 'has_previous' => true, 'sort_by' => 'business_order', 'sort_direction' => $direction->value,
+                    'page' => 2,
+                    'per_page' => 2,
+                    'total' => 10,
+                    'filtered' => 3,
+                    'total_pages' => 2,
+                    'has_next' => false,
+                    'has_previous' => true,
+                    'sort_by' => 'business_order',
+                    'sort_direction' => $direction->value,
                 ],
             ], $page->toArray());
             self::assertSame(json_encode($page->toArray(), JSON_THROW_ON_ERROR), json_encode($page, JSON_THROW_ON_ERROR));
@@ -91,9 +98,9 @@ final class StaticSortPaginationTest extends TestCase
     {
         $plan = new StaticSortPlan(self::config(), [
             'business_order' => [
-                ['identifier' => 'catalog.positions.rank', 'direction' => Direction::ASC],
+                ['identifier' => 'catalog.positions.rank', 'direction' => Direction::Asc],
                 ['identifier' => 'projected_rank'],
-                ['identifier' => 'p.id', 'direction' => Direction::DESC],
+                ['identifier' => 'p.id', 'direction' => Direction::Desc],
             ],
         ]);
         $pdo = new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), ScriptedPdoStatement::data([['id' => 1]])]);
@@ -102,17 +109,17 @@ final class StaticSortPaginationTest extends TestCase
 
         self::assertSame(self::dataSql('ORDER BY `p`.`scope_key` DESC, `catalog`.`positions`.`rank` ASC, `projected_rank` DESC, `p`.`id` DESC'), $pdo->preparedSql[2]);
         self::assertSame('business_order', $page->sortBy);
-        self::assertSame(Direction::DESC, $page->sortDirection);
+        self::assertSame(Direction::Desc, $page->sortDirection);
     }
 
     /** @return array<string, array{?string, ?string, string, Direction, string}> */
     public static function requestOrders(): array
     {
         return [
-            'unknown key retains valid direction' => ['missing', ' desc ', 'business_order', Direction::DESC, 'ORDER BY `p`.`scope_key` DESC, `p`.`position` DESC, `p`.`id` ASC'],
-            'known key retains independent direction fallback' => [' id ', 'unsupported', 'id', Direction::ASC, 'ORDER BY `p`.`id` ASC'],
-            'null profile de-duplicates the legacy tie' => ['id', 'DESC', 'id', Direction::DESC, 'ORDER BY `p`.`id` DESC'],
-            'null profile works as the configured default' => [null, 'DESC', 'business_order', Direction::DESC, 'ORDER BY `p`.`scope_key` DESC, `p`.`id` ASC'],
+            'unknown key retains valid direction' => ['missing', ' desc ', 'business_order', Direction::Desc, 'ORDER BY `p`.`scope_key` DESC, `p`.`position` DESC, `p`.`id` ASC'],
+            'known key retains independent direction fallback' => [' id ', 'unsupported', 'id', Direction::Asc, 'ORDER BY `p`.`id` ASC'],
+            'null profile de-duplicates the legacy tie' => ['id', 'DESC', 'id', Direction::Desc, 'ORDER BY `p`.`id` DESC'],
+            'null profile works as the configured default' => [null, 'DESC', 'business_order', Direction::Desc, 'ORDER BY `p`.`scope_key` DESC, `p`.`id` ASC'],
         ];
     }
 
@@ -153,9 +160,16 @@ final class StaticSortPaginationTest extends TestCase
         $page = (new PdoPaginator())->paginateWithStaticSort($pdo, self::query(), new PageRequest(99, 2, 'missing', 'DESC'), self::plan(), static fn(array $row): array => $row);
 
         self::assertSame(['TOTAL :total_tenant', 'FILTERED :filtered_tenant'], $pdo->preparedSql);
-        self::assertSame([[], 1, 5, 0, 0, false, false, 'business_order', Direction::DESC], [
-            $page->data, $page->page, $page->total, $page->filtered, $page->totalPages,
-            $page->hasNext, $page->hasPrevious, $page->sortBy, $page->sortDirection,
+        self::assertSame([[], 1, 5, 0, 0, false, false, 'business_order', Direction::Desc], [
+            $page->data,
+            $page->page,
+            $page->total,
+            $page->filtered,
+            $page->totalPages,
+            $page->hasNext,
+            $page->hasPrevious,
+            $page->sortBy,
+            $page->sortDirection,
         ]);
     }
 
@@ -205,7 +219,7 @@ final class StaticSortPaginationTest extends TestCase
         yield 'not a string' => [$valid + ['other' => [['identifier' => 1]]]];
         yield 'four trailing terms' => [['business_order' => [['identifier' => 'a'], ['identifier' => 'b'], ['identifier' => 'c'], ['identifier' => 'd']]]];
         yield 'same path as primary with different casing' => [['business_order' => [['identifier' => 'P.SCOPE_KEY']]]];
-        yield 'same path in two trailing terms' => [['business_order' => [['identifier' => 'p.position'], ['identifier' => 'p.POSITION', 'direction' => Direction::DESC]]]];
+        yield 'same path in two trailing terms' => [['business_order' => [['identifier' => 'p.position'], ['identifier' => 'p.POSITION', 'direction' => Direction::Desc]]]];
         foreach (['', 'p.', 'p.a.b.c', 'p.position DESC', 'p.`position`', "p.position\n"] as $identifier) {
             yield 'invalid identifier ' . json_encode($identifier) => [$valid + ['other' => [['identifier' => $identifier]]]];
         }
@@ -222,14 +236,14 @@ final class StaticSortPaginationTest extends TestCase
     private static function plan(): StaticSortPlan
     {
         return new StaticSortPlan(self::config(), [
-            'business_order' => [['identifier' => 'p.position'], ['identifier' => 'p.id', 'direction' => Direction::ASC]],
+            'business_order' => [['identifier' => 'p.position'], ['identifier' => 'p.id', 'direction' => Direction::Asc]],
             'id' => null,
         ]);
     }
 
     private static function config(): PaginationConfig
     {
-        return new PaginationConfig(new SortWhitelist(['business_order' => 'p.scope_key', 'id' => 'p.id', 'other' => 'p.other']), 'business_order', Direction::ASC, 'id', Direction::ASC, 2);
+        return new PaginationConfig(new SortWhitelist(['business_order' => 'p.scope_key', 'id' => 'p.id', 'other' => 'p.other']), 'business_order', Direction::Asc, 'id', Direction::Asc, 2);
     }
 
     private static function query(): PdoPaginationQueryDescriptor

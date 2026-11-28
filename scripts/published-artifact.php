@@ -27,11 +27,19 @@ function publishedCommand(array $command, string $directory): string
 function publishedComposer(array $arguments, string $workspace): array
 {
     [$status, $output] = execute([
-        'env', '-i', 'PATH=' . (getenv('PATH') ?: '/usr/bin:/bin'), 'HOME=' . $workspace,
+        'env',
+        '-i',
+        'PATH=' . (getenv('PATH') ?: '/usr/bin:/bin'),
+        'HOME=' . $workspace,
         'COMPOSER_HOME=' . $workspace . '/composer-home',
         'COMPOSER_CACHE_DIR=' . $workspace . '/composer-cache',
-        'COMPOSER_NO_INTERACTION=1', 'GIT_CONFIG_NOSYSTEM=1',
-        'composer', '--no-interaction', '--no-plugins', '--no-scripts', ...$arguments,
+        'COMPOSER_NO_INTERACTION=1',
+        'GIT_CONFIG_NOSYSTEM=1',
+        'composer',
+        '--no-interaction',
+        '--no-plugins',
+        '--no-scripts',
+        ...$arguments,
     ], [], $workspace, 180);
 
     return [$status, trim($output)];
@@ -110,6 +118,10 @@ function publishedPackageEvidence(array $entry): array
     ];
 }
 
+/**
+ * Returns a recognizable version string for diagnostics, null when absent,
+ * or the redaction marker when the supplied value fails the evidence format.
+ */
 function publishedVersionEvidence(mixed $version): ?string
 {
     return publishedSafeValue($version, '~\A(?:dev-main|v?[0-9]{1,8}(?:\.[0-9]{1,8}){1,3}(?:-(?:alpha|beta|rc)[.-]?[0-9]{1,8})?)\z~i');
@@ -388,8 +400,12 @@ $sha = $matches[1];
 $root = dirname(__DIR__);
 $tag = 'refs/tags/v' . RELEASE_TARGET;
 publishedLog('EXPECTED', [
-    'package' => RELEASE_PACKAGE, 'target' => RELEASE_TARGET, 'sha' => $sha, 'tag' => $tag,
-    'installationSource' => 'dist', 'installPath' => '../' . RELEASE_PACKAGE,
+    'package' => RELEASE_PACKAGE,
+    'target' => RELEASE_TARGET,
+    'sha' => $sha,
+    'tag' => $tag,
+    'installationSource' => 'dist',
+    'installPath' => '../' . RELEASE_PACKAGE,
 ]);
 
 $workspace = sys_get_temp_dir() . '/pp-published-' . bin2hex(random_bytes(12));
@@ -424,7 +440,9 @@ try {
         'composerExitCode' => $composerStatus,
         'repository' => 'https://repo.packagist.org',
         'installPreference' => 'dist',
-        'plugins' => false, 'scripts' => false, 'isolatedHomeAndCache' => true,
+        'plugins' => false,
+        'scripts' => false,
+        'isolatedHomeAndCache' => true,
     ]);
     if ($composerStatus !== 0 || !isset($versionMatches[1])) {
         throw new RuntimeException('Composer version is unavailable');

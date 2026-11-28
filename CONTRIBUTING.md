@@ -29,15 +29,15 @@ composer validate --strict
 composer verify:php-constraint  # Composer solver checks for the declared PHP boundaries
 composer check-platform-reqs
 composer dump-autoload --optimize --strict-psr
-composer audit --no-interaction --abandoned=fail
+php scripts/dependency-audit.php # Composer 2.10+ and a freshly resolved composer.lock
 composer analyse               # PHPStan, level max, zero errors, no baseline
 composer format:check          # full code-style check on PHP 8.4 or 8.5, non-mutating
-composer syntax                # php -l over src, tests, scripts, examples
+composer syntax                # lints PHP in src/, tests/, scripts/, examples/, harness/, docs/, and root .php-cs-fixer.php
 composer whitespace             # git diff --check
 composer test:unit             # no Docker needed
 composer test:regression       # no Docker needed
 composer test:integration      # needs Docker; starts a disposable MySQL/MariaDB service
-composer examples:smoke        # needs Docker; smoke-executes examples/ against a real engine
+composer examples:smoke        # needs Docker; runs standalone examples against a real engine
 composer test:consumer         # needs Docker; two fresh external Composer verification runs
 actionlint .github/workflows/*.yml
 ```

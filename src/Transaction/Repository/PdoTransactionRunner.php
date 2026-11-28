@@ -60,6 +60,11 @@ final readonly class PdoTransactionRunner implements TransactionRunnerInterface
      * a savepoint or directing its outcome. Only owned work is eligible for
      * the configured deadlock replay.
      *
+     * A false owned BEGIN or COMMIT raises TransactionExecutionException.
+     * A false BEGIN prevents the callback from running. A false COMMIT
+     * suppresses the result after best-effort rollback. Any callback or
+     * driver Throwable that escapes this call retains its identity.
+     *
      * @template TResult
      *
      * @param callable(): TResult $callback

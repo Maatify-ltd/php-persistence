@@ -58,8 +58,8 @@ final class PdoProtectedTransactionCheckout
      * Qualifies the idle server session under reservation, then starts a write
      * transaction using the Host's isolation settings. Work becomes available
      * after the start is confirmed on the same session. A failed qualification
-     * or unconfirmed start settles as DISCARD_REQUIRED with the corresponding
-     * SERVER_QUALIFICATION_FAILED or START_UNCONFIRMED reason.
+     * or unconfirmed start settles as DiscardRequired with the corresponding
+     * ServerQualificationFailed or StartUnconfirmed reason.
      *
      * @throws ProtectedTransactionException If the checkout is unavailable, the start was already attempted, or the session cannot be confirmed.
      * @throws PDOException The original driver failure, when the driver throws.
@@ -70,15 +70,15 @@ final class PdoProtectedTransactionCheckout
             throw new ProtectedTransactionException('This protected checkout cannot start a transaction.');
         }
         $this->reserve();
-        $reason = Reason::SERVER_QUALIFICATION_FAILED;
+        $reason = Reason::ServerQualificationFailed;
         try {
             $session = $this->inspect(false);
-            $reason = Reason::START_UNCONFIRMED;
+            $reason = Reason::StartUnconfirmed;
             $this->control(ProtectedTransactionDriver::START);
             $this->inspect(true, $session);
             $this->session = $session;
         } catch (Throwable $failure) {
-            $this->settle(Disposition::DISCARD_REQUIRED, $reason);
+            $this->settle(Disposition::DiscardRequired, $reason);
             throw $failure;
         } finally {
             $this->busy = false;
@@ -163,7 +163,7 @@ final class PdoProtectedTransactionCheckout
         }
         $info = $failure instanceof PDOException ? $failure->errorInfo : null;
         $lost = $this->mariaDb && ($info[0] ?? null) === 'HY000' && in_array($info[1] ?? null, [1020, '1020'], true);
-        $this->settle(Disposition::DISCARD_REQUIRED, $lost ? Reason::TRANSACTION_LOST : Reason::OPERATION_UNCONFIRMED);
+        $this->settle(Disposition::DiscardRequired, $lost ? Reason::TransactionLost : Reason::OperationUnconfirmed);
         if ($primary === null) {
             throw $failure;
         }
@@ -171,9 +171,9 @@ final class PdoProtectedTransactionCheckout
 
     /**
      * Attempts to commit the active Host transaction once. Confirmed commit
-     * and an idle session permit handoff. COMMIT_OUTCOME_UNKNOWN covers a
+     * and an idle session permit handoff. CommitOutcomeUnknown covers a
      * commit that may have been sent without a confirmed reply.
-     * COMMIT_CONFIRMED_CONNECTION_UNSAFE preserves a known commit when the
+     * CommitConfirmedConnectionUnsafe preserves a known commit when the
      * subsequent session check fails. Read settlement() after an exception.
      *
      * @throws ProtectedTransactionException|PDOException If the operation is unavailable or completion cannot be confirmed.
@@ -206,8 +206,8 @@ final class PdoProtectedTransactionCheckout
     }
 
     /**
-     * Hands the original PDO back once after a verified end (REUSABLE), or
-     * cancels an untouched checkout (UNCHANGED) without qualifying its session.
+     * Hands the original PDO back once after a verified end (Reusable), or
+     * cancels an untouched checkout (Unchanged) without qualifying its session.
      * Either handoff ends this checkout's authority and releases the PDO claim.
      *
      * @throws ProtectedTransactionException During a reservation, active transaction, required discard or after handoff or discard.
@@ -217,9 +217,9 @@ final class PdoProtectedTransactionCheckout
         $this->reserve();
         try {
             if ($this->outcome === null && $this->session === null) {
-                $this->settle(Disposition::UNCHANGED, Reason::CANCELLED_BEFORE_QUALIFICATION);
+                $this->settle(Disposition::Unchanged, Reason::CancelledBeforeQualification);
             }
-            if ($this->outcome === null || $this->outcome->disposition === Disposition::DISCARD_REQUIRED) {
+            if ($this->outcome === null || $this->outcome->disposition === Disposition::DiscardRequired) {
                 throw new ProtectedTransactionException('The protected connection cannot be returned.');
             }
 
@@ -235,7 +235,7 @@ final class PdoProtectedTransactionCheckout
 
     /**
      * Retires the checkout without returning PDO or issuing explicit SQL.
-     * Preserves a terminal settlement, or records HOST_DISCARDED when none
+     * Preserves a terminal settlement, or records HostDiscarded when none
      * exists. Dropping the reference may trigger automatic driver rollback.
      *
      * @throws ProtectedTransactionException During a reservation or after handoff or discard.
@@ -245,7 +245,7 @@ final class PdoProtectedTransactionCheckout
         $this->reserve();
         try {
             if ($this->outcome === null) {
-                $this->settle(Disposition::DISCARD_REQUIRED, Reason::HOST_DISCARDED);
+                $this->settle(Disposition::DiscardRequired, Reason::HostDiscarded);
             }
             // Dropping the last reference can trigger driver-owned cleanup.
             $this->pdo = null;
@@ -263,16 +263,16 @@ final class PdoProtectedTransactionCheckout
     {
         $session = $this->activeSession();
         $this->reserve();
-        $reason = Reason::OPERATION_UNCONFIRMED;
+        $reason = Reason::OperationUnconfirmed;
         try {
             $this->inspect(true, $session);
-            $reason = $commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED;
+            $reason = $commit ? Reason::CommitOutcomeUnknown : Reason::RollbackUnconfirmed;
             $this->control($commit ? ProtectedTransactionDriver::COMMIT : ProtectedTransactionDriver::ROLLBACK);
-            $reason = $commit ? Reason::COMMIT_CONFIRMED_CONNECTION_UNSAFE : Reason::ROLLBACK_UNCONFIRMED;
+            $reason = $commit ? Reason::CommitConfirmedConnectionUnsafe : Reason::RollbackUnconfirmed;
             $this->inspect(false, $session);
-            $this->settle(Disposition::REUSABLE, $commit ? Reason::COMMITTED : Reason::ROLLED_BACK);
+            $this->settle(Disposition::Reusable, $commit ? Reason::Committed : Reason::RolledBack);
         } catch (Throwable $failure) {
-            $this->settle(Disposition::DISCARD_REQUIRED, $reason);
+            $this->settle(Disposition::DiscardRequired, $reason);
             throw $failure;
         } finally {
             $this->busy = false;

@@ -27,8 +27,12 @@ use Maatify\PhpPersistence\Pagination\Repository\PdoPaginator;
 use Maatify\PhpPersistence\Pagination\ValueObject\SortWhitelist;
 use Maatify\PhpPersistence\Transaction\Repository\PdoSavepointTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
+use Maatify\PhpPersistence\Verification\Consumer\CatalogConnection;
 
-require __DIR__ . '/vendor/autoload.php';
+$loader = require __DIR__ . '/vendor/autoload.php';
+$loader->addPsr4('Maatify\\PhpPersistence\\Verification\\Consumer\\', __DIR__ . '/Consumer');
+
+const ORDERING_CHECK_FAILURE_TIMESTAMP = '2026-01-01 00:00:00';
 
 function verifySame(mixed $expected, mixed $actual, string $description): void
 {
@@ -47,29 +51,15 @@ function consumerEnvironment(string $key): string
     return $value;
 }
 
-/**
- * A PDO connection that can coordinate a second real connection before a specific query.
- */
-final class CatalogConnection extends PDO
+/** Opens the consumer fixture PDO with the environment supplied by its supervisor. */
+function catalogConnection(): CatalogConnection
 {
-    public ?Closure $beforePrepare = null;
-
-    public function __construct()
-    {
-        parent::__construct(
-            'mysql:host=' . consumerEnvironment('HOST') . ';port=' . consumerEnvironment('PORT') . ';dbname=' . consumerEnvironment('DATABASE'),
-            consumerEnvironment('USER'),
-            consumerEnvironment('PASSWORD'),
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
-        );
-    }
-
-    public function prepare(string $query, array $options = []): PDOStatement|false
-    {
-        ($this->beforePrepare)?->__invoke($query);
-
-        return parent::prepare($query, $options);
-    }
+    return new CatalogConnection(
+        'mysql:host=' . consumerEnvironment('HOST') . ';port=' . consumerEnvironment('PORT') . ';dbname=' . consumerEnvironment('DATABASE'),
+        consumerEnvironment('USER'),
+        consumerEnvironment('PASSWORD'),
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
+    );
 }
 
 function createCatalog(PDO $pdo, string $table): void
@@ -79,8 +69,8 @@ function createCatalog(PDO $pdo, string $table): void
         scope_id INT NULL,
         position INT NOT NULL,
         deleted_at DATETIME NULL,
-        stamp VARCHAR(8) NOT NULL DEFAULT 'ready',
-        CHECK (stamp <> 'blocked'),
+        stamp VARCHAR(19) NOT NULL DEFAULT 'ready',
+        CHECK (stamp <> '" . ORDERING_CHECK_FAILURE_TIMESTAMP . "'),
         KEY scope_position (scope_id, position)
     ) ENGINE=InnoDB");
 }
@@ -107,7 +97,7 @@ function catalogPage(PDO $pdo, string $table, bool $legacy): array
         $paginator = new PdoPaginator();
         $query = new PdoPaginationQueryDescriptor($total, [], $filtered, [], $data, []);
         $request = new PageRequest(page: '9999', perPage: '0', sortBy: 'invalid');
-        $config = new PaginationConfig(new SortWhitelist(['position' => 'position', 'id' => 'id']), 'position', SortDirectionEnum::ASC, 'id', SortDirectionEnum::DESC);
+        $config = new PaginationConfig(new SortWhitelist(['position' => 'position', 'id' => 'id']), 'position', SortDirectionEnum::Asc, 'id', SortDirectionEnum::Desc);
     }
     $result = $paginator->paginate($pdo, $query, $request, $config, $mapper);
     verifySame($result->toArray(), json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR), 'Pagination array and JSON agree');
@@ -119,7 +109,7 @@ function catalogPage(PDO $pdo, string $table, bool $legacy): array
 function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): array
 {
     createCatalog($pdo, $table);
-    $writer = new CatalogConnection();
+    $writer = catalogConnection();
     try {
         $runner = $legacy ? new LegacySourceRunner($pdo) : new PdoTransactionRunner($pdo);
         $manager = $legacy ? new LegacyOrdering() : new ScopedOrderingManager();
@@ -180,7 +170,7 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         $pdo->beginTransaction();
         $pdo->exec("UPDATE `{$table}` SET stamp = 'earlier' WHERE id = 4");
         try {
-            $manager->moveWithinScope($pdo, $timestampedConfig, 7, 1, 1, 'blocked');
+            $manager->moveWithinScope($pdo, $timestampedConfig, 7, 1, 1, ORDERING_CHECK_FAILURE_TIMESTAMP);
             throw new LogicException('Target write unexpectedly passed its CHECK constraint');
         } catch (PDOException $error) {
             verifySame($mariaDb ? 4025 : 3819, (int) ($error->errorInfo[1] ?? 0), 'Target write failed after the range shift');
@@ -206,9 +196,15 @@ function exerciseCatalog(CatalogConnection $pdo, string $table, bool $legacy): a
         $page = catalogPage($pdo, $table, $legacy);
         verifySame([['id' => 4, 'position' => 1]], $page['data'], 'Normalized page applies deterministic tie-breaker');
         verifySame([
-            'page' => 1, 'per_page' => 1, 'total' => 5, 'filtered' => 4,
-            'total_pages' => 4, 'has_next' => true, 'has_previous' => false,
-            'sort_by' => 'position', 'sort_direction' => 'ASC',
+            'page' => 1,
+            'per_page' => 1,
+            'total' => 5,
+            'filtered' => 4,
+            'total_pages' => 4,
+            'has_next' => true,
+            'has_previous' => false,
+            'sort_by' => 'position',
+            'sort_direction' => 'ASC',
         ], $page['pagination'], 'Observable pagination envelope');
 
         $pdo->beforePrepare = static function (string $sql) use ($pdo, $writer, $table): void {
@@ -301,7 +297,7 @@ function exerciseSharedConnection(PDO $pdo, bool $legacySource): void
  */
 function runRetryPartner(): void
 {
-    $pdo = new CatalogConnection();
+    $pdo = catalogConnection();
     $pdo->exec('SET SESSION innodb_lock_wait_timeout = 10');
     $pdo->beginTransaction();
     try {
@@ -380,7 +376,7 @@ function induceConsumerDeadlock(PDO $pdo): never
 function exerciseDeadlockRetry(PDO $pdo, bool $legacy): array
 {
     $pdo->exec('CREATE TABLE consumer_retry (id INT PRIMARY KEY, weight INT NOT NULL) ENGINE=InnoDB');
-    $observer = new CatalogConnection();
+    $observer = catalogConnection();
     try {
         $pdo->exec('INSERT INTO consumer_retry VALUES (1, 0), (2, 0), (3, 0)');
         $pdo->exec('INSERT INTO consumer_retry WITH RECURSIVE seq(n) AS (SELECT 100 UNION ALL SELECT n + 1 FROM seq WHERE n < 163) SELECT n, 0 FROM seq');
@@ -435,7 +431,7 @@ verifySame(true, InstalledVersions::isInstalled('maatify/php-persistence', false
 verifySame(true, InstalledVersions::isInstalled('maatify/persistence', false), 'Legacy installed via Composer');
 verifySame(false, InstalledVersions::isInstalled('phpunit/phpunit'), 'Consumer does not install package development dependencies');
 verifySame(false, class_exists(Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase::class), 'Production autoload excludes package tests');
-$pdo = new CatalogConnection();
+$pdo = catalogConnection();
 exerciseSharedConnection($pdo, $scenario === 'differential');
 $candidate = exerciseCatalog($pdo, 'consumer_candidate', false);
 if ($scenario === 'differential') {

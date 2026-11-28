@@ -41,7 +41,7 @@ $config = new UniqueOrderingConfig(
 );
 $pdo = new PDO(
     'mysql:host=' . getenv('PHP_PERSISTENCE_IT_HOST') . ';port=' . getenv('PHP_PERSISTENCE_IT_PORT')
-    . ';dbname=' . getenv('PHP_PERSISTENCE_IT_DATABASE'),
+        . ';dbname=' . getenv('PHP_PERSISTENCE_IT_DATABASE'),
     (string) getenv('PHP_PERSISTENCE_IT_USER'),
     (string) getenv('PHP_PERSISTENCE_IT_PASSWORD'),
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
@@ -107,7 +107,7 @@ try {
             throw new RuntimeException('The writer crossed a locked anchor.');
         } catch (PDOException $failure) {
             if (!in_array($failure->errorInfo[1] ?? null, [$expected, (string) $expected], true)
-                || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DISCARD_REQUIRED
+                || $checkout->settlement()?->disposition !== ProtectedTransactionDispositionEnum::DiscardRequired
             ) {
                 throw $failure;
             }

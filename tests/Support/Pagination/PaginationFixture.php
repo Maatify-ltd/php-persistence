@@ -22,8 +22,8 @@ final readonly class PaginationFixture
     ): int {
         $statement = $this->pdo->prepare(
             'INSERT INTO `' . $this->table . '` '
-            . '(`tenant_id`, `category`, `name`, `score`, `is_active`, `nullable_code`, `created_at`, `deleted_at`) '
-            . 'VALUES (:tenant_id, :category, :name, :score, :is_active, :nullable_code, :created_at, :deleted_at)',
+                . '(`tenant_id`, `category`, `name`, `score`, `is_active`, `nullable_code`, `created_at`, `deleted_at`) '
+                . 'VALUES (:tenant_id, :category, :name, :score, :is_active, :nullable_code, :created_at, :deleted_at)',
         );
 
         $statement->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);

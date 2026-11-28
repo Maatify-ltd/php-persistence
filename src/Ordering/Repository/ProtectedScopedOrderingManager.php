@@ -60,7 +60,9 @@ final readonly class ProtectedScopedOrderingManager
      * The positive target position is capped at the locked scope maximum,
      * with a minimum cap of 1. A null scope means global Ordering or the
      * configured nullable scope. Supply a timestamp exactly when an updated-at
-     * column is configured.
+     * column is configured. Use YYYY-MM-DD HH:MM:SS with an optional fraction of
+     * 1–6 digits. Invalid calendar and clock values are rejected before Ordering
+     * SQL is issued. The original string is bound to the target update.
      *
      * A successful move or no-op returns true. A missing row or an undone
      * zero-row update returns false. A mutating move uses a local savepoint.
@@ -102,7 +104,7 @@ final readonly class ProtectedScopedOrderingManager
      *
      * An eligibility rejection can leave the checkout active if resource
      * cleanup and transaction continuity are confirmed. After an exception,
-     * read the checkout's settlement(). DISCARD_REQUIRED fences further SQL
+     * read the checkout's settlement(). DiscardRequired fences further SQL
      * and requires the Host to call discardForHost().
      *
      * @throws InvalidOrderingOperationException For a scope ID outside the profile.
@@ -132,7 +134,7 @@ final readonly class ProtectedScopedOrderingManager
      *
      * After a mutation fails, the checkout can remain active only if local
      * undo, resource cleanup and continuity are confirmed. After an exception,
-     * read the checkout's settlement(). DISCARD_REQUIRED fences further SQL
+     * read the checkout's settlement(). DiscardRequired fences further SQL
      * and requires the Host to call discardForHost().
      *
      * @throws InvalidOrderingOperationException For an invalid identifier or position.
@@ -164,7 +166,7 @@ final readonly class ProtectedScopedOrderingManager
      *
      * After a mutation fails, the checkout can remain active only if local
      * undo, resource cleanup and continuity are confirmed. After an exception,
-     * read the checkout's settlement(). DISCARD_REQUIRED fences further SQL
+     * read the checkout's settlement(). DiscardRequired fences further SQL
      * and requires the Host to call discardForHost().
      *
      * @throws InvalidOrderingOperationException For an invalid identifier or ineligible DELETE plan.

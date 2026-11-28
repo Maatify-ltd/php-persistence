@@ -46,9 +46,9 @@ try {
     $config = new PaginationConfig(
         new SortWhitelist(['id' => 'id']),
         'id',
-        SortDirectionEnum::ASC,
+        SortDirectionEnum::Asc,
         'id',
-        SortDirectionEnum::ASC,
+        SortDirectionEnum::Asc,
         10,
         1,
         50,
@@ -67,8 +67,8 @@ try {
     $insert = new HostSnapshotCommandPlan(
         "INSERT INTO $table VALUES (:id)",
         ['id'],
-        HostSnapshotCommandResultModeEnum::AFFECTED_ROWS,
-        effect: HostSnapshotCommandEffectEnum::PRESERVES_TRANSACTION,
+        HostSnapshotCommandResultModeEnum::AffectedRows,
+        effect: HostSnapshotCommandEffectEnum::PreservesTransaction,
     );
     $source = PdoHostSnapshotSource::attachExclusive($connect(), new HostSnapshotCatalog(['items' => $pagePlan], ['insert' => $insert]));
     $lease = $source->checkout();
@@ -82,7 +82,7 @@ try {
         return (int) $statement->fetchColumn();
     };
     if ($page->total !== 2 || array_column($page->data, 'id') !== [1, 2]
-        || $attempt->settlement()?->reason !== HostSnapshotPageSettlementReasonEnum::PAGE_COMPLETED
+        || $attempt->settlement()?->reason !== HostSnapshotPageSettlementReasonEnum::PageCompleted
         || $readCommittedCount() !== 1
     ) {
         throw new RuntimeException('The installed B surface failed its page or transaction contract.');
@@ -91,8 +91,8 @@ try {
     $lease->release();
     $returned = $source->retireForHost();
     if ($readCommittedCount() !== 2 || $returned->pdo->inTransaction()
-        || $returned->disposition !== HostSnapshotRetirementDispositionEnum::RETURNED_IDLE
-        || $attempt->settlement()?->reason !== HostSnapshotPageSettlementReasonEnum::PAGE_COMPLETED
+        || $returned->disposition !== HostSnapshotRetirementDispositionEnum::ReturnedIdle
+        || $attempt->settlement()?->reason !== HostSnapshotPageSettlementReasonEnum::PageCompleted
     ) {
         throw new RuntimeException('The installed B surface failed its Host handoff or historical settlement.');
     }

@@ -7,7 +7,7 @@ use PhpCsFixer\Finder;
 
 $finder = (new Finder())
     ->in(__DIR__)
-    ->exclude(['vendor', 'docs'])
+    ->exclude('vendor')
     ->name('*.php')
     ->ignoreDotFiles(false);
 

@@ -6,7 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Integration\Transaction;
 
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum;
@@ -35,12 +35,12 @@ final class VerifiedTransactionDeadlockIntegrationTest extends DeadlockIntegrati
         ]));
         $attempts = 0;
         $seen = null;
-        $operation = function (VerifiedTransactionCommandsInterface $scope) use (&$attempts, &$seen): VerifiedTransactionDecisionDTO {
+        $operation = function (VerifiedTransactionCommandsInterface $scope) use (&$attempts, &$seen): VerifiedTransactionDecisionCommand {
             ++$attempts;
             $seen = $this->provokeDeadlockUsing(static function (int $id) use ($scope): void {
                 $scope->runRegisteredCommand('lock', ['id' => $id]);
             });
-            return VerifiedTransactionDecisionDTO::discard();
+            return VerifiedTransactionDecisionCommand::discard();
         };
         try {
             if (!$owned) {
@@ -51,10 +51,10 @@ final class VerifiedTransactionDeadlockIntegrationTest extends DeadlockIntegrati
             self::assertSame(1213, self::driverCode($caught));
             self::assertSame(1, $attempts);
             $settlement = $checkout->settlement();
-            self::assertSame(VerifiedTransactionOutcomeEnum::UNKNOWN, $settlement->operationOutcome);
-            self::assertSame(VerifiedTransactionOutcomeEnum::UNKNOWN, $settlement->transactionOutcome);
-            self::assertSame(VerifiedTransactionReasonEnum::TRANSACTION_LOST, $settlement->checkoutReason);
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement->disposition);
+            self::assertSame(VerifiedTransactionOutcomeEnum::Unknown, $settlement->operationOutcome);
+            self::assertSame(VerifiedTransactionOutcomeEnum::Unknown, $settlement->transactionOutcome);
+            self::assertSame(VerifiedTransactionReasonEnum::TransactionLost, $settlement->checkoutReason);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement->disposition);
             $this->expectException(ProtectedTransactionException::class);
             $checkout->returnForHost();
         } finally {

@@ -53,7 +53,10 @@ final class PublishedArtifactEvidenceTest extends TestCase
                 'scripts/published-artifact.php',
                 'scripts/release-artifact.php',
                 'scripts/integration-support.php',
-                'scripts/integration-residue-shadow.php',
+                'scripts/Tooling/autoload.php',
+                'scripts/Tooling/IntegrationInterrupted.php',
+                'scripts/Tooling/IntegrationResidueShadow.php',
+                'scripts/Tooling/OrchestrationBudget.php',
             ];
             foreach ($tracked as $file) {
                 $destination = $repo . '/' . $file;
@@ -79,8 +82,15 @@ final class PublishedArtifactEvidenceTest extends TestCase
                 self::assertTrue(chmod($bin . '/rm', 0700));
             }
             [$status, $output, $error] = execute([
-                'env', '-i', ...$environment, PHP_BINARY, '-d', 'sys_temp_dir=' . $temporary,
-                $repo . '/scripts/published-artifact.php', '--target=1.0.0', '--sha=' . $sha,
+                'env',
+                '-i',
+                ...$environment,
+                PHP_BINARY,
+                '-d',
+                'sys_temp_dir=' . $temporary,
+                $repo . '/scripts/published-artifact.php',
+                '--target=1.0.0',
+                '--sha=' . $sha,
             ], [], $repo, 20);
 
             self::assertSame($exit, $status, $output . $error);
@@ -140,10 +150,12 @@ final class PublishedArtifactEvidenceTest extends TestCase
                     'expectedSha256' => hash_file('sha256', $repo . '/README.md'),
                     'observedSha256' => hash('sha256', 'altered'),
                 ], $records['CONTENT']['changedFiles']['README.md']);
-                self::assertSame([[
-                    'pathSha256' => hash('sha256', self::EXTRA_PATH),
-                    'observedSha256' => hash('sha256', 'extra'),
-                ]], $records['CONTENT']['unexpectedFiles']);
+                self::assertSame([
+                    [
+                        'pathSha256' => hash('sha256', self::EXTRA_PATH),
+                        'observedSha256' => hash('sha256', 'extra'),
+                    ],
+                ], $records['CONTENT']['unexpectedFiles']);
             } else {
                 self::assertIsArray($records['CONTENT']['matchingFiles']);
                 self::assertCount(count($files), $records['CONTENT']['matchingFiles']);

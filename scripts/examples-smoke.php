@@ -21,6 +21,8 @@ declare(strict_types=1);
  * Exit status: 0 success, 1 an example failed, 2 invalid usage or configuration, 3 infrastructure failure, 130 interrupted.
  */
 
+use Maatify\PhpPersistence\Tooling\IntegrationInterrupted;
+
 require __DIR__ . '/integration-support.php';
 
 /** @var list<string> $argv */

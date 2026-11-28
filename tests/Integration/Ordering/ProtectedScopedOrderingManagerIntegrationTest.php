@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
 
 use Closure;
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
 use Maatify\PhpPersistence\Ordering\Repository\ProtectedScopedOrderingManager;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
@@ -101,8 +103,8 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             }
         }
         $settlement = $checkout->settlement();
-        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
-        self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $settlement->reason);
+        self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::TransactionLost, $settlement->reason);
         $this->reject(static fn() => $checkout->runRegisteredCommand('write', ['id' => $hostId]));
         $this->reject(static fn() => $checkout->rollBack());
         $this->reject(static fn() => $checkout->returnForHost());
@@ -118,12 +120,50 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         self::assertSame($settlement, $checkout->settlement());
     }
 
+    public function testInvalidMoveTimestampLeavesTheActiveCheckoutAndRowsUntouched(): void
+    {
+        $initial = '2026-01-01 00:00:00';
+        $first = $this->fixture->insertScoped('target', 1, 'first', null, $initial);
+        $second = $this->fixture->insertScoped('target', 2, 'second', null, $initial);
+        $table = $this->scopedTable;
+        $checkout = PdoProtectedTransactionCheckout::attachExclusive(
+            $this->delegatedConnection(self::setting('PORT'), false),
+            new ProtectedTransactionCommandCatalog([
+                'read' => new ProtectedTransactionCommandPlan(
+                    "SELECT display_order, updated_at FROM `$table` WHERE id = :id",
+                    ['id'],
+                    1,
+                ),
+            ]),
+        );
+        $config = new ScopedOrderingConfig(table: $table, scopeColumn: 'scope_key', updatedAtColumn: 'updated_at');
+        $manager = new ProtectedScopedOrderingManager();
+        $checkout->begin();
+
+        $failure = $this->caughtFailure(
+            fn() => $manager->moveWithinScope($checkout, $config, 'target', $second, 1, '2025-02-29 00:00:00'),
+        );
+        self::assertInstanceOf(InvalidOrderingOperationException::class, $failure);
+        self::assertNull($checkout->settlement());
+        self::assertSame([['display_order' => 2, 'updated_at' => $initial]], $checkout->runRegisteredCommand('read', ['id' => $second]));
+
+        $updated = '2024-02-29 23:59:59';
+        self::assertTrue($manager->moveWithinScope($checkout, $config, 'target', $second, 1, $updated));
+        self::assertSame([['display_order' => 1, 'updated_at' => $updated]], $checkout->runRegisteredCommand('read', ['id' => $second]));
+        $checkout->rollBack();
+        $checkout->returnForHost();
+        self::assertSame([$first => 1, $second => 2], $this->reader()->scopedOrdersById('target'));
+    }
+
     public function testReleaseFailureSuppressesFalseAfterSuccessfulSavepointUndo(): void
     {
         $this->fixture->insertScoped('target', 1);
         $id = $this->fixture->insertScoped('target', 2);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'ordering-release-error',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'ordering-release-error',
         ]);
         try {
             $checkout = PdoProtectedTransactionCheckout::attachExclusive(
@@ -136,7 +176,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             self::assertSame(1305, self::driverCode($error));
             self::assertSame('TARGET UPDATE MADE EMPTY', $relay->readLine(12.0));
             self::assertSame('RELEASE REPLACED AFTER UNDO', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             $this->reject(static fn() => $checkout->commit());
             $checkout->discardForHost();
         } finally {
@@ -159,7 +199,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             $table = $this->scopedTable;
             $this->pdo->exec(
                 "CREATE TRIGGER `{$table}_snapshot` BEFORE UPDATE ON `$table` FOR EACH ROW "
-                . "SET NEW.label = (SELECT CAST(v AS CHAR) FROM `$auxiliary` WHERE id = 1 FOR UPDATE)",
+                    . "SET NEW.label = (SELECT CAST(v AS CHAR) FROM `$auxiliary` WHERE id = 1 FOR UPDATE)",
             );
             $catalog['snapshot'] = new ProtectedTransactionCommandPlan("SELECT v FROM `$auxiliary` WHERE id = 1", [], 1);
         }
@@ -186,9 +226,9 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             $failure = self::failureOf(fn() => $manager->moveWithinScope($checkout, $this->scopedConfig(), 'target', $second, 1));
             self::assertSame(1020, self::driverCode($failure));
             $settlement = $checkout->settlement();
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
             self::assertSame(
-                $mariaDb ? ProtectedTransactionReasonEnum::TRANSACTION_LOST : ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED,
+                $mariaDb ? ProtectedTransactionReasonEnum::TransactionLost : ProtectedTransactionReasonEnum::OperationUnconfirmed,
                 $settlement->reason,
             );
             $this->reject(static fn() => $checkout->runRegisteredCommand('read'));
@@ -205,7 +245,10 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
     public function testReleaseFailureKeepsEarlierMovementFailureAndSealsCheckout(): void
     {
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'ordering-release-error',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'ordering-release-error',
         ]);
         try {
             $checkout = PdoProtectedTransactionCheckout::attachExclusive(
@@ -227,7 +270,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             ), null, PdoProtectedTransactionCheckout::class);
             self::assertSame($primary, $this->caughtFailure($exercise));
             self::assertSame('RELEASE REPLACED AFTER UNDO', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             $this->reject(static fn() => $checkout->returnForHost());
             $checkout->discardForHost();
         } finally {
@@ -241,7 +284,11 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
         $this->fixture->insertScoped('target', 1);
         $this->fixture->insertScoped('target', 2);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', 'protected-tail-churn', $table,
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            'protected-tail-churn',
+            $table,
         ]);
         try {
             $pdo = $this->delegatedConnection($this->relayPort($relay), true);
@@ -267,7 +314,7 @@ final class ProtectedScopedOrderingManagerIntegrationTest extends OrderingIntegr
             self::assertNull($checkout->settlement());
             self::assertSame('0', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
             $checkout->commit();
-            self::assertSame(ProtectedTransactionReasonEnum::COMMITTED, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::Committed, $checkout->settlement()?->reason);
             self::assertSame('1', $this->scalar($this->pdo, "SELECT COUNT(*) FROM `$table` WHERE scope_key = 'host'"));
             $checkout->returnForHost();
         } finally {

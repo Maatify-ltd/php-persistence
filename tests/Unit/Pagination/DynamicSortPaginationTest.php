@@ -59,28 +59,41 @@ final class DynamicSortPaginationTest extends TestCase
     {
         yield 'empty request' => [[], false, '`o`.`status` DESC, `o`.`id` ASC', [self::sort('status', 'DESC'), self::sort(null, 'ASC')]];
         yield 'one term, hidden appended tie even when selection enabled' => [
-            [self::sort('score', 'aSc')], true, '`o`.`score` ASC, `o`.`id` ASC', [self::sort('score', 'ASC'), self::sort(null, 'ASC')],
+            [self::sort('score', 'aSc')],
+            true,
+            '`o`.`score` ASC, `o`.`id` ASC',
+            [self::sort('score', 'ASC'), self::sort(null, 'ASC')],
         ];
         yield 'two mixed terms' => [
-            [self::sort('score', 'desc'), self::sort('status', 'ASC')], false, '`o`.`score` DESC, `o`.`status` ASC, `o`.`id` ASC',
+            [self::sort('score', 'desc'), self::sort('status', 'ASC')],
+            false,
+            '`o`.`score` DESC, `o`.`status` ASC, `o`.`id` ASC',
             [self::sort('score', 'DESC'), self::sort('status', 'ASC'), self::sort(null, 'ASC')],
         ];
         yield 'three reversed priority and mixed terms' => [
-            [self::sort('name', 'desc'), self::sort('status', 'asc'), self::sort('score', 'desc')], false,
+            [self::sort('name', 'desc'), self::sort('status', 'asc'), self::sort('score', 'desc')],
+            false,
             '`o`.`name` DESC, `o`.`status` ASC, `o`.`score` DESC, `o`.`id` ASC',
             [self::sort('name', 'DESC'), self::sort('status', 'ASC'), self::sort('score', 'DESC'), self::sort(null, 'ASC')],
         ];
         yield 'canonical tie selected alone' => [[self::sort('internal_id', 'dEsC')], true, '`o`.`id` DESC', [self::sort('internal_id', 'DESC')]];
         yield 'canonical tie selected last' => [
-            [self::sort('score', 'desc'), self::sort('internal_id', 'ASC')], true, '`o`.`score` DESC, `o`.`id` ASC',
+            [self::sort('score', 'desc'), self::sort('internal_id', 'ASC')],
+            true,
+            '`o`.`score` DESC, `o`.`id` ASC',
             [self::sort('score', 'DESC'), self::sort('internal_id', 'ASC')],
         ];
         yield 'case-folded column alias to tie allowed last under default policy' => [
-            [self::sort('status', 'asc'), self::sort('alternate_id', 'desc')], false, '`o`.`status` ASC, `o`.`ID` DESC',
+            [self::sort('status', 'asc'), self::sort('alternate_id', 'desc')],
+            false,
+            '`o`.`status` ASC, `o`.`ID` DESC',
             [self::sort('status', 'ASC'), self::sort('alternate_id', 'DESC')],
         ];
         yield 'case-folded column alias to tie selected alone with policy enabled' => [
-            [self::sort('alternate_id', 'desc')], true, '`o`.`ID` DESC', [self::sort('alternate_id', 'DESC')],
+            [self::sort('alternate_id', 'desc')],
+            true,
+            '`o`.`ID` DESC',
+            [self::sort('alternate_id', 'DESC')],
         ];
     }
 
@@ -137,7 +150,7 @@ final class DynamicSortPaginationTest extends TestCase
             [new SortWhitelist(['id' => 'id']), 'id', []],
             [new SortWhitelist(['recent' => 'o.ID', 'id' => 'o.id']), 'recent', []],
         ] as [$whitelist, $key, $terms]) {
-            $config = new PaginationConfig($whitelist, $key, Direction::DESC, 'id', Direction::ASC);
+            $config = new PaginationConfig($whitelist, $key, Direction::Desc, 'id', Direction::Asc);
             $pdo = new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), ScriptedPdoStatement::data([['id' => 7]])]);
             $result = (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(), $config, $terms, self::row(...));
             $identifier = $key === 'recent' ? '`o`.`ID`' : '`id`';
@@ -150,7 +163,7 @@ final class DynamicSortPaginationTest extends TestCase
 
     public function testLexicallyDifferentQualifierPathsStayDistinct(): void
     {
-        $config = new PaginationConfig(new SortWhitelist(['plain' => 'id', 'tie' => 'a.id', 'joined' => 'b.id']), 'plain', Direction::DESC, 'tie', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['plain' => 'id', 'tie' => 'a.id', 'joined' => 'b.id']), 'plain', Direction::Desc, 'tie', Direction::Asc);
         $pdo = new ScriptedPdo([ScriptedPdoStatement::count(1), ScriptedPdoStatement::count(1), ScriptedPdoStatement::data([['id' => 7]])]);
         (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(), $config, [self::sort('plain', 'DESC'), self::sort('joined', 'ASC')], self::row(...));
         self::assertSame(self::dataSql('`id` DESC, `b`.`id` ASC, `a`.`id` ASC'), $pdo->preparedSql[2]);
@@ -166,9 +179,17 @@ final class DynamicSortPaginationTest extends TestCase
 
         self::assertSame(['TOTAL :total_tenant', 'FILTERED :filtered_tenant'], $pdo->preparedSql);
         self::assertSame([
-            'data' => [], 'pagination' => [
-                'page' => 1, 'per_page' => 200, 'total' => 5, 'filtered' => 0, 'total_pages' => 0,
-                'has_next' => false, 'has_previous' => false, 'sort_by' => 'score', 'sort_direction' => 'DESC',
+            'data' => [],
+            'pagination' => [
+                'page' => 1,
+                'per_page' => 200,
+                'total' => 5,
+                'filtered' => 0,
+                'total_pages' => 0,
+                'has_next' => false,
+                'has_previous' => false,
+                'sort_by' => 'score',
+                'sort_direction' => 'DESC',
                 'selected_sorts' => [self::sort('score', 'DESC'), self::sort('status', 'ASC')],
                 'effective_sorts' => [self::sort('score', 'DESC'), self::sort('status', 'ASC'), self::sort(null, 'ASC')],
             ],
@@ -198,7 +219,7 @@ final class DynamicSortPaginationTest extends TestCase
         yield 'missing key' => [[['direction' => 'ASC']], $request, false];
         yield 'extra field' => [[$valid + ['extra' => 'drop']], $request, false];
         yield 'numeric key' => [[['key' => 3, 'direction' => 'ASC']], $request, false];
-        yield 'enum direction' => [[['key' => 'status', 'direction' => Direction::ASC]], $request, false];
+        yield 'enum direction' => [[['key' => 'status', 'direction' => Direction::Asc]], $request, false];
         yield 'invalid direction' => [[self::sort('status', 'ascending')], $request, false];
         yield 'leading direction whitespace' => [[self::sort('status', ' ASC')], $request, false];
         yield 'direction trailing LF' => [[self::sort('status', "DESC\n")], $request, false];
@@ -234,7 +255,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testQualifierCaseConflictAndConfigurationPrecedenceBeforeSql(): void
     {
         $pdo = new ScriptedPdo([]);
-        $config = new PaginationConfig(new SortWhitelist(['first' => 'O.iD', 'tie' => 'o.id']), 'first', Direction::DESC, 'tie', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['first' => 'O.iD', 'tie' => 'o.id']), 'first', Direction::Desc, 'tie', Direction::Asc);
         $this->expectException(InvalidPaginationConfigurationException::class);
         try {
             (new PdoPaginator())->paginateWithDynamicSort($pdo, self::query(), new PageRequest(sortBy: 'conflict'), $config, [null], self::row(...));
@@ -247,7 +268,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testRequestedQualifierConflictFailsBeforeSql(bool $tieConflict): void
     {
         $pdo = new ScriptedPdo([]);
-        $config = new PaginationConfig(new SortWhitelist(['a' => 'db.O.Score', 'b' => 'db.o.score', 't' => $tieConflict ? 'db.o.score' : 'db.o.id', 'default' => 'db.o.date']), 'default', Direction::DESC, 't', Direction::ASC);
+        $config = new PaginationConfig(new SortWhitelist(['a' => 'db.O.Score', 'b' => 'db.o.score', 't' => $tieConflict ? 'db.o.score' : 'db.o.id', 'default' => 'db.o.date']), 'default', Direction::Desc, 't', Direction::Asc);
         $sorts = [self::sort('a', 'ASC')];
         if (! $tieConflict) {
             $sorts[] = self::sort('b', 'ASC');
@@ -275,9 +296,9 @@ final class DynamicSortPaginationTest extends TestCase
         $config = new PaginationConfig(
             new SortWhitelist(['name' => 'o.name', 'tie' => 'o.id', 'alias' => 'O.id']),
             'name',
-            Direction::ASC,
+            Direction::Asc,
             'tie',
-            Direction::ASC,
+            Direction::Asc,
         );
         $sorts = array_map(static fn(string $key): array => self::sort($key, 'ASC'), $keys);
 
@@ -299,7 +320,7 @@ final class DynamicSortPaginationTest extends TestCase
     public function testDtoFactoryRejectsUnrelatedPageBeforePublishingMetadata(): void
     {
         $sort = ResolvedDynamicSort::resolve(self::config(), new PageRequest(), [self::sort('score', 'ASC')], false);
-        foreach ([['status', Direction::ASC], ['score', Direction::DESC]] as [$key, $direction]) {
+        foreach ([['status', Direction::Asc], ['score', Direction::Desc]] as [$key, $direction]) {
             try {
                 MultiSortPageResultDTO::fromResolved(new PageResultDTO([], 1, 2, 0, 0, 0, false, false, $key, $direction), $sort);
                 self::fail('Expected an inconsistent result to be rejected.');
@@ -398,9 +419,13 @@ final class DynamicSortPaginationTest extends TestCase
     private static function config(): PaginationConfig
     {
         return new PaginationConfig(new SortWhitelist([
-            'status' => 'o.status', 'state_alias' => 'o.STATUS', 'score' => 'o.score', 'name' => 'o.name',
-            'internal_id' => 'o.id', 'alternate_id' => 'o.ID',
-        ]), 'status', Direction::DESC, 'internal_id', Direction::ASC, 2);
+            'status' => 'o.status',
+            'state_alias' => 'o.STATUS',
+            'score' => 'o.score',
+            'name' => 'o.name',
+            'internal_id' => 'o.id',
+            'alternate_id' => 'o.ID',
+        ]), 'status', Direction::Desc, 'internal_id', Direction::Asc, 2);
     }
 
     private static function query(): PdoPaginationQueryDescriptor

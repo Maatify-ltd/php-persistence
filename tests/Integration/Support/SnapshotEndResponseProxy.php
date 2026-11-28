@@ -58,8 +58,16 @@ if ($host === false || $port === false || !in_array($target, [
     'ROLLBACK TO SAVEPOINT maatify_wub22_proof',
     'RELEASE SAVEPOINT maatify_wub22_proof',
 ], true) || !in_array($stage, [
-    'after', 'before', 'after-ack', 'ordering-release-error', 'ordering-1020',
-    'observe-ordering-1020', 'protected-tail-churn', 'prequalification-no-sql', 'b1-invalid-statement', 'b1-empty-update',
+    'after',
+    'before',
+    'after-ack',
+    'ordering-release-error',
+    'ordering-1020',
+    'observe-ordering-1020',
+    'protected-tail-churn',
+    'prequalification-no-sql',
+    'b1-invalid-statement',
+    'b1-empty-update',
 ], true)
     || ($b1Fault && !in_array($fixtureTable, $b1Phases, true))
     || ($stage === 'protected-tail-churn' && preg_match('/\Ait_ordering_scoped_[0-9a-f]{12}\z/', $fixtureTable) !== 1)

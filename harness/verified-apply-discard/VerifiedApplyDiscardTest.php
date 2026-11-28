@@ -19,7 +19,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Throwable;
 
-require_once __DIR__ . '/CheckoutProof.php';
+$loader = require dirname(__DIR__, 2) . '/vendor/autoload.php';
+$loader->addPsr4(__NAMESPACE__ . '\\', __DIR__);
 
 final class VerifiedApplyDiscardTest extends IntegrationTestCase
 {
@@ -51,8 +52,8 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
         self::assertSame([], $this->values($observer, $table));
         $commit ? $checkout->commit() : $checkout->rollBack();
         self::assertSame($commit ? $pending : [], $this->values($observer, $table));
-        self::assertSame($commit ? 'COMMITTED' : 'ROLLED_BACK', $checkout->settlement()?->reason->name);
-        self::assertSame('REUSABLE', $checkout->settlement()?->disposition->name);
+        self::assertSame($commit ? 'Committed' : 'RolledBack', $checkout->settlement()?->reason->name);
+        self::assertSame('Reusable', $checkout->settlement()?->disposition->name);
         self::assertSame($writer, $checkout->returnForHost());
         self::assertInstanceOf(ProtectedTransactionException::class, self::raised($checkout->returnForHost(...)));
     }
@@ -97,7 +98,7 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
         }));
         self::assertSame($apply ? [20] : [], $this->values($observer, $table));
         self::assertSame($apply ? 'COMMITTED' : 'ROLLED_BACK', $checkout->ownedEffect);
-        self::assertSame('REUSABLE', $checkout->settlement()?->disposition->name);
+        self::assertSame('Reusable', $checkout->settlement()?->disposition->name);
         self::assertSame($writer, $checkout->returnForHost());
     }
 
@@ -255,11 +256,11 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
                 self::assertSame($stage === 'after-ack' ? ($commit ? 'COMMITTED' : 'ROLLED_BACK') : 'UNKNOWN', $checkout->endEffect());
             }
             $settlement = $checkout->settlement();
-            self::assertSame('DISCARD_REQUIRED', $settlement?->disposition->name);
+            self::assertSame('DiscardRequired', $settlement?->disposition->name);
             self::assertSame(match (true) {
-                !$commit => 'ROLLBACK_UNCONFIRMED',
-                $stage === 'after-ack' => 'COMMIT_CONFIRMED_CONNECTION_UNSAFE',
-                default => 'COMMIT_OUTCOME_UNKNOWN',
+                !$commit => 'RollbackUnconfirmed',
+                $stage === 'after-ack' => 'CommitConfirmedConnectionUnsafe',
+                default => 'CommitOutcomeUnknown',
             }, $settlement?->reason->name);
             $expected = $commit && $stage !== 'before' ? ($mode === 'C2 owned' ? [20] : [10, 20]) : [];
             self::assertSame($expected, $this->values($observer, $table));
@@ -287,8 +288,8 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
             self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
             self::assertSame([], $this->values($observer, $table));
             self::assertSame('UNKNOWN', $checkout->ownedEffect);
-            self::assertSame('ROLLBACK_UNCONFIRMED', $checkout->settlement()?->reason->name);
-            self::assertSame('DISCARD_REQUIRED', $checkout->settlement()?->disposition->name);
+            self::assertSame('RollbackUnconfirmed', $checkout->settlement()?->reason->name);
+            self::assertSame('DiscardRequired', $checkout->settlement()?->disposition->name);
             self::assertInstanceOf(ProtectedTransactionException::class, self::raised($checkout->returnForHost(...)));
             $checkout->discardForHost();
         } finally {
@@ -384,7 +385,7 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
                 $seen = self::failureOf(fn() => $command('update', ['id' => 3, 'value' => 32]));
                 self::assertSame($seen, self::raised(fn() => $command('visible')));
 
-                return new Decision(Intent::APPLY, false);
+                return new Decision(Intent::Apply, false);
             };
             $failure = self::failureOf(fn() => $run($work));
             self::assertSame($seen, $failure);
@@ -420,7 +421,7 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
                 self::assertTrue($writer->inTransaction());
                 self::assertSame($session, $this->scalar($writer, 'SELECT CONNECTION_ID()'));
 
-                return new Decision(Intent::DISCARD, null);
+                return new Decision(Intent::Discard, null);
             }));
             self::assertSame(1305, self::driverCode($failure));
             self::assertSame(['effect' => 'UNKNOWN', 'unconfirmed' => 'ROLLBACK TO SAVEPOINT'], $window->evidence());
@@ -550,7 +551,7 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
             $row = $command('read', ['id' => 2]);
             self::assertSame([['v' => 20]], $row);
 
-            return $row[0]['v'] <= $limit ? new Decision(Intent::APPLY, false) : new Decision(Intent::DISCARD, null);
+            return $row[0]['v'] <= $limit ? new Decision(Intent::Apply, false) : new Decision(Intent::Discard, null);
         };
     }
 
@@ -565,7 +566,7 @@ final class VerifiedApplyDiscardTest extends IntegrationTestCase
 
     private function assertFenced(ProtectedCheckout|ParallelCheckout $checkout, Closure $run): void
     {
-        self::assertSame('DISCARD_REQUIRED', $checkout->settlement()?->disposition->name);
+        self::assertSame('DiscardRequired', $checkout->settlement()?->disposition->name);
         self::assertInstanceOf(ProtectedTransactionException::class, self::raised($checkout->commit(...)));
         self::assertInstanceOf(ProtectedTransactionException::class, self::raised($checkout->rollBack(...)));
         self::assertInstanceOf(ProtectedTransactionException::class, self::raised($checkout->returnForHost(...)));

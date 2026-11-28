@@ -43,14 +43,14 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $pdo->exec('SET SESSION completion_type=' . $completion);
         $session = $this->scalar($pdo, 'SELECT CONNECTION_ID()');
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([], [
-            'view' => new HostSnapshotCommandPlan("SELECT v FROM $table WHERE id=:id", ['id'], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
-            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (3, :v)", ['v'], Mode::AFFECTED_ROWS, effect: Effect::PRESERVES_TRANSACTION),
-            'settings' => new HostSnapshotCommandPlan('SELECT CONNECTION_ID() AS id, @@completion_type AS completion', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+            'view' => new HostSnapshotCommandPlan("SELECT v FROM $table WHERE id=:id", ['id'], Mode::BoundedRows, 1, Effect::PreservesTransaction),
+            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (3, :v)", ['v'], Mode::AffectedRows, effect: Effect::PreservesTransaction),
+            'settings' => new HostSnapshotCommandPlan('SELECT CONNECTION_ID() AS id, @@completion_type AS completion', [], Mode::BoundedRows, 1, Effect::PreservesTransaction),
         ]));
         unset($pdo);
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
-        self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
+        self::assertSame(State::TransactionActive, $lease->state());
         self::assertEquals([['v' => 10]], $lease->runRegisteredCommand('view', ['id' => 1]));
         $writer->exec("UPDATE $table SET v=20 WHERE id=1");
         self::assertEquals([['v' => 10]], $lease->runRegisteredCommand('view', ['id' => 1]));
@@ -61,7 +61,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         } else {
             $lease->rollBack();
         }
-        self::assertSame(State::IDLE, $lease->state());
+        self::assertSame(State::Idle, $lease->state());
         $settings = $lease->runRegisteredCommand('settings');
         self::assertIsArray($settings);
         self::assertIsScalar($settings[0]['id']);
@@ -70,7 +70,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         self::assertSame($completion === 1 ? '1' : '0', $this->scalar($writer, "SELECT COUNT(*) FROM $table WHERE id=3"));
         $lease->release();
         $replacement = $source->checkout();
-        $replacement->beginRepeatableRead(HostSnapshotAccessModeEnum::READ_ONLY);
+        $replacement->beginRepeatableRead(HostSnapshotAccessModeEnum::ReadOnly);
         self::assertEquals([['v' => 20]], $replacement->runRegisteredCommand('view', ['id' => 1]));
         $replacement->rollBack();
         $replacement->release();
@@ -78,7 +78,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
 
     public function testBoundedRowsPreserveNumericDriverColumnKeys(): void
     {
-        $plan = new HostSnapshotCommandPlan('SELECT 1', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION);
+        $plan = new HostSnapshotCommandPlan('SELECT 1', [], Mode::BoundedRows, 1, Effect::PreservesTransaction);
         foreach ([false, true] as $emulated) {
             $source = PdoHostSnapshotSource::attachExclusive(
                 $this->borrowableConnection($emulated),
@@ -88,7 +88,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
             $lease->beginRepeatableRead();
 
             self::assertEquals([[1 => 1]], $lease->runRegisteredCommand('probe'));
-            self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
+            self::assertSame(State::TransactionActive, $lease->state());
             $lease->rollBack();
             $lease->release();
         }
@@ -98,7 +98,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
     {
         $catalog = new HostSnapshotCatalog(
             ['12' => $this->emptyPagePlan()],
-            ['34' => new HostSnapshotCommandPlan('SELECT 1 AS v', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION)],
+            ['34' => new HostSnapshotCommandPlan('SELECT 1 AS v', [], Mode::BoundedRows, 1, Effect::PreservesTransaction)],
         );
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), $catalog);
         $lease = $source->checkout();
@@ -114,7 +114,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
     public function testBoundedRowsOverflowClosesTheResourceWithoutEndingTheHostTransaction(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
-            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BoundedRows, 1, Effect::PreservesTransaction),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -124,7 +124,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         } catch (HostSnapshotPaginationException $error) {
             self::assertSame('The Host snapshot result exceeds its row limit.', $error->getMessage());
         }
-        self::assertSame(State::TRANSACTION_ACTIVE, $lease->state());
+        self::assertSame(State::TransactionActive, $lease->state());
         $lease->rollBack();
         $lease->release();
     }
@@ -135,7 +135,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $id = $this->scalar($pdo, 'SELECT CONNECTION_ID()');
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog(
             ['page' => $this->emptyPagePlan()],
-            ['chain' => new HostSnapshotCommandPlan('ROLLBACK AND CHAIN NO RELEASE', [], Mode::AFFECTED_ROWS)],
+            ['chain' => new HostSnapshotCommandPlan('ROLLBACK AND CHAIN NO RELEASE', [], Mode::AffectedRows)],
         ));
         unset($pdo);
         $lease = $source->checkout();
@@ -143,13 +143,13 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $queued = $lease->newAttempt($lease->authorizePage('page', [], new PageRequest()));
         $lease->runRegisteredCommand('chain');
 
-        self::assertSame(State::TRANSACTION_UNQUALIFIED, $lease->state());
+        self::assertSame(State::TransactionUnqualified, $lease->state());
         self::reject(fn() => new PdoHostSnapshotPaginator()->paginate($queued));
-        self::assertSame(Reason::STALE_CONTEXT, $queued->settlement()?->reason);
+        self::assertSame(Reason::StaleContext, $queued->settlement()?->reason);
         self::reject(fn() => $lease->authorizePage('page', [], new PageRequest()));
         $lease->rollBack();
         $returned = $source->retireForHost();
-        self::assertSame(HostSnapshotRetirementDispositionEnum::RETURNED_FOR_RECONCILIATION, $returned->disposition);
+        self::assertSame(HostSnapshotRetirementDispositionEnum::ReturnedForReconciliation, $returned->disposition);
         self::assertSame($id, $this->scalar($returned->pdo, 'SELECT CONNECTION_ID()'));
         self::assertFalse($returned->pdo->inTransaction());
     }
@@ -160,7 +160,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog(
             ['page' => $this->emptyPagePlan()],
-            ['many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION)],
+            ['many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BoundedRows, 1, Effect::PreservesTransaction)],
         ));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -169,9 +169,9 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $paginator = new PdoHostSnapshotPaginator();
         $loader = static function (string $class) use ($lease, $paginator, $queued): void {
             if ($class === HostSnapshotRowLimitExceededException::class) {
-                self::assertSame(State::BUSY, $lease->state());
+                self::assertSame(State::Busy, $lease->state());
                 self::reject(fn() => $paginator->paginate($queued));
-                self::assertSame(Reason::BUSY, $queued->settlement()?->reason);
+                self::assertSame(Reason::Busy, $queued->settlement()?->reason);
             }
         };
 
@@ -186,7 +186,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
 
         $retry = $lease->newAttempt($grant);
         self::assertSame([], $paginator->paginate($retry)->data);
-        self::assertSame(Reason::PAGE_COMPLETED, $retry->settlement()?->reason);
+        self::assertSame(Reason::PageCompleted, $retry->settlement()?->reason);
         $lease->rollBack();
         $lease->release();
     }
@@ -199,7 +199,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         $pdo = $this->borrowableConnection();
         $id = (int) $this->scalar($pdo, 'SELECT CONNECTION_ID()');
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([], [
-            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+            'many' => new HostSnapshotCommandPlan('SELECT 1 AS v UNION ALL SELECT 2', [], Mode::BoundedRows, 1, Effect::PreservesTransaction),
         ]));
         unset($pdo);
         $lease = $source->checkout();
@@ -220,7 +220,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
         } finally {
             spl_autoload_unregister($loader);
         }
-        self::assertSame(State::QUARANTINED, $lease->state());
+        self::assertSame(State::Quarantined, $lease->state());
         $source->discardForHost();
     }
 
@@ -250,14 +250,14 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
             $lease->release();
             self::fail('An unresolved next-transaction setting escaped into the pool.');
         } catch (HostSnapshotPaginationException) {
-            self::assertSame(State::QUARANTINED, $lease->state());
+            self::assertSame(State::Quarantined, $lease->state());
         }
     }
 
     public function testCommandFailureRetainsOriginalDriverErrorAndQuarantinesSource(): void
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
-            'broken' => new HostSnapshotCommandPlan('SELECT non_existing_column', [], Mode::BOUNDED_ROWS, 1, Effect::PRESERVES_TRANSACTION),
+            'broken' => new HostSnapshotCommandPlan('SELECT non_existing_column', [], Mode::BoundedRows, 1, Effect::PreservesTransaction),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -273,7 +273,7 @@ final class PdoHostSnapshotTransactionTest extends HostSnapshotIntegrationTestCa
                 ini_set('zend.exception_ignore_args', $ignoreArgs);
             }
         }
-        self::assertSame(State::QUARANTINED, $lease->state());
+        self::assertSame(State::Quarantined, $lease->state());
         $this->expectException(HostSnapshotPaginationException::class);
         $lease->release();
     }

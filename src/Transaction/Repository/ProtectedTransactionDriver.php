@@ -49,6 +49,7 @@ final readonly class ProtectedTransactionDriver
             throw new ProtectedTransactionException('Unable to inspect the protected session.');
         }
         try {
+            /** @var list<mixed>|false $row Positional columns for session ID, autocommit and version, or false on absence or failure. */
             $row = $statement->fetch(PDO::FETCH_NUM);
         } catch (Throwable $primary) {
             if ($closeOnFetchFailure) {

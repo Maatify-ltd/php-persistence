@@ -24,11 +24,11 @@ function php_persistence_example_env(string $name): string
         fwrite(
             STDERR,
             "Missing required environment variable {$name}.\n"
-            . "This example needs a real MySQL/MariaDB connection. Run it through\n"
-            . "'composer examples:smoke' (starts a disposable service via the\n"
-            . "repository's Integration infrastructure), or set PHP_PERSISTENCE_IT_*\n"
-            . "yourself to point at a disposable database; see\n"
-            . "docs/guides/USAGE_GUIDE.md and CONTRIBUTING.md.\n",
+                . "This example needs a real MySQL/MariaDB connection. Run it through\n"
+                . "'composer examples:smoke' (starts a disposable service via the\n"
+                . "repository's Integration infrastructure), or set PHP_PERSISTENCE_IT_*\n"
+                . "yourself to point at a disposable database; see\n"
+                . "docs/guides/USAGE_GUIDE.md and CONTRIBUTING.md.\n",
         );
         exit(1);
     }

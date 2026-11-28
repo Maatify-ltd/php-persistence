@@ -30,12 +30,15 @@ final readonly class ScopedOrderingConfig
 {
     /**
      * @param non-empty-string      $table           Trusted table identifier, e.g. "maa_shipping_rates".
-     * @param non-empty-string|null $scopeColumn     Optional scope column, e.g. "method_id".
+     * @param non-empty-string|null $scopeColumn     Scope column, e.g. "method_id", or null for global ordering.
      * @param non-empty-string      $idColumn        Primary key column. Defaults to "id".
      * @param non-empty-string      $orderColumn     Ordering column. Defaults to "display_order".
-     * @param non-empty-string|null $deletedAtColumn Optional soft-delete column. Pass null for tables without soft delete.
+     * @param non-empty-string|null $deletedAtColumn Soft-delete column. Defaults to "deleted_at". Null disables filtering.
      * @param bool                  $nullableScope   Whether a configured scope column may use NULL as a scope value.
      * @param non-empty-string|null $updatedAtColumn Optional mutation timestamp column updated with the target order.
+     *
+     * @throws InvalidOrderingConfigurationException If any supplied SQL identifier is invalid or a nullable scope
+     *                                               is enabled without a scope column.
      */
     public function __construct(
         public string $table,

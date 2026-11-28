@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Pagination\Repository;
 
-use Maatify\PhpPersistence\Pagination\DTO\HostSnapshotRetirementDTO;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotRowLimitExceededException;
@@ -102,6 +101,10 @@ final class HostSnapshotConnection
 
             $rows = [];
             $fetchMode = $positional ? PDO::FETCH_NUM : PDO::FETCH_ASSOC;
+            /**
+             * The raw fetch yields list<mixed> in FETCH_NUM mode and array<array-key, mixed>
+             * in FETCH_ASSOC mode. Both modes also yield false on exhaustion or failure.
+             */
             while (($row = $statement->fetch($fetchMode)) !== false) {
                 if (count($rows) === $maxRows) {
                     throw new HostSnapshotRowLimitExceededException();
@@ -144,9 +147,9 @@ final class HostSnapshotConnection
     }
 
     /** Builds the handoff with the same PDO and the disposition determined by the source. */
-    public function handoff(HostSnapshotRetirementDispositionEnum $disposition): HostSnapshotRetirementDTO
+    public function handoff(HostSnapshotRetirementDispositionEnum $disposition): HostSnapshotRetirement
     {
-        return new HostSnapshotRetirementDTO($disposition, $this->pdo);
+        return new HostSnapshotRetirement($disposition, $this->pdo);
     }
 
     /**

@@ -152,9 +152,9 @@ final class PdoPaginatorNormalizationTest extends TestCase
         return new PaginationConfig(
             new SortWhitelist(['id' => 'id', 'created_at' => 'created_at']),
             'created_at',
-            SortDirectionEnum::DESC,
+            SortDirectionEnum::Desc,
             'id',
-            SortDirectionEnum::ASC,
+            SortDirectionEnum::Asc,
             $defaultPerPage,
             $minPerPage,
             $maxPerPage,

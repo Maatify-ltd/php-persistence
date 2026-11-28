@@ -10,6 +10,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageAttemptStateEnum as S
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageDispositionEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotPageSettlementReasonEnum;
 use Maatify\PhpPersistence\Pagination\Exception\HostSnapshotPaginationException;
+use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotAttemptRecord;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use WeakReference;
 
@@ -32,6 +33,12 @@ final readonly class HostSnapshotPageAttempt
         return new self($source, $record);
     }
 
+    /**
+     * Reads the recorded state without database I/O. An attempt starts New,
+     * becomes Running on admission, and becomes Terminal when settled. An
+     * attempt rejected before admission can go directly from New to Terminal
+     * without performing database I/O.
+     */
     public function state(): State
     {
         return $this->record->state;
@@ -55,14 +62,14 @@ final readonly class HostSnapshotPageAttempt
      */
     public function read(): PageResultDTO
     {
-        if ($this->state() !== State::NEW) {
+        if ($this->state() !== State::New) {
             throw new HostSnapshotPaginationException('The Host snapshot attempt was already invoked.');
         }
         $source = $this->source->get();
         if ($source === null) {
             $this->record->finish(new HostSnapshotPageSettlementDTO(
-                HostSnapshotPageDispositionEnum::NOT_ACCEPTED,
-                HostSnapshotPageSettlementReasonEnum::SOURCE_UNAVAILABLE,
+                HostSnapshotPageDispositionEnum::NotAccepted,
+                HostSnapshotPageSettlementReasonEnum::SourceUnavailable,
             ));
             throw new HostSnapshotPaginationException('The Host snapshot source is unavailable.');
         }
@@ -72,13 +79,21 @@ final readonly class HostSnapshotPageAttempt
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws HostSnapshotPaginationException Always. The source tracks this invocation and its settlement by object identity.
+     */
     public function __serialize(): array
     {
         throw new HostSnapshotPaginationException('A Host snapshot attempt cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws HostSnapshotPaginationException Always. A page attempt must be registered with its source.
+     */
     public function __unserialize(array $data): void
     {
         throw new HostSnapshotPaginationException('A Host snapshot attempt cannot be restored.');

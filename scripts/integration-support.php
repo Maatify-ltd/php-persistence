@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/integration-residue-shadow.php';
+use Maatify\PhpPersistence\Tooling\IntegrationInterrupted;
+use Maatify\PhpPersistence\Tooling\IntegrationResidueShadow;
+use Maatify\PhpPersistence\Tooling\OrchestrationBudget;
+
+require_once __DIR__ . '/Tooling/autoload.php';
 
 /**
  * Functions of the Integration orchestration (see integration.php).
@@ -20,11 +24,6 @@ const TOTAL_BUDGET_SECONDS = 1500;
 const TEARDOWN_MARGIN_SECONDS = 30;
 const TIMEOUT_EXIT_STATUS = 124;
 const TERMINATION_GRACE_SECONDS = 5;
-
-/**
- * A catchable signal that unwinds owned work before Compose teardown.
- */
-final class IntegrationInterrupted extends Exception {}
 
 /**
  * Positive integer seconds from an environment variable, or the default when it is not set.
@@ -72,14 +71,6 @@ function startBudget(): void
         fail(EXIT_USAGE, 'PP_TOTAL_BUDGET_SECONDS must exceed the teardown reserve of ' . reserveSeconds() . ' seconds');
     }
     OrchestrationBudget::$deadline = microtime(true) + $budget;
-}
-
-/**
- * Absolute end of the overall budget; null until startBudget() ran.
- */
-final class OrchestrationBudget
-{
-    public static ?float $deadline = null;
 }
 
 /**

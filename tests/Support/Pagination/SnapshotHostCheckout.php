@@ -65,9 +65,9 @@ final class SnapshotHostCheckout
         if ($failure !== null) {
             throw $failure;
         }
-        if ($outcome?->disposition === SnapshotConnectionDispositionEnum::REUSABLE) {
+        if ($outcome?->disposition === SnapshotConnectionDispositionEnum::Reusable) {
             $this->available = $pdo;
-        } elseif ($outcome?->disposition === SnapshotConnectionDispositionEnum::UNCHANGED) {
+        } elseif ($outcome?->disposition === SnapshotConnectionDispositionEnum::Unchanged) {
             $this->returnedToHost = $pdo;
         }
     }

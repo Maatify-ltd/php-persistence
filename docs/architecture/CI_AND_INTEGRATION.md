@@ -15,7 +15,7 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Strict PSR-4 | `composer dump-autoload --optimize --strict-psr` | Static checks |
 | PHP syntax | `composer syntax` | Static checks (PHP 8.4), Compat (every PHP minor, including 8.6) |
 | Whitespace | `composer whitespace` | Static checks |
-| Dependency policy audit | `composer audit --no-interaction --abandoned=fail` (Composer 2.10+) | Compat (all six cells) |
+| Dependency policy audit | `php scripts/dependency-audit.php` after dependency resolution with Composer 2.10+ | Compat (all six cells) |
 | Static analysis | `composer analyse` | Compat |
 | Code style and PER-CS 3.1 | `composer format:check` | Compat on PHP 8.4 and 8.5 (§3.1) |
 | PER-CS 3.1 verifier alone | `php scripts/check-per-cs-3-1.php` | Compat on PHP 8.6 (§3.1) |
@@ -29,6 +29,8 @@ Every CI gate runs a repository-owned command that a developer can run locally w
 | Workflow lint | `actionlint` over `.github/workflows` | Workflow lint |
 
 Unit and Regression need no Docker. `composer test` runs Unit, Regression, and Integration locally. The required `CI gate` aggregates Workflow lint, Static checks, Compat, Integration, Examples smoke, Consumer verification and coexistence, and Release artifact verification. The exploratory cell is optional and runs only when requested in a manual dispatch.
+
+Run the dependency policy audit after `composer update` generates a current root lock. The same command in Compat checks applicable environment overrides, effective project and global Composer policy, and the secure default Packagist source. It accepts no arguments and audits all packages in that lock, including development dependencies. The legacy abandonment exception in [DEC-016](../decisions/DEC-016-legacy-coexistence-abandonment-audit.md) applies only to the separate coexistence fixture.
 
 On pull requests, Workflow lint, Static checks, Compat, Integration, and Examples smoke use [the default merge checkout](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#how-the-merge-branch-affects-your-workflow). Consumer verification and the Stable archive check use the PR head. On pushes to `main`, those jobs verify the pushed commit. A manual dispatch uses the dispatched SHA for those same checks. The historical RC.2 check always uses its pinned tag. [Release evidence](../guides/RELEASE_ARTIFACT_VERIFICATION.md#release-evidence-handoff) must identify the actual candidate commit in `main`.
 
@@ -93,7 +95,7 @@ composer examples:smoke
 PP_DB_CELL=mariadb-11.8.9 composer examples:smoke
 ```
 
-CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4 and on PHP 8.6. This smoke matrix is separate from the capability Integration matrix below.
+CI requires both `mysql-8.4.13` and `mariadb-11.8.9` smoke jobs on PHP 8.4 and on PHP 8.6. This smoke matrix is separate from the capability Integration matrix below. The [Host Snapshot B example](../../examples/pagination_host_snapshot_usage.php) requires an application-owned source and registered page plan. It runs under the PHP syntax and static-analysis gates, with Host B behavior exercised independently in the installed Consumer Verification Harness.
 
 On each of PHP 8.4 and 8.6, [Consumer verification](../guides/CONSUMER_VERIFICATION.md) runs two fresh lifecycles per engine on MySQL 8.4.13 and MariaDB 11.8.9, with separate production Composer roots.
 

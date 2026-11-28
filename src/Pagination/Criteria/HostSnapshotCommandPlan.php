@@ -36,10 +36,10 @@ final readonly class HostSnapshotCommandPlan
         /** @internal */
         public ?int $maxRows = null,
         /** @internal */
-        public HostSnapshotCommandEffectEnum $effect = HostSnapshotCommandEffectEnum::INVALIDATE_GENERATION,
+        public HostSnapshotCommandEffectEnum $effect = HostSnapshotCommandEffectEnum::InvalidateGeneration,
     ) {
         if (trim($sql) === '' || str_contains($sql, ';')
-            || ($resultMode === HostSnapshotCommandResultModeEnum::BOUNDED_ROWS && ($maxRows === null || $maxRows < 1))
+            || ($resultMode === HostSnapshotCommandResultModeEnum::BoundedRows && ($maxRows === null || $maxRows < 1))
         ) {
             throw new HostSnapshotPaginationException('Invalid Host snapshot command plan.');
         }

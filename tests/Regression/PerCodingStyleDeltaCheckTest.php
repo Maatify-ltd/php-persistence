@@ -16,26 +16,42 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
     /**
      * @return array{int, string} exit status and standard error output
      */
-    private static function check(string $source): array
+    private static function check(string $source, string $filename = 'Suit.php'): array
     {
-        $file = tempnam(sys_get_temp_dir(), 'percs');
-        self::assertIsString($file);
-        file_put_contents($file, "<?php\n\ndeclare(strict_types=1);\n\n" . $source);
+        $directory = sys_get_temp_dir() . '/percs-' . bin2hex(random_bytes(8));
+        self::assertTrue(mkdir($directory, 0700));
+        $file = $directory . '/' . $filename;
 
-        $process = proc_open(
-            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-        );
+        try {
+            file_put_contents($file, "<?php\n\ndeclare(strict_types=1);\n\n" . $source);
+            [$status, , $errors] = self::runVerifier(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $file);
+
+            return [$status, $errors];
+        } finally {
+            unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    /**
+     * Runs the actual verifier and captures its status and both output streams.
+     *
+     * @return array{int, string, string}
+     */
+    private static function runVerifier(string $script, ?string $file = null): array
+    {
+        $command = [PHP_BINARY, $script];
+        if ($file !== null) {
+            $command[] = $file;
+        }
+        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
         self::assertIsResource($process);
-        stream_get_contents($pipes[1]);
+        $output = (string) stream_get_contents($pipes[1]);
         $errors = (string) stream_get_contents($pipes[2]);
         fclose($pipes[1]);
         fclose($pipes[2]);
-        $status = proc_close($process);
-        unlink($file);
 
-        return [$status, $errors];
+        return [proc_close($process), $output, $errors];
     }
 
     /**
@@ -51,6 +67,63 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'multi-line array with bracket on the assignment line' => ["\$e = [\n    1,\n];\n"],
             'single-line array as argument' => ["foo([1, 2]);\n"],
             'index access on the next line is not an array' => ["\$x = \$list\n    ['key'];\n"],
+            'nested call and array items are separate constructs' => [
+                "\$x = [\n    call(1, 2),\n    [3, 4],\n];\n",
+            ],
+            'nested multiline list matches the normative array example' => [
+                "\$x = [\n    'outer',\n    [\n        'nested',\n        'array',\n    ],\n];\n",
+            ],
+            'nested ternary indentation follows its own condition' => [
+                "\$x = \$outer\n    ? (\$inner\n        ? 'yes'\n        : 'no')\n    : 'fallback';\n",
+            ],
+            'multiline condition does not increase the ternary continuation indentation' => [
+                "\$x = \$left\n    || \$right\n    ? 'yes'\n    : 'no';\n",
+            ],
+            'ternary with a multiline operand keeps its inline operators' => [
+                "\$x = \$condition ? compute([\n    1,\n    2,\n]) : null;\n",
+            ],
+            'split ternary places both operators at the start of continuation lines' => [
+                "\$x = \$condition\n    ? fn(): ?int => 5\n    : null;\n",
+            ],
+            'split ternary allows comments on separate lines' => [
+                "\$x = \$condition\n    /* when available */\n    ? 'yes'\n    // fallback\n    : 'no';\n",
+            ],
+            'short ternary and coalescing chains align their own continuations' => [
+                "\$a = \$left\n    ?: \$middle\n    ?: \$right;\n\$b = \$left\n    ?? \$middle\n    ?? \$right;\n",
+            ],
+            'direct and parenthesized logical control conditions share their own indentation' => [
+                "if (\n    \$a\n    && (\n        \$b\n        || \$c\n    )\n) {\n    report();\n}\n",
+            ],
+            'nested named argument uses its own indentation' => [
+                "report(\n    value: (\$a\n        + \$b)\n        ?? \$fallback,\n);\n",
+            ],
+            'nested call argument does not take indentation from the control keyword' => [
+                "if (\n    test(\n        \$a\n            && \$b,\n    )\n    && \$c\n) {\n    report();\n}\n",
+            ],
+            'inline operator before multiline groups stays inline' => [
+                "\$value = \$left + compute(\n    1,\n    2,\n) * (\n    \$right\n);\n",
+            ],
+            'unary signs following return, assignments, and a statement block' => [
+                "if (\$a) {\n    \$a = -\$a;\n}\n+ \$a;\nreturn -(+\$a);\n",
+            ],
+            'expression closing braces and class literals can finish an operand' => [
+                "\$x = match (1) {\n    default => 1,\n}\n    + 2;\n\$klass = SomeClass::class\n    ?? 'fallback';\n",
+            ],
+            'dynamic variables can finish an operand' => [
+                "\$value = \${\$name}\n    + 2;\n",
+            ],
+            'types and references do not act as bitwise operators' => [
+                "function &sample(\n    (First&Second)|Third \$arg,\n    ?int &\$ref,\n): First|Second {\n    \$target = &\$ref;\n\n    return \$target;\n}\n",
+            ],
+            'split types retain their declaration syntax' => [
+                "function sample(\n    (First&Second)\n        |Third \$arg,\n): First\n    |Second {\n    return \$arg;\n}\n",
+            ],
+            'quoted operators and comments do not act as executable operators' => [
+                "\$text = 'first\n?? second\n+ third\n?: fourth';\n// + \$right\n/* \$left\n& \$right */\n",
+            ],
+            'low precedence logical operators can share a continuation level' => [
+                "\$result = \$first\n    and \$second\n    or \$third;\n",
+            ],
             'switch ending every case with a terminator' => [
                 "switch (\$a) {\n    case 1:\n        return 1;\n    case 2:\n    case 3:\n        \$b = 2;\n        break;\n    default:\n        throw new Exception('x');\n}\n",
             ],
@@ -70,11 +143,20 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "switch (\$a) {\n    case 1:\n        \$b = 1; /* Deliberate fall-through */\n    default:\n        break;\n}\n",
             ],
             'enum whose method declares an anonymous class with a protected method' => [
-                "enum Suit\n{\n    case Hearts;\n\n    public function f(): object\n    {\n        return new class {\n            protected function g(): void {}\n        };\n    }\n}\n",
+                "namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    public function f(): object\n    {\n        return new class {\n            protected function g(): void {}\n        };\n    }\n}\n",
+            ],
+            'PascalCase enum and uppercase constant' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case DarkBlue;\n\n    private const DEFAULT_COLOR = self::DarkBlue;\n}\n",
+            ],
+            'named class and methods with magic and anonymous methods' => [
+                "namespace Fixture;\n\nfinal class Suit\n{\n    public function __construct() {}\n\n    public function makeColor(): object\n    {\n        return new class {\n            public function colorCode(): int\n            {\n                return 1;\n            }\n        };\n    }\n}\n",
+            ],
+            'global helper function and embedded fixture are not method declarations' => [
+                "function helper_name(): string\n{\n    return 'enum Test { case BAD_STYLE; }';\n}\n",
             ],
             'ternary inside a case label' => ["switch (\$a) {\n    case \$b ? 1 : 2:\n        break;\n}\n"],
             'enum with private constant and method' => [
-                "enum Suit: string\n{\n    case Hearts = 'H';\n\n    private const X = 1;\n\n    private function f(): void {}\n}\n",
+                "namespace Fixture;\n\nenum Suit: string\n{\n    case Hearts = 'H';\n\n    private const X = 1;\n\n    private function f(): void {}\n}\n",
             ],
         ];
     }
@@ -99,6 +181,86 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'closure empty body without space before brace' => ["\$a = function (): void{};\n", 'empty body must be written'],
             'standalone array bracket as argument' => ["foo(\n    [\n        1,\n    ],\n);\n", 'opening bracket of a multi-line array'],
             'standalone array bracket after assignment' => ["\$a =\n    [\n        1,\n    ];\n", 'opening bracket of a multi-line array'],
+            'multi-line array contains two values on the same line' => [
+                "return [\n    1, 2,\n    3,\n];\n",
+                'each value of a multi-line array must start on a separate line',
+            ],
+            'two values share a line across a multiline array operand' => [
+                "\$x = [\n    call(\n        1,\n    ), 2,\n];\n",
+                'each value of a multi-line array must start on a separate line',
+            ],
+            'split ternary packs both operators onto one line' => [
+                "\$x = \$condition\n    ? 'result' : 'fallback';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'split ternary keeps the first operator inline' => [
+                "\$x = \$condition ? 'result'\n    : 'fallback';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'multi-line array opens on the first item line' => [
+                "return ['first',\n    'second',\n];\n",
+                'the first value of a multi-line array must start on the line after its opening bracket',
+            ],
+            'multi-line array closes on the last item line' => [
+                "return [\n    'first',\n    'second',];\n",
+                'the closing bracket of a multi-line array must start on the line after its last value',
+            ],
+            'split ternary starts its middle operand after the operator line' => [
+                "\$x = \$condition\n    ?\n        'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'inline comment before the question mark' => [
+                "\$x = \$condition\n    /* when available */ ? 'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'inline comment before the colon' => [
+                "\$x = \$condition\n    ? 'yes'\n    /* fallback */ : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'multiline comment can start a line with an operator lookalike' => [
+                "\$x = \$condition\n    /* The example contains\n    ? inside the comment. */ ? 'yes'\n    : 'no';\n",
+                'a split ternary must put each operator on its own continuation line',
+            ],
+            'overindented binary continuation' => [
+                "\$x = \$left\n        + \$right;\n",
+                'each split operator continuation must be indented once (+)',
+            ],
+            'nested arithmetic continuation follows its own operand' => [
+                "\$x = \$first\n    ?: (\$left\n    * \$right);\n",
+                'each split operator continuation must be indented once (*)',
+            ],
+            'binary addition remains binary after a match brace' => [
+                "\$x = match (1) {\n    default => 1,\n}\n+ 2;\n",
+                'each split operator continuation must be indented once (+)',
+            ],
+            'binary subtraction remains binary after a closure brace' => [
+                "\$x = function () {}\n- 2;\n",
+                'each split operator continuation must be indented once (-)',
+            ],
+            'binary addition remains binary after a dynamic variable brace' => [
+                "\$value = \${\$name}\n+ 2;\n",
+                'each split operator continuation must be indented once (+)',
+            ],
+            'operator after a comment does not start the continuation' => [
+                "\$x = \$left\n    /* comment */ + \$right;\n",
+                'a split operator must start its operand line (+)',
+            ],
+            'logical control continuation needs indentation from the keyword' => [
+                "if (\n    \$a\n&& \$b\n) {\n    report();\n}\n",
+                'each split operator continuation must be indented once (&&)',
+            ],
+            'split ternary continuations are unindented' => [
+                "\$x = \$condition\n? 'yes'\n: 'no';\n",
+                'each split ternary continuation must be indented once from its condition',
+            ],
+            'split ternary continuations have different indentation' => [
+                "\$x = \$condition\n    ? 'yes'\n        : 'no';\n",
+                'each split ternary continuation must be indented once from its condition',
+            ],
+            'nested ternary continuations need their own indentation' => [
+                "\$x = \$outer\n    ? (\$inner\n    ? 'yes'\n    : 'no')\n    : 'fallback';\n",
+                'each split ternary continuation must be indented once from its condition',
+            ],
             'case body in braces' => ["switch (\$a) {\n    case 1: {\n        break;\n    }\n}\n", 'must not be wrapped in braces'],
             'last case without terminator' => ["switch (\$a) {\n    case 1:\n        \$b = 1;\n}\n", 'must end with a terminating statement'],
             'middle case without terminator' => ["switch (\$a) {\n    case 1:\n        \$b = 1;\n    case 2:\n        break;\n}\n", 'must end with a terminating statement'],
@@ -119,13 +281,45 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
                 "switch (\$a) {\n    case 1:\n        \$b = 1;\n        // set b\n    case 2:\n        break;\n}\n",
                 'must end with a terminating statement',
             ],
-            'enum with protected constant' => ["enum Suit\n{\n    case Hearts;\n\n    protected const X = 1;\n}\n", 'private instead of protected'],
+            'enum with protected constant' => ["namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected const X = 1;\n}\n", 'private instead of protected'],
             'enum with protected method next to an anonymous class' => [
-                "enum Suit\n{\n    case Hearts;\n\n    protected function f(): object\n    {\n        return new class {};\n    }\n}\n",
+                "namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected function f(): object\n    {\n        return new class {};\n    }\n}\n",
                 'private instead of protected',
             ],
+            'enum case with underscores' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case DARK_BLUE;\n}\n",
+                'enum case names must use PascalCase',
+            ],
+            'enum case in uppercase' => [
+                "namespace Fixture;\n\nenum Suit\n{\n    case BLUE;\n}\n",
+                'enum case names must use PascalCase',
+            ],
+            'snake case method' => [
+                "namespace Fixture;\n\nfinal class Suit\n{\n    public function color_code(): void {}\n}\n",
+                'method names must use camelCase',
+            ],
+            'snake case method in an anonymous class with constructor arguments' => [
+                "\$v = new class(1) {\n    public function __construct(int \$n) {}\n\n    public function color_code(): void {}\n};\n",
+                'method names must use camelCase',
+            ],
+            'named global class' => [
+                "final class Suit {}\n",
+                'require a formal namespace',
+            ],
+            'class declared in the explicit global namespace' => [
+                "namespace {\n    final class Suit {}\n}\n",
+                'require a formal namespace',
+            ],
+            'a declaration in the wrong file' => [
+                "namespace Fixture;\n\nfinal class Color {}\n",
+                'must match its filename',
+            ],
+            'two named declarations' => [
+                "namespace Fixture;\n\nfinal class Suit {}\n\nfinal class Color {}\n",
+                'must be in its own file',
+            ],
             'switch with alternative syntax' => ["switch (\$a):\n    case 1:\n        break;\nendswitch;\n", 'alternative syntax'],
-            'enum with protected member' => ["enum Suit\n{\n    case Hearts;\n\n    protected function f(): void {}\n}\n", 'private instead of protected'],
+            'enum with protected member' => ["namespace Fixture;\n\nenum Suit\n{\n    case Hearts;\n\n    protected function f(): void {}\n}\n", 'private instead of protected'],
             'anonymous class attribute on the new line' => ["\$o = new #[Foo] class {};\n", 'start on the line after new'],
             'anonymous class attribute not indented' => ["\$o = new\n#[Foo]\nclass {};\n", 'indented once'],
             'anonymous class declaration not on a new line' => ["\$o = new\n    #[Foo] class {};\n", 'starts on a new line'],
@@ -141,6 +335,74 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString($message, $errors);
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function binaryOperators(): iterable
+    {
+        foreach ([
+            '**',
+            '*',
+            '/',
+            '%',
+            '+',
+            '-',
+            '<',
+            '<=',
+            '>',
+            '>=',
+            '==',
+            '!=',
+            '===',
+            '!==',
+            '<>',
+            '<=>',
+            '=',
+            '+=',
+            '-=',
+            '*=',
+            '**=',
+            '/=',
+            '.=',
+            '%=',
+            '&=',
+            '|=',
+            '^=',
+            '<<=',
+            '>>=',
+            '??=',
+            '<<',
+            '>>',
+            '&',
+            '^',
+            '|',
+            '&&',
+            '||',
+            'and',
+            'xor',
+            'or',
+            '.',
+            'instanceof',
+            '??',
+            '?:',
+        ] as $operator) {
+            yield $operator => [$operator];
+        }
+    }
+
+    #[DataProvider('binaryOperators')]
+    public function testBinaryOperatorsEnforceContinuationPlacement(string $operator): void
+    {
+        [$valid, $validErrors] = self::check("\$result = \$left\n    $operator \$right;\n");
+        self::assertSame(0, $valid, $validErrors);
+
+        [$unindented, $indentationErrors] = self::check("\$result = \$left\n$operator \$right;\n");
+        self::assertSame(1, $unindented);
+        self::assertStringContainsString("each split operator continuation must be indented once ($operator)", $indentationErrors);
+
+        [$trailing, $placementErrors] = self::check("\$result = \$left $operator\n    \$right;\n");
+        self::assertSame(1, $trailing);
+        self::assertStringContainsString("a split operator must start its operand line ($operator)", $placementErrors);
+    }
+
     /**
      * @return array<string, array{string, string}> source and the message expected on PHP 8.5 or later
      */
@@ -149,6 +411,38 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         return [
             'no space around the operator' => ["\$a = \$b|>trim(...);\n", 'needs a space before and after'],
             'operator at the end of the line' => ["\$a = \$b |>\n    trim(...);\n", 'each line starts with the operator'],
+            'first operator is inline in a later split chain' => [
+                "\$a = \$b |> trim(...)\n    |> strtoupper(...);\n",
+                'each line starts with the operator',
+            ],
+            'two operators share a line in a split chain' => [
+                "\$a = \$b\n    |> trim(...) |> strtoupper(...);\n",
+                'each line starts with the operator',
+            ],
+            'multiple inline operators on different lines form a split chain' => [
+                "\$result = \$source |> makeCallable(\n    \$argument,\n) |> trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'single-line comment comes before a pipe on the continuation line' => [
+                "\$a = \$b\n    /* stage */ |> trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'multiline comment ends before a pipe on the same line' => [
+                "\$a = \$b /* stage\n    ends here */ |> trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'multiline comment separates the pipe from its right operand' => [
+                "\$a = \$b\n    |> /* stage\n    ends here */ trim(...);\n",
+                'each line starts with the operator',
+            ],
+            'pipe is overindented after a method continuation' => [
+                "\$a = \$provider\n    ->value()\n        |> trim(...);\n",
+                'must be indented once',
+            ],
+            'pipe is overindented after a concatenation continuation' => [
+                "\$a = \$b\n    . ' suffix'\n        |> trim(...);\n",
+                'must be indented once',
+            ],
             'continuation line not indented' => ["\$a = \$b\n|> trim(...);\n", 'must be indented'],
         ];
     }
@@ -168,15 +462,54 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString('pipe operator requires a PHP version', $errors);
     }
 
-    public function testConformingPipeChainPassesOnPhp85AndIsRefusedOnEarlierVersions(): void
+    /** @return array<string, array{string}> */
+    public static function conformingPipes(): array
     {
-        [$status, $errors] = self::check("\$a = \$b\n    |> trim(...)\n    |> strtoupper(...);\n\$c = \$d |> trim(...);\n");
+        return [
+            'inline and split chains' => [
+                "\$a = \$b\n    |> trim(...)\n    |> strtoupper(...);\n\$c = \$d |> trim(...);\n",
+            ],
+            'different arguments and null-coalescing branches are independent' => [
+                "pair(\n    \$first |> trim(...),\n    \$second\n        |> trim(...)\n        |> strtoupper(...),\n);\n"
+                    . "\$value = \$first |> trim(...)\n    ?? \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
+            ],
+            'pipe follows a comment on its own line and can carry a comment after it' => [
+                "\$a = \$b\n    /* stage */\n    |> /* prepare */ trim(...);\n",
+            ],
+            'pipe after a method continuation is indented from the start' => [
+                "\$a = \$provider\n    ->value()\n    |> trim(...);\n",
+            ],
+            'pipe after a concatenation continuation is indented from the start' => [
+                "\$a = \$b\n    . ' suffix'\n    |> trim(...);\n",
+            ],
+            'inline operator before a multiline right operand' => [
+                "\$a = \$b |> makeCallable(\n    'source',\n);\n",
+            ],
+            'inline operator after a multiline left operand' => [
+                "\$a = fetch(\n    \$argument,\n) |> trim(...);\n",
+            ],
+            'nested named argument does not change the outer pipe indentation' => [
+                "\$a = pair(\n    first: \$input\n        |> trim(...),\n    second: \$other |> trim(...),\n)\n    |> strtoupper(...);\n",
+            ],
+            'comparison operator starts a higher precedence pipe expression' => [
+                "\$ok = \$first\n    === \$other\n        |> trim(...);\n",
+            ],
+            'ternary branches have separate chains' => [
+                "\$value = \$condition\n    ? \$first |> trim(...)\n    : \$second\n        |> trim(...)\n        |> strtoupper(...);\n",
+            ],
+        ];
+    }
 
+    #[DataProvider('conformingPipes')]
+    public function testConformingPipeChainsPass(string $source): void
+    {
+        [$status, $errors] = self::check($source);
         if (PHP_VERSION_ID >= 80500) {
             self::assertSame(0, $status, $errors);
 
             return;
         }
+
         self::assertSame(1, $status);
         self::assertStringContainsString('pipe operator requires a PHP version', $errors);
     }
@@ -190,23 +523,14 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
 
     public function testDefaultScopeCoversConfigurationAndScriptFiles(): void
     {
-        $process = proc_open(
-            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php'],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-        );
-        self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]);
-        $errors = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
+        [$status, $output, $errors] = self::runVerifier(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php');
 
-        self::assertSame(0, proc_close($process), $errors);
+        self::assertSame(0, $status, $errors);
         $scanned = (int) preg_replace('/^.*check: (\d+) files.*$/s', '$1', $output);
         self::assertGreaterThan(0, $scanned, $output);
         $expected = 0;
         $root = dirname(__DIR__, 2);
-        $skipped = ['vendor', '.git', 'docs', 'node_modules', '.phpunit.cache', '.phpstan'];
+        $skipped = ['vendor', '.git', 'node_modules', '.phpunit.cache', '.phpstan'];
         $filter = new \RecursiveCallbackFilterIterator(
             new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
             static fn(\SplFileInfo $entry): bool => !($entry->isDir() && in_array($entry->getFilename(), $skipped, true)),
@@ -220,4 +544,35 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertSame($expected, $scanned);
         self::assertFileExists($root . '/.php-cs-fixer.php');
     }
+
+    public function testDefaultScopeChecksHandwrittenPhpInDocs(): void
+    {
+        $root = sys_get_temp_dir() . '/percs-docs-' . bin2hex(random_bytes(8));
+        $script = $root . '/scripts/check-per-cs-3-1.php';
+        $example = $root . '/docs/examples/DocumentationProbe.php';
+
+        self::assertTrue(mkdir($root . '/scripts', 0700, true));
+        self::assertTrue(mkdir($root . '/docs/examples', 0700, true));
+        self::assertTrue(copy(dirname(__DIR__, 2) . '/scripts/check-per-cs-3-1.php', $script));
+        try {
+            $source = "<?php\n\ndeclare(strict_types=1);\n\nnamespace Fixture;\n\nfinal class DocumentationProbe\n{\n    public function checkStyle(): void {}\n}\n";
+            file_put_contents($example, $source);
+            [$status, $output, $errors] = self::runVerifier($script);
+            self::assertSame(0, $status, $errors);
+            self::assertStringContainsString('2 files, no findings', $output);
+
+            file_put_contents($example, str_replace('checkStyle', 'check_style', $source));
+            [$status, , $errors] = self::runVerifier($script);
+            self::assertSame(1, $status);
+            self::assertStringContainsString('/docs/examples/DocumentationProbe.php:9: method names must use camelCase', $errors);
+        } finally {
+            unlink($example);
+            unlink($script);
+            rmdir($root . '/docs/examples');
+            rmdir($root . '/docs');
+            rmdir($root . '/scripts');
+            rmdir($root);
+        }
+    }
+
 }

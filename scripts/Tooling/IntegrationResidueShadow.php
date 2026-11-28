@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+namespace Maatify\PhpPersistence\Tooling;
+
+use PDO;
+use PDOException;
+use UnexpectedValueException;
+
 /**
  * Diagnostics for the disposable Integration harness. The original residue
  * snapshot owns the gate decision. A later observation can only explain it.
@@ -169,8 +175,14 @@ final class IntegrationResidueShadow
             'state' => 'UNKNOWN',
             'transactions' => array_map(
                 static fn(array $row): array => [
-                    'id' => $row['id'], 'process' => $row['thread'], 'thread' => null,
-                    'event' => null, 'eventState' => null, 'endEvent' => null, 'state' => 'UNKNOWN', 'reason' => $reason,
+                    'id' => $row['id'],
+                    'process' => $row['thread'],
+                    'thread' => null,
+                    'event' => null,
+                    'eventState' => null,
+                    'endEvent' => null,
+                    'state' => 'UNKNOWN',
+                    'reason' => $reason,
                 ],
                 $transactions,
             ),

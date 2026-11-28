@@ -8,7 +8,6 @@ use Maatify\PhpPersistence\Pagination\Criteria\HostSnapshotCatalog;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCheckoutStateEnum;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PDO;
-use PDOStatement;
 use WeakReference;
 
 final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
@@ -17,18 +16,18 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
     {
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([]));
         $first = $source->checkout();
-        self::assertSame(HostSnapshotCheckoutStateEnum::IDLE, $first->state());
+        self::assertSame(HostSnapshotCheckoutStateEnum::Idle, $first->state());
         self::reject($source->checkout(...));
         self::reject(fn() => serialize($source));
         self::reject(fn() => serialize($first));
         $first->beginRepeatableRead();
         $first->rollBack();
         $first->release();
-        self::assertSame(HostSnapshotCheckoutStateEnum::RELEASED, $first->state());
+        self::assertSame(HostSnapshotCheckoutStateEnum::Released, $first->state());
         $second = $source->checkout();
         self::assertNotSame($first, $second);
         self::reject($first->release(...));
-        self::assertSame(HostSnapshotCheckoutStateEnum::IDLE, $second->state());
+        self::assertSame(HostSnapshotCheckoutStateEnum::Idle, $second->state());
         $second->release();
     }
 
@@ -100,13 +99,10 @@ final class PdoHostSnapshotSourceTest extends HostSnapshotIntegrationTestCase
         $pdo->exec('START TRANSACTION');
         try {
             self::reject($checkout->release(...));
-            self::assertSame(HostSnapshotCheckoutStateEnum::QUARANTINED, $checkout->state());
+            self::assertSame(HostSnapshotCheckoutStateEnum::Quarantined, $checkout->state());
             self::reject($source->checkout(...));
         } finally {
             $pdo->exec('ROLLBACK AND NO CHAIN NO RELEASE');
         }
     }
-
 }
-
-final class HostSnapshotTestStatement extends PDOStatement {}

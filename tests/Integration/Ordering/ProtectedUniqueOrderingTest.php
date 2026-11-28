@@ -99,11 +99,11 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
 
             if ($missing === 'reusable without handoff') {
                 $checkout->commit();
-                self::assertSame(ProtectedTransactionDispositionEnum::REUSABLE, $checkout->settlement()?->disposition);
+                self::assertSame(ProtectedTransactionDispositionEnum::Reusable, $checkout->settlement()?->disposition);
             } elseif ($relay !== null) {
                 self::failureOf(fn() => $this->manager->moveUniqueWithinScope($checkout, $config, null, 3, 1));
                 self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
-                self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+                self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             } else {
                 self::assertNull($checkout->settlement());
             }
@@ -137,20 +137,23 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $checkout = $this->checkout(begin: false);
         $this->lifecycle->cancel($checkout);
         $this->lifecycle->finish();
-        self::assertSame(ProtectedTransactionReasonEnum::CANCELLED_BEFORE_QUALIFICATION, $checkout->settlement()?->reason);
+        self::assertSame(ProtectedTransactionReasonEnum::CancelledBeforeQualification, $checkout->settlement()?->reason);
     }
 
     public function testUnconfirmedBeginIsExplicitlyDiscarded(): void
     {
         $this->createProfile(false, false);
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'START TRANSACTION READ WRITE', 'after',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'START TRANSACTION READ WRITE',
+            'after',
         ]);
         try {
             $checkout = $this->checkout(relayPort: $this->relayPort($relay), begin: false);
             self::failureOf(fn() => $this->lifecycle->begin($checkout));
             self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionReasonEnum::START_UNCONFIRMED, $checkout->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::StartUnconfirmed, $checkout->settlement()?->reason);
             $this->lifecycle->discard($checkout);
             $this->lifecycle->finish();
         } finally {
@@ -166,7 +169,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->createProfile(false, false);
         $this->seedFaultProfile();
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'ROLLBACK AND NO CHAIN NO RELEASE', 'after',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'ROLLBACK AND NO CHAIN NO RELEASE',
+            'after',
         ]);
         try {
             $lostAck = $this->checkout(relayPort: $this->relayPort($relay));
@@ -193,8 +199,8 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
                 }
             }
             self::assertSame('SERVER OK WITHHELD', $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionReasonEnum::ROLLBACK_UNCONFIRMED, $lostAck->settlement()?->reason);
-            self::assertSame(ProtectedTransactionReasonEnum::ROLLED_BACK, $other->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::RollbackUnconfirmed, $lostAck->settlement()?->reason);
+            self::assertSame(ProtectedTransactionReasonEnum::RolledBack, $other->settlement()?->reason);
 
             $this->observer->exec('SET SESSION innodb_lock_wait_timeout = 4');
             $this->observer->beginTransaction();
@@ -392,8 +398,8 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
             if ($mariaDb) {
                 $failure = self::failureOf($allocate);
                 self::assertSame(1020, self::driverCode($failure));
-                self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $stale->settlement()?->disposition);
-                self::assertSame(ProtectedTransactionReasonEnum::TRANSACTION_LOST, $stale->settlement()->reason);
+                self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $stale->settlement()?->disposition);
+                self::assertSame(ProtectedTransactionReasonEnum::TransactionLost, $stale->settlement()->reason);
                 $this->lifecycle->discard($stale);
             } else {
                 self::assertSame(3, $allocate());
@@ -411,7 +417,10 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         $this->seedFaultProfile();
         $config = $this->config();
         $relay = PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'SAVEPOINT', 'before',
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'SAVEPOINT',
+            'before',
         ]);
         try {
             $checkout = $this->checkout(relayPort: $this->relayPort($relay));
@@ -486,7 +495,7 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
                 default => 'B1 PHASE ' . $phase,
             };
             self::assertSame($expected, $relay->readLine(12.0));
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $checkout->settlement()?->disposition);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $checkout->settlement()?->disposition);
             try {
                 $checkout->commit();
                 self::fail('A fenced checkout accepted the commit request.');
@@ -537,8 +546,8 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
         self::assertSame($executeFailure ?? $closeFailure, $primary);
         $settlement = $checkout->settlement();
         self::assertNotNull($settlement);
-        self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement->disposition);
-        self::assertSame(ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED, $settlement->reason);
+        self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement->disposition);
+        self::assertSame(ProtectedTransactionReasonEnum::OperationUnconfirmed, $settlement->reason);
         foreach ([
             fn() => $checkout->runRegisteredCommand('mark', ['id' => 2]),
             fn() => $this->manager->getNextUniquePositionForAppend($checkout, $config, null),
@@ -683,7 +692,11 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private function relay(string $stage, string $phase): PartnerProcess
     {
         return PartnerProcess::start([
-            PHP_BINARY, dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php', 'RELEASE SAVEPOINT', $stage, $phase,
+            PHP_BINARY,
+            dirname(__DIR__) . '/Support/SnapshotEndResponseProxy.php',
+            'RELEASE SAVEPOINT',
+            $stage,
+            $phase,
         ]);
     }
 
@@ -840,8 +853,12 @@ final class ProtectedUniqueOrderingTest extends IntegrationTestCase
     private function contender(UniqueOrderingConfig $config, string $pair, string $isolation): PartnerProcess
     {
         return PartnerProcess::start([
-            PHP_BINARY, __DIR__ . '/UniqueOrderingContender.php',
-            $this->items, $this->anchor, $isolation, $pair,
+            PHP_BINARY,
+            __DIR__ . '/UniqueOrderingContender.php',
+            $this->items,
+            $this->anchor,
+            $isolation,
+            $pair,
             json_encode($config->schemaAttestation, JSON_THROW_ON_ERROR),
         ]);
     }

@@ -10,7 +10,7 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
  */
 enum HostSnapshotPageAttemptStateEnum
 {
-    case NEW;
-    case RUNNING;
-    case TERMINAL;
+    case New;
+    case Running;
+    case Terminal;
 }

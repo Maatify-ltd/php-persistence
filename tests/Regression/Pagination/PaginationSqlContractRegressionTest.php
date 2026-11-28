@@ -116,9 +116,9 @@ final class PaginationSqlContractRegressionTest extends TestCase
         return new PaginationConfig(
             new SortWhitelist(['created_at' => $duplicate ? 'id' : 'created_at', 'id' => 'id']),
             'created_at',
-            SortDirectionEnum::DESC,
+            SortDirectionEnum::Desc,
             'id',
-            SortDirectionEnum::ASC,
+            SortDirectionEnum::Asc,
             2,
             1,
             50,

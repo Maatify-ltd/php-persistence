@@ -260,7 +260,7 @@ final class ScopedOrderingTailBudgetTest extends OrderingIntegrationTestCase
     {
         self::assertSame(
             "SELECT `display_order` FROM `{$this->scopedTable}` WHERE `scope_key` = :scope_value AND `deleted_at` IS NULL "
-            . 'ORDER BY `display_order` DESC, `id` DESC LIMIT 1 FOR UPDATE',
+                . 'ORDER BY `display_order` DESC, `id` DESC LIMIT 1 FOR UPDATE',
             preg_replace('/\s+/', ' ', $sql),
         );
         self::assertSame(['scope_value' => 'budget'], $params);

@@ -95,7 +95,7 @@ try {
         }
         throw $primary;
     } finally {
-        if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DISCARD_REQUIRED) {
+        if ($checkout->settlement()?->disposition === ProtectedTransactionDispositionEnum::DiscardRequired) {
             $checkout->discardForHost();
         } else {
             $checkout->returnForHost();

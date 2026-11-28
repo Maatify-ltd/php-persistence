@@ -7,7 +7,7 @@ namespace Maatify\PhpPersistence\Ordering\Repository;
 use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
 use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
 use Maatify\PhpPersistence\Ordering\Exception\OrderingExecutionException;
-use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
+use Maatify\PhpPersistence\Transaction\Repository\OwnedTransactionExecutor;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionConnection;
 use Maatify\PhpPersistence\Transaction\Repository\ProtectedTransactionStatement;
 use Maatify\PhpPersistence\Transaction\Repository\SavepointScope;
@@ -37,7 +37,7 @@ final readonly class OrderingOperations
             __FUNCTION__,
             'SELECT COALESCE(MAX(' . $config->quotedOrderColumn() . '), 0)
                FROM ' . $config->quotedTable()
-            . $whereSql,
+                . $whereSql,
         );
 
         $this->executeStatement($stmt, $params, __FUNCTION__);
@@ -90,8 +90,8 @@ final readonly class OrderingOperations
             $operation,
             'SELECT ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
-            . $whereSql
-            . ' ORDER BY ' . $config->quotedOrderColumn() . ' DESC, ' . $config->quotedIdColumn() . ' DESC
+                . $whereSql
+                . ' ORDER BY ' . $config->quotedOrderColumn() . ' DESC, ' . $config->quotedIdColumn() . ' DESC
               LIMIT 1
               FOR UPDATE',
         );
@@ -137,33 +137,14 @@ final readonly class OrderingOperations
         ?string $updatedAtValue = null,
     ): bool {
         $this->validateMove($config, $scopeValue, $id, $newOrder, $updatedAtValue);
-        $rollbackResult = new class extends \RuntimeException {};
-        $participating = $pdo->inTransaction();
-
-        try {
-            return (new PdoTransactionRunner($pdo))->run(function () use (
-                $pdo,
-                $config,
-                $scopeValue,
-                $id,
-                $newOrder,
-                $updatedAtValue,
-                $participating,
-                $rollbackResult,
-            ): bool {
-                if (!$this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, $participating)) {
-                    throw $rollbackResult;
-                }
-
-                return true;
-            });
-        } catch (Throwable $failure) {
-            if ($failure === $rollbackResult) {
-                return false;
-            }
-
-            throw $failure;
+        if ($pdo->inTransaction()) {
+            return $this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, participating: true);
         }
+
+        return (new OwnedTransactionExecutor($pdo, maxDeadlockRetries: 0))->run(
+            fn(): bool => $this->move($pdo, $config, $scopeValue, $id, $newOrder, $updatedAtValue, participating: false),
+            rollBackOnFalse: true,
+        );
     }
 
     /**
@@ -330,8 +311,8 @@ final readonly class OrderingOperations
             __FUNCTION__,
             'SELECT ' . $config->quotedIdColumn() . ', ' . $config->quotedOrderColumn() . '
                FROM ' . $config->quotedTable()
-            . $whereSql
-            . ' ORDER BY ' . $config->quotedOrderColumn() . ' ASC, ' . $config->quotedIdColumn() . ' ASC
+                . $whereSql
+                . ' ORDER BY ' . $config->quotedOrderColumn() . ' ASC, ' . $config->quotedIdColumn() . ' ASC
               FOR UPDATE',
         );
 
@@ -704,9 +685,7 @@ final readonly class OrderingOperations
 
     /**
      * Ensures that timestamp configuration and the operation value are used
-     * consistently.
-     *
-     * @param string|null $updatedAtValue Timestamp value for the target mutation.
+     * consistently and the supplied timestamp has an exact SQL date-time format.
      */
     private function assertUpdatedAtUsage(
         ScopedOrderingConfig $config,
@@ -721,6 +700,15 @@ final readonly class OrderingOperations
         if ($config->updatedAtColumn !== null && $updatedAtValue === null) {
             throw new InvalidOrderingOperationException(
                 'An updated-at column requires an updated-at value.',
+            );
+        }
+
+        if ($updatedAtValue !== null && (
+            preg_match('/\A([0-9]{4})-([0-9]{2})-([0-9]{2}) (?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,6})?\z/', $updatedAtValue, $date) !== 1
+            || !checkdate((int) $date[2], (int) $date[3], (int) $date[1])
+        )) {
+            throw new InvalidOrderingOperationException(
+                'An updated-at value must be a valid YYYY-MM-DD HH:MM:SS timestamp with up to six fractional digits.',
             );
         }
     }

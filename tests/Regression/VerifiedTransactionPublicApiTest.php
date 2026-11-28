@@ -6,7 +6,7 @@ namespace Maatify\PhpPersistence\Tests\Regression;
 
 use Closure;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO as Decision;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand as Decision;
 use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionSettlementDTO as Settlement;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
@@ -87,6 +87,7 @@ final class VerifiedTransactionPublicApiTest extends TestCase
         self::assertFalse(Decision::discard(false)->isApply);
         self::assertFalse(Decision::discard(false)->payload);
         self::assertNull(Decision::discard()->payload);
+        self::assertNotContains(\JsonSerializable::class, $decision->getInterfaceNames());
 
         $settlement = new ReflectionClass(Settlement::class);
         self::assertTrue($settlement->isFinal() && $settlement->isReadOnly());
@@ -102,14 +103,38 @@ final class VerifiedTransactionPublicApiTest extends TestCase
             array_map(static fn(\ReflectionParameter $p): string => (string) $p->getType(), $parameters),
         ));
         self::assertSame(
-            ['NOT_STARTED', 'PENDING_HOST', 'LOCAL_UNDONE', 'COMMITTED', 'ROLLED_BACK', 'UNKNOWN'],
+            ['NotStarted', 'PendingHost', 'LocalUndone', 'Committed', 'RolledBack', 'Unknown'],
             array_column(Outcome::cases(), 'name'),
         );
         self::assertSame([
-            'QUALIFICATION_FAILED', 'START_UNCONFIRMED', 'CONTINUITY_UNCONFIRMED', 'SAVEPOINT_UNCONFIRMED',
-            'CALLBACK_FAILED', 'COMMAND_FAILED', 'CURSOR_UNCONFIRMED', 'ROLLBACK_TO_UNCONFIRMED',
-            'RELEASE_UNCONFIRMED', 'COMMIT_OUTCOME_UNKNOWN', 'ROLLBACK_UNCONFIRMED', 'HANDOFF_UNCONFIRMED',
-            'TRANSACTION_LOST', 'HOST_DISCARDED',
+            'QualificationFailed',
+            'StartUnconfirmed',
+            'ContinuityUnconfirmed',
+            'SavepointUnconfirmed',
+            'CallbackFailed',
+            'CommandFailed',
+            'CursorUnconfirmed',
+            'RollbackToUnconfirmed',
+            'ReleaseUnconfirmed',
+            'CommitOutcomeUnknown',
+            'RollbackUnconfirmed',
+            'HandoffUnconfirmed',
+            'TransactionLost',
+            'HostDiscarded',
         ], array_column(Reason::cases(), 'name'));
+    }
+
+    public function testSettlementJsonPreservesPropertiesAsStableCodesOrNull(): void
+    {
+        $settlement = new Settlement(Outcome::LocalUndone, Reason::CallbackFailed, Outcome::Unknown, null, Disposition::DiscardRequired);
+
+        self::assertSame(Outcome::LocalUndone, $settlement->operationOutcome);
+        self::assertSame([
+            'operationOutcome' => 'LOCAL_UNDONE',
+            'operationReason' => 'CALLBACK_FAILED',
+            'transactionOutcome' => 'UNKNOWN',
+            'checkoutReason' => null,
+            'disposition' => 'DISCARD_REQUIRED',
+        ], json_decode(json_encode($settlement, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
     }
 }

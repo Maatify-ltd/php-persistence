@@ -51,13 +51,21 @@ final class VerifiedTransactionCommandScope implements VerifiedTransactionComman
 
     private function __clone() {}
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     *
+     * @throws ProtectedTransactionException Always. Command authority is limited to the live callback and its creating context.
+     */
     public function __serialize(): array
     {
         throw new ProtectedTransactionException('A verified transaction command scope cannot be serialized.');
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @throws ProtectedTransactionException Always. A live verified callback must provide the command scope.
+     */
     public function __unserialize(array $data): void
     {
         throw new ProtectedTransactionException('A verified transaction command scope cannot be restored.');

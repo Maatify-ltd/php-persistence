@@ -1,13 +1,13 @@
 # DEC-020 — Optional pagination in a Host-owned transaction
 
 - **Decision ID:** DEC-020
-- **Status:** ACTIVE
+- **Status:** `SUPERSEDED`
 - **Decision Authority:** Project Owner. [Design and Public API approval](https://github.com/Maatify-ltd/php-persistence/issues/35#issuecomment-7066152213) and [execution authorization](https://github.com/Maatify-ltd/php-persistence/issues/35#issuecomment-7066221226).
 - **Date:** 2026-11-21
 - **Scope / Concern:** Optional professional pagination path on the Host's own transaction.
-- **Canonical Contract / Current Owner:** [Package Reference §5.3.3](../../PHP_PERSISTENCE_PACKAGE_REFERENCE.md#533-optional-b-pagination-in-a-host-owned-transaction).
+- **Canonical Contract / Current Owner:** Historical record. [DEC-036](./DEC-036-pascalcase-enums-and-stable-settlement-json.md) governs the current contract.
 - **Supersedes:** —
-- **Superseded By:** —
+- **Superseded By:** [DEC-032](./DEC-032-settlement-json-and-execution-contracts.md)
 
 ## Context
 

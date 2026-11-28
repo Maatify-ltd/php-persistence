@@ -111,7 +111,12 @@ final readonly class PdoKeysetPaginator
         return new KeysetPageResultDTO($data, $hasNext, $nextCursor);
     }
 
-    /** @return array{defaultLimit: int, maxLimit: int} */
+    /**
+     * Reports only the default and maximum page limits in PHP debug output.
+     * Omits cursor signing data.
+     *
+     * @return array{defaultLimit: int, maxLimit: int}
+     */
     public function __debugInfo(): array
     {
         return ['defaultLimit' => $this->defaultLimit, 'maxLimit' => $this->maxLimit];

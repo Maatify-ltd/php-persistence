@@ -13,15 +13,28 @@ use Maatify\PhpPersistence\Pagination\Repository\PdoKeysetPaginator;
 require __DIR__ . '/vendor/autoload.php';
 
 $paginatorParameters = [
-    ['activeKeyId', 'string'], ['keys', 'array'], ['defaultLimit', 'int', 20], ['maxLimit', 'int', 200],
+    ['activeKeyId', 'string'],
+    ['keys', 'array'],
+    ['defaultLimit', 'int', 20],
+    ['maxLimit', 'int', 200],
 ];
 $paginateParameters = [
-    ['pdo', PDO::class], ['query', KeysetQueryDescriptor::class], ['scope', 'string'],
-    ['bindings', 'array'], ['mapper', 'callable'], ['cursor', '?string', null], ['limit', '?int', null],
+    ['pdo', PDO::class],
+    ['query', KeysetQueryDescriptor::class],
+    ['scope', 'string'],
+    ['bindings', 'array'],
+    ['mapper', 'callable'],
+    ['cursor', '?string', null],
+    ['limit', '?int', null],
 ];
 $descriptorParameters = [
-    ['queryId', 'string'], ['revision', 'string'], ['table', 'string'], ['columns', 'array'],
-    ['scopePredicate', 'string'], ['parameterNames', 'array'], ['filterPredicate', 'string', '1 = 1'],
+    ['queryId', 'string'],
+    ['revision', 'string'],
+    ['table', 'string'],
+    ['columns', 'array'],
+    ['scopePredicate', 'string'],
+    ['parameterNames', 'array'],
+    ['filterPredicate', 'string', '1 = 1'],
 ];
 $resultParameters = [['data', 'array'], ['hasNext', 'bool'], ['nextCursor', '?string']];
 $signatures = [

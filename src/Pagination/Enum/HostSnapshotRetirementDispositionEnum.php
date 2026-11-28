@@ -10,6 +10,6 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
  */
 enum HostSnapshotRetirementDispositionEnum
 {
-    case RETURNED_IDLE;
-    case RETURNED_FOR_RECONCILIATION;
+    case ReturnedIdle;
+    case ReturnedForReconciliation;
 }

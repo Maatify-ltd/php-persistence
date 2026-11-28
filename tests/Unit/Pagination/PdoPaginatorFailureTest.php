@@ -313,7 +313,7 @@ final class PdoPaginatorFailureTest extends TestCase
 
     private function config(): PaginationConfig
     {
-        return new PaginationConfig(new SortWhitelist(['id' => 'id']), 'id', SortDirectionEnum::ASC, 'id', SortDirectionEnum::ASC);
+        return new PaginationConfig(new SortWhitelist(['id' => 'id']), 'id', SortDirectionEnum::Asc, 'id', SortDirectionEnum::Asc);
     }
 
     private function successfulPdo(): ScriptedPdo

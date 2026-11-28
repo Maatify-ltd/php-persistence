@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\PhpPersistence\Tests\Unit\Infrastructure;
 
-use IntegrationResidueShadow;
+use Maatify\PhpPersistence\Tooling\IntegrationResidueShadow;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -35,8 +35,14 @@ final class IntegrationResidueShadowTest extends TestCase
     /** @return Binding */
     private static function binding(bool $ended): array
     {
-        return ['transaction' => '81', 'started' => self::row()['started'], 'thread' => '22', 'event' => '5',
-            'endAcknowledged' => $ended, 'independentlyChecked' => $ended];
+        return [
+            'transaction' => '81',
+            'started' => self::row()['started'],
+            'thread' => '22',
+            'event' => '5',
+            'endAcknowledged' => $ended,
+            'independentlyChecked' => $ended,
+        ];
     }
 
     public function testMatchingWriterLockAndStableActiveEventProveLive(): void

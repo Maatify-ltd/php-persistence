@@ -6,6 +6,6 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
 
 enum HostSnapshotAccessModeEnum: string
 {
-    case READ_WRITE = 'READ WRITE';
-    case READ_ONLY = 'READ ONLY';
+    case ReadWrite = 'READ WRITE';
+    case ReadOnly = 'READ ONLY';
 }

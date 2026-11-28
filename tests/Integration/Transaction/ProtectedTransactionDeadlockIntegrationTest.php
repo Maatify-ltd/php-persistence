@@ -28,8 +28,8 @@ final class ProtectedTransactionDeadlockIntegrationTest extends DeadlockIntegrat
             });
             self::assertSame(1213, self::driverCode($failure));
             $settlement = $checkout->settlement();
-            self::assertSame(ProtectedTransactionDispositionEnum::DISCARD_REQUIRED, $settlement?->disposition);
-            self::assertSame(ProtectedTransactionReasonEnum::OPERATION_UNCONFIRMED, $settlement->reason);
+            self::assertSame(ProtectedTransactionDispositionEnum::DiscardRequired, $settlement?->disposition);
+            self::assertSame(ProtectedTransactionReasonEnum::OperationUnconfirmed, $settlement->reason);
             self::assertNotEmpty($this->partnerReports());
             $this->expectException(ProtectedTransactionException::class);
             $checkout->runRegisteredCommand('lock', ['id' => 1]);

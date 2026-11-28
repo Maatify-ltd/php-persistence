@@ -25,14 +25,14 @@ try {
         config: new PaginationConfig(
             sortWhitelist: new SortWhitelist(['workflow' => 'status', 'id' => 'id']),
             defaultSortBy: 'workflow',
-            defaultSortDirection: SortDirectionEnum::ASC,
+            defaultSortDirection: SortDirectionEnum::Asc,
             tieBreakerSortBy: 'id',
-            tieBreakerDirection: SortDirectionEnum::ASC,
+            tieBreakerDirection: SortDirectionEnum::Asc,
         ),
         profiles: [
             'workflow' => [
-                ['identifier' => 'priority', 'direction' => SortDirectionEnum::DESC],
-                ['identifier' => 'id', 'direction' => SortDirectionEnum::ASC],
+                ['identifier' => 'priority', 'direction' => SortDirectionEnum::Desc],
+                ['identifier' => 'id', 'direction' => SortDirectionEnum::Asc],
             ],
             'id' => null,
         ],
@@ -50,7 +50,7 @@ try {
             plan: $plan,
             mapper: static fn(array $row): array => ['id' => php_persistence_example_to_int($row['id'])],
         );
-        php_persistence_example_assert($page->sortBy === 'workflow' && $page->sortDirection === SortDirectionEnum::ASC, 'unexpected sort metadata');
+        php_persistence_example_assert($page->sortBy === 'workflow' && $page->sortDirection === SortDirectionEnum::Asc, 'unexpected sort metadata');
         php_persistence_example_assert($page->page === $pageNumber && $page->filtered === 5, 'unexpected page or count');
         array_push($observed, ...array_column($page->data, 'id'));
     }

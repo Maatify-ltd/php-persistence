@@ -12,20 +12,36 @@ namespace Maatify\PhpPersistence\Pagination\Enum;
  */
 enum HostSnapshotPageSettlementReasonEnum
 {
-    case SOURCE_UNAVAILABLE;
+    case SourceUnavailable;
     /** The grant belongs to a transaction generation that has been invalidated. */
-    case STALE_CONTEXT;
+    case StaleContext;
     /** An earlier admitted attempt already used the grant. */
-    case GRANT_CONSUMED;
+    case GrantConsumed;
     /** No admission while reserved. The Host can reuse an otherwise eligible grant in a fresh attempt. */
-    case BUSY;
-    case PAGE_COMPLETED;
+    case Busy;
+    case PageCompleted;
     /** Read or mapping failed, but cursor release and transaction scope were confirmed. */
-    case READ_FAILED;
+    case ReadFailed;
     /** A statement remains outstanding, preventing PDO handoff. */
-    case RESOURCE_RELEASE_UNCONFIRMED;
+    case ResourceReleaseUnconfirmed;
     /** The source could not establish continued use of the qualified transaction. */
-    case SCOPE_UNCONFIRMED;
+    case ScopeUnconfirmed;
     /** The fallback outcome if ordinary settlement cannot finish. */
-    case SETTLEMENT_UNCONFIRMED;
+    case SettlementUnconfirmed;
+
+    /** @internal Stable code for settlement JSON. */
+    public function settlementCode(): string
+    {
+        return match ($this) {
+            self::SourceUnavailable => 'SOURCE_UNAVAILABLE',
+            self::StaleContext => 'STALE_CONTEXT',
+            self::GrantConsumed => 'GRANT_CONSUMED',
+            self::Busy => 'BUSY',
+            self::PageCompleted => 'PAGE_COMPLETED',
+            self::ReadFailed => 'READ_FAILED',
+            self::ResourceReleaseUnconfirmed => 'RESOURCE_RELEASE_UNCONFIRMED',
+            self::ScopeUnconfirmed => 'SCOPE_UNCONFIRMED',
+            self::SettlementUnconfirmed => 'SETTLEMENT_UNCONFIRMED',
+        };
+    }
 }

@@ -14,18 +14,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Static composite and dynamic Offset sorting through separate entry points. Static plans define fixed trailing terms. Dynamic sorting accepts up to three allowlisted request sort keys with independent directions.
 - Protected Host write checkouts with registered commands and guarded Ordering. The Host directs transaction completion and uses the settlement to choose handoff or discard.
 - Verified Apply/Discard (C2) for package-owned and Host-owned transactions. It returns the decision payload after confirming the required control and reports the database outcome and connection disposition separately.
+- JSON projections for C1, B, Protected and Verified settlement DTOs. Enum fields use stable uppercase codes and absent fields remain null. B's live PDO handoff uses `HostSnapshotRetirement`, and Verified callbacks return `VerifiedTransactionDecisionCommand`.
 - Protected UNIQUE-safe Ordering (B1) for eligible dense InnoDB lists. Hosts can allocate an append position, move rows, or run a registered delete with compaction under one scope anchor.
 
 ### Changed
 
 - Raised the Composer PHP patch floors from RC.2's `^8.4`. PHP 8.4.0–8.4.26 and 8.5.0–8.5.11 can no longer resolve this version. The admitted ranges start at 8.4.27 for PHP 8.4 and 8.5.12 for PHP 8.5, with forward eligibility within PHP 8.
 - Raw Ordering allocation through `ScopedOrderingManager::getNextPositionForUpdate()` stops after 64 locking tail reads by default. The optional `maxTailReads` argument accepts 2–512. A tail that would have stabilized later under RC.2 can now raise the existing `OrderingExecutionException` with `TAIL_READ_LIMIT_EXCEEDED` metadata. Existing positional and named calls remain valid. The Host retains control of transaction completion and acquired locks.
+- Raw and protected `moveWithinScope()` validate `updatedAtValue` before issuing SQL. When `updatedAtColumn` is configured, provide a valid `YYYY-MM-DD HH:MM:SS` value with an optional 1–6 digit fraction. This narrows RC.2's driver-dependent acceptance. Convert other formats in the Host before calling the manager.
+- Raw `moveWithinScope()` now throws when settlement of an otherwise ordinary `false` result fails. This changes RC.2 behavior for an unconfirmed package-owned rollback or failed local savepoint release. Handle the existing `TransactionExecutionException` or the original driver throwable and resolve connection state before reuse. Normal results and Host transaction ownership continue to follow the [Ordering contract](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#54-scopedorderingmanager).
+- **Breaking from RC.2:** Constructors reject a trailing LF in direct `PageResultDTO` sort keys, `SortWhitelist` keys and SQL identifier paths, pagination binding keys, and `ScopedOrderingConfig` table and column names. RC.2 could accept these inputs under its published patterns. Supply canonical names at the call site and match binding keys to the SQL placeholders. See the [migration guidance](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#15-rc2-constructor-input-migration).
+- **Breaking from RC.2:** `SortDirectionEnum` declares `Asc` and `Desc`. The `ASC` and `DESC` aliases still resolve to the same direction values. Enum name reads, `cases()`, Reflection and native PHP serialized payloads now use PascalCase. Decode older persisted payloads with RC.2 before upgrading, or rebuild caches. Backing strings, SQL and pagination JSON retain `ASC` and `DESC`. See the [migration guidance](PHP_PERSISTENCE_PACKAGE_REFERENCE.md#16-rc2-sort-direction-migration).
 
 ### Fixed
 
 - Preserve the original transaction or savepoint failure when the cleanup state check also fails.
 - Attempt to release count and data cursors after pagination read, validation, or mapper failures while preserving the original error.
-- Reject terminal newlines in trusted SQL identifiers, named binding keys, decimal COUNT values and direct result sort keys.
+- Reject trailing LF in COUNT strings so they contain only decimal digits, as required by the RC.2 contract.
 
 ## [1.0.0-rc.2] - 2026-11-18
 

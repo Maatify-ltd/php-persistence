@@ -10,9 +10,10 @@ use Maatify\Exceptions\Exception\System\SystemMaatifyException;
 use Maatify\PhpPersistence\Exception\PhpPersistenceExceptionInterface;
 
 /**
- * Thrown when a PDO transaction-control statement (BEGIN, COMMIT, SAVEPOINT,
- * RELEASE SAVEPOINT, ROLLBACK TO SAVEPOINT) fails without throwing, or when a
- * caller-owned transaction is no longer active where this package requires one.
+ * Reports a non-throwing PDO transaction-control failure, including the
+ * required rollback for a raw Ordering move. Also reports an unconfirmed
+ * owned Ordering rollback or a caller transaction that has ended at an
+ * operation boundary that requires it to remain active.
  */
 final class TransactionExecutionException extends SystemMaatifyException implements PhpPersistenceExceptionInterface
 {

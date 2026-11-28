@@ -11,6 +11,7 @@ use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandEffectEnum as Effe
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotCommandResultModeEnum;
 use Maatify\PhpPersistence\Pagination\Enum\HostSnapshotRetirementDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotConnection;
+use Maatify\PhpPersistence\Pagination\Repository\HostSnapshotRetirement;
 use Maatify\PhpPersistence\Pagination\Repository\PdoHostSnapshotSource;
 use PDO;
 use ReflectionProperty;
@@ -30,9 +31,11 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         $lease->rollBack();
 
         $returned = $source->retireForHost();
-        self::assertSame(Disposition::RETURNED_IDLE, $returned->disposition);
+        self::assertSame(Disposition::ReturnedIdle, $returned->disposition);
         self::assertSame($reference->get(), $returned->pdo);
-        self::assertSame(State::RETIRED, $lease->state());
+        self::assertSame(HostSnapshotRetirement::class, $returned::class);
+        self::assertNotContains(\JsonSerializable::class, new \ReflectionClass($returned)->getInterfaceNames());
+        self::assertSame(State::Retired, $lease->state());
         self::assertFalse($returned->pdo->inTransaction());
         self::reject($source->checkout(...));
         self::reject($source->retireForHost(...));
@@ -44,13 +47,13 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         $writer = $this->connect();
         $table = $this->createTable($writer);
         $source = PdoHostSnapshotSource::attachExclusive($this->borrowableConnection(), new HostSnapshotCatalog([], [
-            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (1, 10)", [], HostSnapshotCommandResultModeEnum::AFFECTED_ROWS, effect: Effect::PRESERVES_TRANSACTION),
+            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (1, 10)", [], HostSnapshotCommandResultModeEnum::AffectedRows, effect: Effect::PreservesTransaction),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
         $lease->runRegisteredCommand('write');
         $returned = $source->retireForHost();
-        self::assertSame(Disposition::RETURNED_FOR_RECONCILIATION, $returned->disposition);
+        self::assertSame(Disposition::ReturnedForReconciliation, $returned->disposition);
         self::assertTrue($returned->pdo->inTransaction());
         self::assertSame('0', $this->scalar($writer, "SELECT COUNT(*) FROM $table"));
         $returned->pdo->exec('COMMIT AND NO CHAIN NO RELEASE');
@@ -64,7 +67,7 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         $pdo = $this->borrowableConnection();
         $reference = WeakReference::create($pdo);
         $source = PdoHostSnapshotSource::attachExclusive($pdo, new HostSnapshotCatalog([], [
-            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (1, 10)", [], HostSnapshotCommandResultModeEnum::AFFECTED_ROWS, effect: Effect::PRESERVES_TRANSACTION),
+            'write' => new HostSnapshotCommandPlan("INSERT INTO $table VALUES (1, 10)", [], HostSnapshotCommandResultModeEnum::AffectedRows, effect: Effect::PreservesTransaction),
         ]));
         $lease = $source->checkout();
         $lease->beginRepeatableRead();
@@ -79,10 +82,10 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         unset($pdo, $statement);
 
         self::reject($source->retireForHost(...));
-        self::assertSame(State::QUARANTINED, $lease->state());
+        self::assertSame(State::Quarantined, $lease->state());
         self::assertInstanceOf(PDO::class, $reference->get());
         $source->discardForHost();
-        self::assertSame(State::RETIRED, $lease->state());
+        self::assertSame(State::Retired, $lease->state());
         self::assertNull($reference->get());
         self::assertSame('0', $this->scalar($writer, "SELECT COUNT(*) FROM $table"));
         self::reject($source->checkout(...));
@@ -100,7 +103,7 @@ final class PdoHostSnapshotRetirementTest extends HostSnapshotIntegrationTestCas
         $lease->beginRepeatableRead();
         $admin->exec('KILL CONNECTION ' . $sessionId);
         $source->discardForHost();
-        self::assertSame(State::RETIRED, $lease->state());
+        self::assertSame(State::Retired, $lease->state());
     }
 
 }

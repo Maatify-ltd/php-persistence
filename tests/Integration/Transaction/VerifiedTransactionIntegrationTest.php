@@ -11,7 +11,7 @@ use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandCatalog as Catalog;
 use Maatify\PhpPersistence\Transaction\Criteria\ProtectedTransactionCommandPlan as Plan;
-use Maatify\PhpPersistence\Transaction\DTO\VerifiedTransactionDecisionDTO as Decision;
+use Maatify\PhpPersistence\Transaction\Command\VerifiedTransactionDecisionCommand as Decision;
 use Maatify\PhpPersistence\Transaction\Enum\ProtectedTransactionDispositionEnum as Disposition;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionOutcomeEnum as Outcome;
 use Maatify\PhpPersistence\Transaction\Enum\VerifiedTransactionReasonEnum as Reason;
@@ -70,12 +70,12 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         self::assertNull($operation->operationReason);
         self::assertNull($initial->operationOutcome);
         if ($owned) {
-            self::assertSame($apply ? Outcome::COMMITTED : Outcome::ROLLED_BACK, $operation->operationOutcome);
+            self::assertSame($apply ? Outcome::Committed : Outcome::RolledBack, $operation->operationOutcome);
             self::assertSame($operation->operationOutcome, $operation->transactionOutcome);
             self::assertSame($apply ? [20] : [], $this->values($observer, $table));
         } else {
             $pending = $apply ? [10, 20] : [10];
-            self::assertSame($apply ? Outcome::PENDING_HOST : Outcome::LOCAL_UNDONE, $operation->operationOutcome);
+            self::assertSame($apply ? Outcome::PendingHost : Outcome::LocalUndone, $operation->operationOutcome);
             self::assertNull($operation->transactionOutcome);
             self::assertNull($operation->disposition);
             self::assertSame(array_map(static fn(int $value): array => ['v' => $value], $pending), $checkout->runRegisteredCommand('visible'));
@@ -86,7 +86,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             self::assertNull($operation->transactionOutcome);
         }
         $terminal = $checkout->settlement();
-        self::assertSame(Disposition::REUSABLE, $terminal->disposition);
+        self::assertSame(Disposition::Reusable, $terminal->disposition);
         self::assertSame($pdo, $checkout->returnForHost());
         $this->reject($checkout->returnForHost(...));
         self::assertSame($terminal, $checkout->settlement());
@@ -110,8 +110,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         $primary = new LogicException('application failure');
         $caught = self::raised(fn() => $this->runMode($checkout, $owned, self::throwingWork($primary)));
         self::assertSame($primary, $caught);
-        self::assertSame(Reason::CALLBACK_FAILED, $checkout->settlement()->operationReason);
-        self::assertSame($owned ? Outcome::ROLLED_BACK : Outcome::LOCAL_UNDONE, $checkout->settlement()->operationOutcome);
+        self::assertSame(Reason::CallbackFailed, $checkout->settlement()->operationReason);
+        self::assertSame($owned ? Outcome::RolledBack : Outcome::LocalUndone, $checkout->settlement()->operationOutcome);
         if (!$owned) {
             self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('visible'));
             $checkout->commit();
@@ -164,9 +164,9 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         }
 
         $operation = $checkout->settlement();
-        self::assertSame($owned ? Outcome::ROLLED_BACK : Outcome::LOCAL_UNDONE, $operation->operationOutcome);
+        self::assertSame($owned ? Outcome::RolledBack : Outcome::LocalUndone, $operation->operationOutcome);
         self::assertNull($operation->operationReason);
-        self::assertSame($owned ? Disposition::REUSABLE : null, $operation->disposition);
+        self::assertSame($owned ? Disposition::Reusable : null, $operation->disposition);
         self::assertSame([], $this->values($observer, $table));
         if (!$owned) {
             self::assertSame([['v' => 10]], $checkout->runRegisteredCommand('visible'));
@@ -221,10 +221,10 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         try {
             $caught = self::raised(fn() => $this->runMode($checkout, $owned, $work));
             self::assertSame($afterDriver === 'throw' ? $primary : $driver, $caught);
-            self::assertSame(Outcome::UNKNOWN, $checkout->settlement()->operationOutcome);
-            self::assertSame(Outcome::UNKNOWN, $checkout->settlement()->transactionOutcome);
-            self::assertSame(Reason::COMMAND_FAILED, $checkout->settlement()->operationReason);
-            $this->fenced($checkout, Reason::COMMAND_FAILED);
+            self::assertSame(Outcome::Unknown, $checkout->settlement()->operationOutcome);
+            self::assertSame(Outcome::Unknown, $checkout->settlement()->transactionOutcome);
+            self::assertSame(Reason::CommandFailed, $checkout->settlement()->operationReason);
+            $this->fenced($checkout, Reason::CommandFailed);
             self::assertSame($questionsAfterFailure + 1, $this->questions($pdo));
         } finally {
             ini_set('zend.exception_ignore_args', $previous);
@@ -240,9 +240,9 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     /** @return iterable<string, array{bool, string, Reason, Outcome}> */
     public static function cleanupFaults(): iterable
     {
-        yield 'Owned rollback' => [true, 'ROLLBACK AND NO CHAIN NO RELEASE', Reason::ROLLBACK_UNCONFIRMED, Outcome::UNKNOWN];
-        yield 'Host undo' => [false, 'ROLLBACK TO SAVEPOINT', Reason::ROLLBACK_TO_UNCONFIRMED, Outcome::UNKNOWN];
-        yield 'Host release after undo' => [false, 'RELEASE SAVEPOINT', Reason::RELEASE_UNCONFIRMED, Outcome::LOCAL_UNDONE];
+        yield 'Owned rollback' => [true, 'ROLLBACK AND NO CHAIN NO RELEASE', Reason::RollbackUnconfirmed, Outcome::Unknown];
+        yield 'Host undo' => [false, 'ROLLBACK TO SAVEPOINT', Reason::RollbackToUnconfirmed, Outcome::Unknown];
+        yield 'Host release after undo' => [false, 'RELEASE SAVEPOINT', Reason::ReleaseUnconfirmed, Outcome::LocalUndone];
     }
 
     #[DataProvider('cleanupFaults')]
@@ -298,11 +298,12 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             }
             self::assertNoExecutionHandlesInTrace($failure);
             self::assertSame(self::relayEvidence($stage), $relay->readLine(12.0));
-            $reason = $stage === 'after-ack' ? Reason::HANDOFF_UNCONFIRMED
-                : ($commit ? Reason::COMMIT_OUTCOME_UNKNOWN : Reason::ROLLBACK_UNCONFIRMED);
-            $outcome = $stage === 'after-ack' ? ($commit ? Outcome::COMMITTED : Outcome::ROLLED_BACK) : Outcome::UNKNOWN;
+            $reason = $stage === 'after-ack'
+                ? Reason::HandoffUnconfirmed
+                : ($commit ? Reason::CommitOutcomeUnknown : Reason::RollbackUnconfirmed);
+            $outcome = $stage === 'after-ack' ? ($commit ? Outcome::Committed : Outcome::RolledBack) : Outcome::Unknown;
             self::assertSame($outcome, $checkout->settlement()->transactionOutcome);
-            self::assertSame($owned ? $outcome : Outcome::PENDING_HOST, $checkout->settlement()->operationOutcome);
+            self::assertSame($owned ? $outcome : Outcome::PendingHost, $checkout->settlement()->operationOutcome);
             self::assertSame($owned ? $reason : null, $checkout->settlement()->operationReason);
             $this->fenced($checkout, $reason);
             self::assertSame($commit && $stage !== 'before' ? ($owned ? [20] : [10, 20]) : [], $this->values($observer, $table));
@@ -317,15 +318,15 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     public static function windowFaults(): iterable
     {
         foreach ([
-            'SAVEPOINT' => [Reason::SAVEPOINT_UNCONFIRMED, Outcome::NOT_STARTED],
-            'ROLLBACK TO SAVEPOINT' => [Reason::ROLLBACK_TO_UNCONFIRMED, Outcome::UNKNOWN],
-            'RELEASE SAVEPOINT' => [Reason::RELEASE_UNCONFIRMED, Outcome::LOCAL_UNDONE],
+            'SAVEPOINT' => [Reason::SavepointUnconfirmed, Outcome::NotStarted],
+            'ROLLBACK TO SAVEPOINT' => [Reason::RollbackToUnconfirmed, Outcome::Unknown],
+            'RELEASE SAVEPOINT' => [Reason::ReleaseUnconfirmed, Outcome::LocalUndone],
         ] as $target => [$reason, $operation]) {
             foreach (['before', 'after', 'after-ack'] as $stage) {
                 if ($stage === 'after-ack' && $target === 'ROLLBACK TO SAVEPOINT') {
-                    $after = [Reason::RELEASE_UNCONFIRMED, Outcome::LOCAL_UNDONE];
+                    $after = [Reason::ReleaseUnconfirmed, Outcome::LocalUndone];
                 } elseif ($stage === 'after-ack') {
-                    $after = [Reason::CONTINUITY_UNCONFIRMED, $operation];
+                    $after = [Reason::ContinuityUnconfirmed, $operation];
                 } else {
                     $after = [$reason, $operation];
                 }
@@ -346,7 +347,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             self::assertSame(self::relayEvidence($stage), $relay->readLine(12.0));
             self::assertSame($operation, $checkout->settlement()->operationOutcome);
             self::assertSame($reason, $checkout->settlement()->operationReason);
-            self::assertSame(Outcome::UNKNOWN, $checkout->settlement()->transactionOutcome);
+            self::assertSame(Outcome::Unknown, $checkout->settlement()->transactionOutcome);
             $this->fenced($checkout, $reason);
             self::assertSame([], $this->values($observer, $table));
             $checkout->discardForHost();
@@ -365,7 +366,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         $checkout = Checkout::attachExclusive($pdo, $catalog);
         $this->reject(fn() => ProtectedCheckout::attachExclusive($pdo, $catalog));
         self::assertSame($pdo, $checkout->returnForHost());
-        self::assertSame(Disposition::UNCHANGED, $checkout->settlement()->disposition);
+        self::assertSame(Disposition::Unchanged, $checkout->settlement()->disposition);
         $abandoned = Checkout::attachExclusive($pdo, $catalog);
         unset($abandoned);
         $this->reject(fn() => ProtectedCheckout::attachExclusive($pdo, $catalog));
@@ -392,10 +393,10 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             $attempt = $owned ? fn() => $checkout->runOwned(static fn(): never => self::fail('Unexpected callback.')) : $checkout->beginHost(...);
             self::failureOf($attempt);
             self::assertSame(self::relayEvidence($stage), $relay->readLine(12.0));
-            self::assertSame($owned ? Outcome::NOT_STARTED : null, $checkout->settlement()->operationOutcome);
-            self::assertSame($owned ? Reason::START_UNCONFIRMED : null, $checkout->settlement()->operationReason);
-            self::assertSame(Outcome::UNKNOWN, $checkout->settlement()->transactionOutcome);
-            $this->fenced($checkout, Reason::START_UNCONFIRMED);
+            self::assertSame($owned ? Outcome::NotStarted : null, $checkout->settlement()->operationOutcome);
+            self::assertSame($owned ? Reason::StartUnconfirmed : null, $checkout->settlement()->operationReason);
+            self::assertSame(Outcome::Unknown, $checkout->settlement()->transactionOutcome);
+            $this->fenced($checkout, Reason::StartUnconfirmed);
             $checkout->discardForHost();
         } finally {
             $relay->stop();
@@ -443,9 +444,9 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
         $pdo->exec('START TRANSACTION');
         try {
             $this->reject(fn() => $checkout->runOwned(static fn(): never => self::fail('Unexpected callback.')));
-            self::assertSame(Outcome::NOT_STARTED, $checkout->settlement()->operationOutcome);
-            self::assertSame(Outcome::NOT_STARTED, $checkout->settlement()->transactionOutcome);
-            $this->fenced($checkout, Reason::QUALIFICATION_FAILED);
+            self::assertSame(Outcome::NotStarted, $checkout->settlement()->operationOutcome);
+            self::assertSame(Outcome::NotStarted, $checkout->settlement()->transactionOutcome);
+            $this->fenced($checkout, Reason::QualificationFailed);
             self::assertTrue($pdo->inTransaction());
             $checkout->discardForHost();
         } finally {
@@ -504,14 +505,14 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             unset($fiber);
             gc_collect_cycles();
             self::assertNull($weak->get());
-            $this->fenced($checkout, Reason::CONTINUITY_UNCONFIRMED);
+            $this->fenced($checkout, Reason::ContinuityUnconfirmed);
             $checkout->discardForHost();
             $pdo->rollBack();
             self::assertSame([], $this->values($observer, $table));
         } else {
             $fiber->resume();
             self::assertNull($fiber->getReturn());
-            self::assertSame($owned ? Outcome::ROLLED_BACK : Outcome::LOCAL_UNDONE, $checkout->settlement()->operationOutcome);
+            self::assertSame($owned ? Outcome::RolledBack : Outcome::LocalUndone, $checkout->settlement()->operationOutcome);
             if (!$owned) {
                 $this->reject(fn() => $checkout->runInHost(self::work(true)));
                 $checkout->commit();
@@ -534,8 +535,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
             $scope->runRegisteredCommand('limited');
             return Decision::apply();
         }));
-        self::assertSame(Outcome::LOCAL_UNDONE, $checkout->settlement()->operationOutcome);
-        self::assertSame(Reason::CALLBACK_FAILED, $checkout->settlement()->operationReason);
+        self::assertSame(Outcome::LocalUndone, $checkout->settlement()->operationOutcome);
+        self::assertSame(Reason::CallbackFailed, $checkout->settlement()->operationReason);
         self::assertNull($checkout->settlement()->disposition);
         $checkout->commit();
         self::assertSame([10], $this->values($observer, $table));
@@ -573,7 +574,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
                 return Decision::discard();
             }));
             self::assertSame(1305, self::driverCode($failure));
-            $this->fenced($checkout, Reason::ROLLBACK_TO_UNCONFIRMED);
+            $this->fenced($checkout, Reason::RollbackToUnconfirmed);
             self::assertSame([], $this->values($observer, $table));
             $checkout->discardForHost();
         } finally {
@@ -623,8 +624,8 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
                     self::assertNotInstanceOf(\PDOStatement::class, $arg);
                 }
             }
-            $this->fenced($checkout, Reason::TRANSACTION_LOST);
-            self::assertSame(Outcome::UNKNOWN, $checkout->settlement()->transactionOutcome);
+            $this->fenced($checkout, Reason::TransactionLost);
+            self::assertSame(Outcome::Unknown, $checkout->settlement()->transactionOutcome);
             self::assertSame([10, 21], $this->values($observer, $table));
             $checkout->discardForHost();
         } finally {
@@ -639,13 +640,17 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     {
         $observer = $this->connect();
         $table = $this->createTable($observer, 'verified');
-        return [$observer, $table, new Catalog([
-            'insert' => new Plan("INSERT INTO $table (id, v) VALUES (:id, :value)", ['id', 'value']),
-            'read' => new Plan("SELECT v FROM $table WHERE id = :id", ['id'], 1),
-            'visible' => new Plan("SELECT v FROM $table ORDER BY id", [], 2),
-            'limited' => new Plan("SELECT v FROM $table ORDER BY id", [], 1),
-            'update' => new Plan("UPDATE $table SET v = :value WHERE id = :id", ['id', 'value']),
-        ])];
+        return [
+            $observer,
+            $table,
+            new Catalog([
+                'insert' => new Plan("INSERT INTO $table (id, v) VALUES (:id, :value)", ['id', 'value']),
+                'read' => new Plan("SELECT v FROM $table WHERE id = :id", ['id'], 1),
+                'visible' => new Plan("SELECT v FROM $table ORDER BY id", [], 2),
+                'limited' => new Plan("SELECT v FROM $table ORDER BY id", [], 1),
+                'update' => new Plan("UPDATE $table SET v = :value WHERE id = :id", ['id', 'value']),
+            ]),
+        ];
     }
 
     private function beginWithMarker(Checkout $checkout): void
@@ -681,7 +686,7 @@ final class VerifiedTransactionIntegrationTest extends IntegrationTestCase
     private function fenced(Checkout $checkout, Reason $reason): void
     {
         self::assertSame($reason, $checkout->settlement()->checkoutReason);
-        self::assertSame(Disposition::DISCARD_REQUIRED, $checkout->settlement()->disposition);
+        self::assertSame(Disposition::DiscardRequired, $checkout->settlement()->disposition);
         $snapshot = $checkout->settlement();
         $this->reject($checkout->returnForHost(...));
         $this->reject($checkout->commit(...));

@@ -18,7 +18,9 @@ final class DatabaseWorkSupervisionTest extends TestCase
     {
         foreach ([0, 7] as $expected) {
             [$status, $out, $error] = execute(databaseWorkCommand([
-                PHP_BINARY, '-r', 'fwrite(STDOUT, "worker output\n"); fwrite(STDERR, "worker error\n"); exit((int) $argv[1]);',
+                PHP_BINARY,
+                '-r',
+                'fwrite(STDOUT, "worker output\n"); fwrite(STDERR, "worker error\n"); exit((int) $argv[1]);',
                 (string) $expected,
             ], 5), timeoutSeconds: 8);
 
@@ -97,7 +99,11 @@ final class DatabaseWorkSupervisionTest extends TestCase
             PHP_CODE;
         try {
             [$status, $out, $error] = execute([
-                PHP_BINARY, '-r', $launcher, dirname(__DIR__, 2) . '/scripts/integration-support.php', $path,
+                PHP_BINARY,
+                '-r',
+                $launcher,
+                dirname(__DIR__, 2) . '/scripts/integration-support.php',
+                $path,
             ], timeoutSeconds: 10);
             self::assertSame(130, $status, $out . $error);
             self::assertStringContainsString('DB-WORK FAILURE: interrupted', $error);

@@ -8,6 +8,7 @@ use Error;
 use Maatify\PhpPersistence\Tests\Support\Transaction\PdoErrors;
 use Maatify\PhpPersistence\Tests\Support\Transaction\RetryTransactionPdo;
 use Maatify\PhpPersistence\Transaction\Exception\InvalidTransactionConfigurationException;
+use Maatify\PhpPersistence\Transaction\Repository\PdoSavepointTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Repository\PdoTransactionRunner;
 use PDOException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -89,6 +90,28 @@ final class PdoTransactionRunnerTest extends TestCase
         self::assertSame(1, $pdo->commitCalls);
         self::assertSame(0, $pdo->rollBackCalls);
         self::assertFalse($pdo->inTransaction());
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function booleanCallbackResults(): iterable
+    {
+        yield 'false' => [false];
+        yield 'true' => [true];
+    }
+
+    #[DataProvider('booleanCallbackResults')]
+    public function testBothPublicRunnersCommitOwnedWorkAndPreserveBooleanResults(bool $result): void
+    {
+        foreach ([PdoTransactionRunner::class, PdoSavepointTransactionRunner::class] as $runnerClass) {
+            $pdo = new RetryTransactionPdo();
+            $runner = new $runnerClass($pdo);
+
+            self::assertSame($result, $runner->run(static fn(): bool => $result));
+            self::assertSame(1, $pdo->beginTransactionCalls);
+            self::assertSame(1, $pdo->commitCalls);
+            self::assertSame(0, $pdo->rollBackCalls);
+            self::assertFalse($pdo->inTransaction());
+        }
     }
 
     #[DataProvider('configuredRetries')]

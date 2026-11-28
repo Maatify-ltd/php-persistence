@@ -29,8 +29,8 @@ $quotedTable = '`' . $table . '`';
 php_persistence_example_assert(
     $pdo->exec(
         "CREATE TABLE {$quotedTable} ("
-        . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
-        . "status VARCHAR(16) NOT NULL)",
+            . 'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, '
+            . "status VARCHAR(16) NOT NULL)",
     ) !== false,
     'failed to create the pagination fixture table',
 );
@@ -53,9 +53,9 @@ try {
     $config = new PaginationConfig(
         sortWhitelist: new SortWhitelist(['id' => 'id', 'status' => 'status']),
         defaultSortBy: 'id',
-        defaultSortDirection: SortDirectionEnum::ASC,
+        defaultSortDirection: SortDirectionEnum::Asc,
         tieBreakerSortBy: 'id',
-        tieBreakerDirection: SortDirectionEnum::ASC,
+        tieBreakerDirection: SortDirectionEnum::Asc,
     );
 
     $query = new PdoPaginationQueryDescriptor(
